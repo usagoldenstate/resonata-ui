@@ -1,0 +1,85 @@
+"use client"
+
+// Selected-hotel context. Fetches the hotel list once on mount, persists the
+// current selection in localStorage so a reload lands back on the same hotel,
+// and exposes a setter the hotel picker calls. Every page that talks to the
+// backend reads `hotelId` from here.
+
+import * as React from "react"
+
+import { api } from "./api"
+
+export type HotelListItem = {
+  hotel_id: string
+  display_name: string
+  pms_provider: string
+  is_active: boolean
+}
+
+type Ctx = {
+  hotels: HotelListItem[]
+  hotelId: string | null
+  setHotelId: (id: string) => void
+  loading: boolean
+  error: string | null
+  refresh: () => Promise<void>
+}
+
+const HotelContext = React.createContext<Ctx | null>(null)
+
+const STORAGE_KEY = "resonata.selected_hotel_id"
+
+export function HotelProvider({ children }: { children: React.ReactNode }) {
+  const [hotels, setHotels] = React.useState<HotelListItem[]>([])
+  const [hotelId, setHotelIdState] = React.useState<string | null>(null)
+  const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
+
+  const refresh = React.useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const list = await api<HotelListItem[]>("/api/v1/admin/hotels")
+      setHotels(list)
+      // Restore stored selection if it still exists in the list; otherwise
+      // default to the first active hotel so pages aren't stuck in an empty
+      // state on first load.
+      const stored =
+        typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null
+      const match = stored && list.find((h) => h.hotel_id === stored)
+      if (match) {
+        setHotelIdState(match.hotel_id)
+      } else if (list.length > 0) {
+        setHotelIdState(list[0].hotel_id)
+      } else {
+        setHotelIdState(null)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const setHotelId = React.useCallback((id: string) => {
+    setHotelIdState(id)
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STORAGE_KEY, id)
+    }
+  }, [])
+
+  const value: Ctx = { hotels, hotelId, setHotelId, loading, error, refresh }
+  return <HotelContext.Provider value={value}>{children}</HotelContext.Provider>
+}
+
+export function useHotel(): Ctx {
+  const ctx = React.useContext(HotelContext)
+  if (ctx === null) {
+    throw new Error("useHotel() must be used inside <HotelProvider>")
+  }
+  return ctx
+}
