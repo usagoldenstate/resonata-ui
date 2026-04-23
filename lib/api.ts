@@ -34,6 +34,7 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
   const url = `${env.apiUrl.replace(/\/$/, "")}${path}`
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true",
   }
   if (env.adminToken) {
     headers["X-Admin-Token"] = env.adminToken

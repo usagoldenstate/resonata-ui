@@ -1943,11 +1943,24 @@ type HotelDetail = {
   first_message: string | null
   transfer_phone_number: string
   email_from: string | null
+  preferred_rate_code: string | null
   is_active: boolean
   metadata: Record<string, unknown>
 }
 
-function AgentConfigTab({ hotelId }: { hotelId: string }) {
+function AgentConfigTab({
+  hotelId,
+  registerSave,
+  onStateChange,
+  onErrorChange,
+}: {
+  hotelId: string
+  registerSave: (fn: (() => Promise<void>) | null) => void
+  onStateChange: React.Dispatch<
+    React.SetStateAction<"idle" | "saving" | "saved" | "error">
+  >
+  onErrorChange: React.Dispatch<React.SetStateAction<string | null>>
+}) {
   const [transferPhone, setTransferPhone] = useState("")
   const [maxCallMin, setMaxCallMin] = useState("6")
   const [transferRules, setTransferRules] = useState("")
@@ -1955,8 +1968,6 @@ function AgentConfigTab({ hotelId }: { hotelId: string }) {
   const [agentName, setAgentName] = useState("")
   const [firstMessage, setFirstMessage] = useState("")
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
-  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -1971,7 +1982,7 @@ function AgentConfigTab({ hotelId }: { hotelId: string }) {
         const meta = hotel.metadata ?? {}
         setMaxCallMin(String(meta.max_call_minutes ?? "6"))
         setTransferRules(String(meta.transfer_rules ?? ""))
-        setPreferredRateCode(String(meta.preferred_rate_code ?? ""))
+        setPreferredRateCode(String(hotel.preferred_rate_code ?? ""))
       } catch (e) {
         if (cancelled) return
         setLoadError(
@@ -1989,8 +2000,8 @@ function AgentConfigTab({ hotelId }: { hotelId: string }) {
   }, [hotelId])
 
   const handleSave = async () => {
-    setSaveState("saving")
-    setSaveError(null)
+    onStateChange("saving")
+    onErrorChange(null)
     try {
       await api(`/api/v1/admin/hotels/${hotelId}`, {
         method: "PUT",
@@ -1998,29 +2009,40 @@ function AgentConfigTab({ hotelId }: { hotelId: string }) {
           agent_name: agentName || null,
           first_message: firstMessage || null,
           transfer_phone_number: transferPhone,
+          preferred_rate_code: preferredRateCode || null,
           metadata: {
             // These fields don't affect voice behavior yet — they're stored
             // so the UI can round-trip them. Promote to first-class columns
             // when/if the voice agent starts consuming them.
             max_call_minutes: maxCallMin ? Number(maxCallMin) : null,
             transfer_rules: transferRules || null,
-            preferred_rate_code: preferredRateCode || null,
           },
         },
       })
-      setSaveState("saved")
-      setTimeout(() => setSaveState((s) => (s === "saved" ? "idle" : s)), 3000)
+      onStateChange("saved")
+      setTimeout(() => onStateChange((s) => (s === "saved" ? "idle" : s)), 3000)
     } catch (e) {
-      setSaveError(
+      onErrorChange(
         e instanceof ApiError
           ? `${e.status} ${e.message}`
           : e instanceof Error
             ? e.message
             : String(e),
       )
-      setSaveState("error")
+      onStateChange("error")
     }
   }
+
+  // Keep a ref to the latest handleSave so the function we register with the
+  // parent is stable — no re-registration on every keystroke — while still
+  // capturing the current form-state closure when invoked.
+  const handleSaveRef = useRef(handleSave)
+  handleSaveRef.current = handleSave
+
+  useEffect(() => {
+    registerSave(() => handleSaveRef.current())
+    return () => registerSave(null)
+  }, [registerSave])
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -2126,22 +2148,6 @@ function AgentConfigTab({ hotelId }: { hotelId: string }) {
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-end gap-3">
-        {saveState === "saved" && (
-          <span className="text-xs text-emerald-600 flex items-center gap-1">
-            <Check className="w-3.5 h-3.5" /> Saved
-          </span>
-        )}
-        {saveState === "error" && (
-          <span className="text-xs text-destructive" title={saveError ?? ""}>
-            Save failed
-          </span>
-        )}
-        <Button onClick={handleSave} disabled={saveState === "saving"}>
-          <Save className="w-4 h-4 mr-2" />
-          {saveState === "saving" ? "Saving…" : "Save"}
-        </Button>
-      </div>
     </div>
   )
 }
@@ -2177,6 +2183,20 @@ export default function KnowledgeBasePage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Agent Config tab owns its own form state but delegates save-state and the
+  // save trigger to the parent, so the page-level top Save button can drive it.
+  const [configSaveState, setConfigSaveState] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle")
+  const [configSaveError, setConfigSaveError] = useState<string | null>(null)
+  const configSaveRef = useRef<(() => Promise<void>) | null>(null)
+  const registerConfigSave = useCallback(
+    (fn: (() => Promise<void>) | null) => {
+      configSaveRef.current = fn
+    },
+    [],
+  )
 
   const hotel = hotels.find((h) => h.hotel_id === hotelId)
 
@@ -2307,25 +2327,35 @@ export default function KnowledgeBasePage() {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3">
-            {saveState === "saved" && (
-              <span className="text-xs text-emerald-600 flex items-center gap-1">
-                <Check className="w-3.5 h-3.5" /> Saved
-              </span>
-            )}
-            {saveState === "error" && (
-              <span className="text-xs text-destructive" title={saveError ?? ""}>
-                Save failed
-              </span>
-            )}
-            <Button
-              onClick={handleSave}
-              disabled={saveState === "saving" || loadState !== "ready"}
-            >
-              <Save className="w-4 h-4 mr-2" />
-              {saveState === "saving" ? "Saving…" : "Save"}
-            </Button>
-          </div>
+          {activeTab !== "rooms" && (() => {
+            const topSaveState = activeTab === "config" ? configSaveState : saveState
+            const topSaveError = activeTab === "config" ? configSaveError : saveError
+            const topSaveDisabled =
+              topSaveState === "saving" ||
+              (activeTab === "kb" && loadState !== "ready")
+            const onTopSave = () => {
+              if (activeTab === "config") return configSaveRef.current?.()
+              return handleSave()
+            }
+            return (
+              <div className="flex items-center gap-3">
+                {topSaveState === "saved" && (
+                  <span className="text-xs text-emerald-600 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> Saved
+                  </span>
+                )}
+                {topSaveState === "error" && (
+                  <span className="text-xs text-destructive" title={topSaveError ?? ""}>
+                    Save failed
+                  </span>
+                )}
+                <Button onClick={onTopSave} disabled={topSaveDisabled}>
+                  <Save className="w-4 h-4 mr-2" />
+                  {topSaveState === "saving" ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            )
+          })()}
         </div>
 
         {/* Tabs */}
@@ -2355,7 +2385,14 @@ export default function KnowledgeBasePage() {
             <KnowledgeBaseTab data={data} setData={setData} onScrapeComplete={handleScrapeComplete} />
           )}
           {activeTab === "rooms" && <RoomMappingTab hotelId={hotelId} />}
-          {activeTab === "config" && <AgentConfigTab hotelId={hotelId} />}
+          {activeTab === "config" && (
+            <AgentConfigTab
+              hotelId={hotelId}
+              registerSave={registerConfigSave}
+              onStateChange={setConfigSaveState}
+              onErrorChange={setConfigSaveError}
+            />
+          )}
         </div>
       </div>
     </div>
