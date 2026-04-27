@@ -1934,6 +1934,52 @@ function RoomMappingTab({ hotelId }: { hotelId: string }) {
 }
 
 // ─── Agent Config Tab ───
+// VAPI's transferCall destination requires strict E.164. The input is split
+// into three fields (country code, area code, 7-digit number) — optimized
+// for NANP, which is what this hotel agent serves — and recombined into an
+// E.164 string on save. Country code 1 + 10 national digits = 11 digits
+// total, which matches the E.164 minimum we enforce backend-side too.
+const E164_RE = /^\+[1-9]\d{9,14}$/
+
+type PhoneParts = { countryCode: string; areaCode: string; number: string }
+
+const EMPTY_PARTS: PhoneParts = { countryCode: "1", areaCode: "", number: "" }
+
+// Try to split an existing E.164 value back into three fields. Only supports
+// NANP-shaped numbers (+1 + 3-digit area + 7-digit subscriber) since that's
+// what the three-field UI represents. Everything else is surfaced as a
+// "legacy invalid" value so the admin can re-enter it cleanly.
+function parsePhoneParts(e164: string | null | undefined): PhoneParts | null {
+  if (!e164 || !e164.startsWith("+")) return null
+  const digits = e164.slice(1).replace(/\D/g, "")
+  if (digits.startsWith("1") && digits.length === 11) {
+    return { countryCode: "1", areaCode: digits.slice(1, 4), number: digits.slice(4) }
+  }
+  return null
+}
+
+function buildE164FromParts(parts: PhoneParts): string | null {
+  const cc = parts.countryCode.replace(/\D/g, "")
+  const area = parts.areaCode.replace(/\D/g, "")
+  const num = parts.number.replace(/\D/g, "")
+  if (!cc || !area || !num) return null
+  const combined = `+${cc}${area}${num}`
+  return E164_RE.test(combined) ? combined : null
+}
+
+function describeInvalidParts(parts: PhoneParts): string | null {
+  const cc = parts.countryCode.replace(/\D/g, "")
+  const area = parts.areaCode.replace(/\D/g, "")
+  const num = parts.number.replace(/\D/g, "")
+  if (!cc) return "Enter a country code"
+  if (cc.startsWith("0")) return "Country code can't start with 0"
+  if (!area) return "Enter an area code"
+  if (area.length !== 3) return `Area code must be 3 digits (got ${area.length})`
+  if (!num) return "Enter a phone number"
+  if (num.length !== 7) return `Phone number must be 7 digits (got ${num.length})`
+  return null
+}
+
 type HotelDetail = {
   hotel_id: string
   display_name: string
@@ -1944,8 +1990,9 @@ type HotelDetail = {
   transfer_phone_number: string
   email_from: string | null
   preferred_rate_code: string | null
+  max_call_minutes: number | null
+  transfer_rules: string | null
   is_active: boolean
-  metadata: Record<string, unknown>
 }
 
 function AgentConfigTab({
@@ -1961,7 +2008,11 @@ function AgentConfigTab({
   >
   onErrorChange: React.Dispatch<React.SetStateAction<string | null>>
 }) {
-  const [transferPhone, setTransferPhone] = useState("")
+  const [phoneParts, setPhoneParts] = useState<PhoneParts>(EMPTY_PARTS)
+  // Holds a previously-saved value the three-field input can't parse (e.g.
+  // a non-NANP number, or a legacy-bad one like "+9162674487"). Shown as a
+  // warning so the admin knows what's currently live and can replace it.
+  const [legacyPhone, setLegacyPhone] = useState<string | null>(null)
   const [maxCallMin, setMaxCallMin] = useState("6")
   const [transferRules, setTransferRules] = useState("")
   const [preferredRateCode, setPreferredRateCode] = useState("")
@@ -1976,12 +2027,18 @@ function AgentConfigTab({
       try {
         const hotel = await api<HotelDetail>(`/api/v1/admin/hotels/${hotelId}`)
         if (cancelled) return
-        setTransferPhone(hotel.transfer_phone_number ?? "")
+        const parsed = parsePhoneParts(hotel.transfer_phone_number)
+        if (parsed) {
+          setPhoneParts(parsed)
+          setLegacyPhone(null)
+        } else {
+          setPhoneParts(EMPTY_PARTS)
+          setLegacyPhone(hotel.transfer_phone_number || null)
+        }
         setAgentName(hotel.agent_name ?? "")
         setFirstMessage(hotel.first_message ?? "")
-        const meta = hotel.metadata ?? {}
-        setMaxCallMin(String(meta.max_call_minutes ?? "6"))
-        setTransferRules(String(meta.transfer_rules ?? ""))
+        setMaxCallMin(String(hotel.max_call_minutes ?? "6"))
+        setTransferRules(hotel.transfer_rules ?? "")
         setPreferredRateCode(String(hotel.preferred_rate_code ?? ""))
       } catch (e) {
         if (cancelled) return
@@ -2000,6 +2057,13 @@ function AgentConfigTab({
   }, [hotelId])
 
   const handleSave = async () => {
+    const normalizedPhone = buildE164FromParts(phoneParts)
+    if (normalizedPhone === null) {
+      const reason = describeInvalidParts(phoneParts) ?? "invalid phone number"
+      onErrorChange(`Transfer phone: ${reason}.`)
+      onStateChange("error")
+      return
+    }
     onStateChange("saving")
     onErrorChange(null)
     try {
@@ -2008,15 +2072,10 @@ function AgentConfigTab({
         body: {
           agent_name: agentName || null,
           first_message: firstMessage || null,
-          transfer_phone_number: transferPhone,
+          transfer_phone_number: normalizedPhone,
           preferred_rate_code: preferredRateCode || null,
-          metadata: {
-            // These fields don't affect voice behavior yet — they're stored
-            // so the UI can round-trip them. Promote to first-class columns
-            // when/if the voice agent starts consuming them.
-            max_call_minutes: maxCallMin ? Number(maxCallMin) : null,
-            transfer_rules: transferRules || null,
-          },
+          max_call_minutes: maxCallMin ? Number(maxCallMin) : null,
+          transfer_rules: transferRules || null,
         },
       })
       onStateChange("saved")
@@ -2063,19 +2122,97 @@ function AgentConfigTab({
           <p className="text-sm text-muted-foreground">When the agent hands off to a human</p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
-                Transfer Phone
-              </label>
-              <Input value={transferPhone} onChange={(e) => setTransferPhone(e.target.value)} placeholder="(555) 123-4567" />
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
-                Max Call Duration (min)
-              </label>
-              <Input type="number" value={maxCallMin} onChange={(e) => setMaxCallMin(e.target.value)} placeholder="6" />
-            </div>
+          <div>
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-2">
+              Transfer Phone
+            </label>
+            {(() => {
+              const preview = buildE164FromParts(phoneParts)
+              const invalidReason = preview ? null : describeInvalidParts(phoneParts)
+              const anyInput =
+                phoneParts.areaCode.length > 0 || phoneParts.number.length > 0
+              return (
+                <>
+                  <div className="flex gap-2 items-end">
+                    <div className="w-20">
+                      <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                        Country
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-muted-foreground">+</span>
+                        <Input
+                          inputMode="numeric"
+                          maxLength={3}
+                          value={phoneParts.countryCode}
+                          onChange={(e) =>
+                            setPhoneParts((p) => ({
+                              ...p,
+                              countryCode: e.target.value.replace(/\D/g, "").slice(0, 3),
+                            }))
+                          }
+                          placeholder="1"
+                        />
+                      </div>
+                    </div>
+                    <div className="w-24">
+                      <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                        Area Code
+                      </div>
+                      <Input
+                        inputMode="numeric"
+                        maxLength={3}
+                        value={phoneParts.areaCode}
+                        onChange={(e) =>
+                          setPhoneParts((p) => ({
+                            ...p,
+                            areaCode: e.target.value.replace(/\D/g, "").slice(0, 3),
+                          }))
+                        }
+                        placeholder="555"
+                      />
+                    </div>
+                    <div className="flex-1 max-w-[180px]">
+                      <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                        Phone Number
+                      </div>
+                      <Input
+                        inputMode="numeric"
+                        maxLength={8}  /* 7 digits + optional dash */
+                        value={phoneParts.number}
+                        onChange={(e) =>
+                          setPhoneParts((p) => ({
+                            ...p,
+                            number: e.target.value.replace(/\D/g, "").slice(0, 7),
+                          }))
+                        }
+                        placeholder="5551234"
+                      />
+                    </div>
+                  </div>
+                  {legacyPhone && (
+                    <p className="mt-2 text-xs text-destructive">
+                      Current saved value{" "}
+                      <span className="font-mono">{legacyPhone}</span> is not a
+                      standard NANP number. Re-enter above and save to replace it.
+                    </p>
+                  )}
+                  {preview && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Will be saved as <span className="font-mono">{preview}</span>
+                    </p>
+                  )}
+                  {!preview && anyInput && invalidReason && (
+                    <p className="mt-2 text-xs text-destructive">{invalidReason}.</p>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+          <div className="w-32">
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+              Max Call Duration (min)
+            </label>
+            <Input type="number" value={maxCallMin} onChange={(e) => setMaxCallMin(e.target.value)} placeholder="6" />
           </div>
           <div>
             <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
