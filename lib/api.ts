@@ -21,6 +21,10 @@ type Options = {
   body?: unknown
   // Default true. Turn off for endpoints that don't return JSON (rare).
   parseJson?: boolean
+  // Wire through to fetch() so callers can cancel long-running requests
+  // (research/scrape, etc). AbortError surfaces as a thrown DOMException;
+  // callers should catch and ignore rather than treating as failure.
+  signal?: AbortSignal
 }
 
 export async function api<T = unknown>(path: string, opts: Options = {}): Promise<T> {
@@ -44,6 +48,7 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
     method: opts.method ?? "GET",
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    signal: opts.signal,
   })
 
   if (!res.ok) {

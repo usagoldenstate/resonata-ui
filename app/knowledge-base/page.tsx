@@ -36,7 +36,10 @@ import {
   Compass,
   Users,
   ExternalLink,
+  AlertCircle,
+  Loader2,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -47,6 +50,23 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { api, ApiError } from "@/lib/api"
 import { useHotel } from "@/lib/hotel-context"
@@ -55,6 +75,11 @@ import {
   sectionsToEntries,
   type KnowledgeEntry,
 } from "@/lib/knowledge-serialize"
+import {
+  preserveEdits,
+  researchProperty,
+  type ResearchSection,
+} from "@/lib/research"
 
 // ─── Confidence types ───
 type ConfidenceLevel = "confirmed" | "likely" | "review" | "missing"
@@ -349,235 +374,22 @@ function defaultSections(): Section[] {
   ]
 }
 
-// ─── Mock Data Generator ───
-function generateMockData(query: string): PropertyData {
-  const q = query.toLowerCase()
-  const isLake = q.includes("lake") || q.includes("waterfront") || q.includes("canandaigua")
-
-  const pName =
-    query
-      .replace(/https?:\/\/(www\.)?/g, "")
-      .replace(/\.com.*/, "")
-      .replace(/[/-]/g, " ")
-      .split(" ")
-      .filter(Boolean)
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ") || "Sample Property"
-  const pType = isLake ? "Lakefront Luxury Resort" : "Full-Service Hotel"
-
-  const sources: Record<string, { count: number }> = {
-    website: { count: 0 },
-    google: { count: 0 },
-    tripadvisor: { count: 0 },
-    ota: { count: 0 },
-  }
-
-  const f = (
-    key: string,
-    label: string,
-    value: string,
-    conf: ConfidenceLevel,
-    src: string | null,
-    critical = false
-  ): Field => {
-    if (src && sources[src]) sources[src].count++
-    return { key, label, value, confidence: conf, source: src, critical, edited: false }
-  }
-
-  let secs: Section[]
-  let rooms: Room[] = []
-
-  if (isLake) {
-    // Full Lake House data
-    secs = [
-      { id: "overview", title: "Property Overview", fields: [
-        f("name", "Property Name", "The Lake House on Canandaigua", "confirmed", "website", true),
-        f("brand", "Brand / Chain", "Independent - Preferred Hotels & Resorts (L.V.X. Collection)", "confirmed", "website"),
-        f("type", "Property Type", "Full-service lakefront luxury resort", "confirmed", "website"),
-        f("setting", "Location Highlights", "Northerly shore of Canandaigua Lake; 26 mi SE of Rochester, NY", "confirmed", "website"),
-        f("address", "Full Address", "770 S Main Street, Canandaigua, NY 14424", "confirmed", "google", true),
-        f("phoneMain", "Hotel Front Desk", "(585) 394-7800", "confirmed", "google", true),
-        f("phoneToll", "New Reservations Number", "(800) 228-2801", "confirmed", "website"),
-        f("email", "Email", "", "missing", null),
-        f("bookingUrl", "Booking URL", "lakehousecanandaigua.com", "confirmed", "website", true),
-        f("giftCards", "Gift Cards URL", "lakehousecdga.shop", "confirmed", "website"),
-        f("recognitions", "Recognitions / Awards", "MICHELIN Guide; Amex Hotel Collection; Conde Nast Hot List; Beyond Green certified", "confirmed", "website"),
-        f("totalRooms", "Total Rooms", "124", "confirmed", "website"),
-        f("languages", "Languages Spoken", "English", "likely", "google"),
-      ]},
-      { id: "checkin", title: "Check-in & Check-out", fields: [
-        f("cin", "Check-In Time", "4:00 PM", "confirmed", "website", true),
-        f("cout", "Check-Out Time", "11:00 AM", "confirmed", "website", true),
-        f("earlyCin", "Early Check-In Policy", "Guaranteed from 1 PM for $200 fee; otherwise subject to availability", "confirmed", "website"),
-        f("lateCout", "Late Check-Out Policy", "Guaranteed until 1 PM for $200 fee; otherwise subject to availability", "confirmed", "website"),
-        f("minAge", "Minimum Check-In Age", "", "missing", null),
-        f("ccPolicy", "Credit Card / ID Policy", "Card used to book must be presented by cardholder at check-in with matching photo ID", "confirmed", "website"),
-      ]},
-      { id: "inroom", title: "In-Room Amenities", fields: [
-        f("standard", "Standard Inclusions (every room)", "Free Wi-Fi, private balcony (most rooms), hand-crafted furniture, hardwood floors, Waterworks rainfall shower, plush robes, A/C, flat-screen TV, coffee/tea, desk, premium bath amenities", "confirmed", "website"),
-        f("selectRooms", "Available in Select Rooms", "Gas fireplace (Lakefront Suite & Cottage Suite), soaking tub (Lakefront Suite), double vanities, twin sofa bed in parlor (suites)", "confirmed", "website"),
-        f("byRequest", "Available by Request", "", "missing", null),
-        f("roomService", "Room Service Details", "", "missing", null),
-      ]},
-      { id: "pool", title: "Pool & Outdoor", type: "pool",
-        pools: [
-          { id: "pool_1", name: "Lakefront Pool", poolType: "outdoor", heated: true, hours: "Seasonal - primarily summer", hotTub: true, poolsideService: true, poolBar: true, cabanas: true, cabanaSurcharge: "Available at surcharge", otherInfo: "Oversized jetted hot tub; towel warmers poolside" },
-        ],
-        fields: [
-          f("outdoorSeating", "Outdoor Seating Areas", "Multiple lakefront seating areas", "confirmed", "website"),
-          f("firePits", "Fire Pits", "Resort-wide fire pits with complimentary s'mores kits", "confirmed", "website"),
-          f("gardens", "Gardens / Grounds", "Lakefront grounds with walking paths", "confirmed", "website"),
-          f("otherOutdoor", "Other Outdoor Features", "", "missing", null),
-        ]
-      },
-      { id: "spa", title: "Spa & Wellness", fields: [
-        f("spaName", "Spa Name", "Willowbrook Spa", "confirmed", "website"),
-        f("spaPhone", "Direct Phone", "(585) 394-9479", "confirmed", "website"),
-        f("spaEmail", "Email", "spa@lakehousecanandaigua.com", "confirmed", "website"),
-        f("spaHoursWeekday", "Hours (Weekday)", "Sun-Thu: 9 AM - 6 PM", "confirmed", "website"),
-        f("spaHoursWeekend", "Hours (Weekend)", "Fri-Sat: 8 AM - 7 PM", "confirmed", "website"),
-        f("spaPublic", "Open to Public?", "Yes - hotel guests and public", "confirmed", "website"),
-        f("spaBooking", "Booking URL", "na.spatime.com/lhc14424sp", "confirmed", "website"),
-        f("spaTreatments", "Treatment Types", "Massages (Swedish, deep tissue, hot stone, couples), facials, body treatments, manicures, pedicures", "confirmed", "website"),
-        f("spaSignature", "What Sets Us Apart", "Nordic cedar barrel saunas overlooking the lake - year-round", "confirmed", "website"),
-        f("spaIncluded", "Amenities Included", "Sunroom, heated pool & hot tub access, complimentary sauna, Himalayan salt feet warmers, sparkling wine, fruit water, hot tea, snacks, private lockers", "confirmed", "website"),
-        f("spaMenu", "Treatment Menu URL", "heyzine.com/flip-book/c9178f92d1.html", "confirmed", "website"),
-      ]},
-    { id: "fitness", title: "Fitness Center & Classes", fields: [
-        f("gymHours", "Fitness Center Hours", "24 hours", "confirmed", "website"),
-        f("gymEquip", "Equipment", "Not specified online - verify with property", "review", "website"),
-        f("classes", "Class Types Offered", "Yoga, Pilates, meditation, sound bath, morning stretch", "confirmed", "website"),
-        f("classCal", "Class Schedule URL", "lakehousecanandaigua.com/events/", "confirmed", "website"),
-      ]},
-    { id: "activities", title: "Hotel Activities", fields: [
-        f("summer", "Summer Activities", "Kayaking, paddleboarding, canoeing, sailing, pedal boating, water skiing, boat tours, sunset cruises", "confirmed", "website"),
-        f("winter", "Winter Activities", "Ski shuttle to Bristol Mountain (20 min); nearby ice skating and sledding", "confirmed", "website"),
-        f("yearRound", "Year-Round Activities", "Nordic barrel saunas, fire pits with s'mores, shuffleboard, arcade games (The Library), yoga, wellness classes, winery/brewery tours", "confirmed", "website"),
-        f("activityCal", "Activity Calendar URL", "lakehousecanandaigua.com/events/", "confirmed", "website"),
-      ]},
-      { id: "otherAmenities", title: "Other Amenities", fields: [
-        f("amenitiesDetails", "Amenities Details", "", "missing", null),
-      ]},
-      { id: "dining", title: "On-Site Dining & Bars", type: "catalog",
-        itemLabel: "Venue",
-        schema: [
-          { key: "name", label: "Venue Name", flex: "2 1 140px" },
-          { key: "style", label: "Cuisine / Style", flex: "2 1 140px" },
-          { key: "hours", label: "Hours / Season", flex: "1 1 120px" },
-          { key: "bestKnownFor", label: "Best Known For", flex: "2 1 140px" },
-          { key: "atmosphere", label: "Atmosphere", flex: "1 1 120px" },
-          { key: "reservations", label: "Reservations Recommended", flex: "0 0 100px", type: "boolean" },
-        ],
-        items: [
-          { id: "d1", name: "Rose Tavern", style: "American / Finger Lakes seasonal", hours: "Breakfast, brunch, lunch, dinner", bestKnownFor: "Farm-to-table cuisine", atmosphere: "Upscale casual", reservations: true, conf: "confirmed", src: "website" },
-          { id: "d2", name: "Sand Bar", style: "Casual lakeside bar - oysters, cold beer", hours: "Seasonal (summer)", bestKnownFor: "Fresh oysters & lake views", atmosphere: "Casual outdoor", reservations: false, conf: "confirmed", src: "website" },
-          { id: "d3", name: "The Library", style: "Cocktail lounge - whiskey, craft cocktails, shuffleboard", hours: "Evenings", bestKnownFor: "Craft cocktails", atmosphere: "Cozy lounge", reservations: true, conf: "confirmed", src: "website" },
-          { id: "d4", name: "Artisan Cafe", style: "Coffee shop - coffee and light refreshments", hours: "Confirm with front desk", bestKnownFor: "Morning coffee", atmosphere: "Quick service", reservations: false, conf: "likely", src: "website" },
-        ],
-      },
-      { id: "conveniences", title: "General Conveniences", fields: [
-        f("frontDesk", "Front Desk Hours", "24 hours", "confirmed", "website"),
-        f("concierge", "Concierge Service", "Available - Fletcher frequently mentioned by name in guest reviews", "confirmed", "tripadvisor"),
-        f("coffeeShop", "Coffee Shop / Cafe", "Artisan cafe on-site", "confirmed", "website"),
-        f("waterStations", "Water Refill Stations", "Throughout the property (sustainability initiative)", "confirmed", "website"),
-        f("sustainability", "Sustainability Features", "Geothermal power; water refill stations; Beyond Green certified", "confirmed", "website"),
-        f("otherConveniences", "Other Conveniences", "Gift cards available at lakehousecdga.shop", "confirmed", "website"),
-      ]},
-      { id: "parking", title: "Parking & Transportation", fields: [
-        f("selfPark", "Self-Parking", "Free - on-site for all guests", "confirmed", "website", true),
-        f("valet", "Valet", "Complimentary valet, 24 hours", "confirmed", "website"),
-        f("evCharging", "EV Charging", "On-site EV charging stations available", "confirmed", "website"),
-        f("shuttle", "Shuttle Service", "Available to hotel guests only; operating hours 7 AM-11 PM; 48+ hrs advance booking recommended", "confirmed", "website"),
-        f("airports", "Nearest Airports & Distances", "Rochester (ROC) ~32 mi, ~45 min | Syracuse (SYR) ~1hr15 | Buffalo (BUF) ~1hr30", "confirmed", "google"),
-        f("rideshare", "Rideshare / Taxi / Rental", "Uber & Lyft serve Canandaigua. Airport Taxi: (585) 259-0508; Enterprise: (585) 396-1600", "confirmed", "google"),
-      ]},
-      { id: "pets", title: "Pet Policy", fields: [
-        f("petsAllowed", "Pets Allowed", "Dogs only (service animals exempt)", "confirmed", "website", true),
-        f("petTypes", "Types Allowed", "Dogs only", "confirmed", "website"),
-        f("petWeight", "Weight Limit", "35 lbs (service animals exempt)", "confirmed", "website"),
-        f("petFee", "Fee Structure", "$100 flat fee per stay + $50 cleaning fee per day", "confirmed", "website"),
-        f("petBooking", "Booking Process", "CANNOT be booked online - must call (585) 394-7800. Dog-friendly rooms = first floor of North Cottage ONLY", "confirmed", "website"),
-        f("petWelcome", "Welcome Package", "Dog bed, treats, and toys provided", "confirmed", "website"),
-        f("petRestrictions", "Leash / Unattended / Restrictions", "Leash required at all times. Do not leave unattended (noise complaints = additional fees). Waste bags provided.", "confirmed", "website"),
-        f("petDining", "Pets at Dining / Pool", "Allowed in outdoor dining areas (warm weather); NOT allowed indoors or at pool", "confirmed", "website"),
-        f("petHousekeeping", "Housekeeping Rules", "Dog must be crated for housekeeping to service the room", "confirmed", "website"),
-      ]},
-      { id: "accessibility", title: "Accessibility", fields: [
-        f("adaRooms", "ADA Rooms Available?", "Yes - call (585) 394-7800 to confirm specific features", "likely", "website", true),
-        f("adaParking", "Accessible Parking", "On-site", "confirmed", "website"),
-        f("adaPublic", "Public Area Accessibility", "Accessible public areas; 24-hr front desk for assistance", "confirmed", "website"),
-        f("adaUrl", "Accessibility Page URL", "lakehousecanandaigua.com/accessibilty/", "confirmed", "website"),
-      ]},
-      { id: "housekeeping", title: "Housekeeping & Services", fields: [
-        f("hkFreq", "Frequency", "Daily housekeeping", "confirmed", "website"),
-        f("hkDryClean", "Dry Cleaning / Laundry", "Available - contact front desk", "confirmed", "website"),
-        f("hkExtra", "Extra Service Requests", "Contact front desk", "confirmed", "website"),
-      ]},
-      { id: "payment", title: "Payment & Booking Policies", fields: [
-        f("cards", "Accepted Cards", "All major cards", "confirmed", "website"),
-        f("loyaltyBenefit", "Loyalty Booking Benefit", "I Prefer Hotel Rewards - direct booking always gets best rate; earn cash rewards", "confirmed", "website"),
-        f("smoking", "Smoking Policy", "", "missing", null),
-      ]},
-      { id: "events", title: "Meetings, Events & Weddings", type: "venue",
-        venues: [
-          { id: "venue_1", name: "Event Barn", capacity: "Up to 200 guests", description: "Large lakefront event space for weddings and receptions" },
-          { id: "venue_2", name: "Lakeside Terrace", capacity: "Up to 80 guests", description: "Outdoor ceremony space with lake views" },
-        ],
-        fields: [
-        f("buyout", "Full Property Buyout?", "Yes - entire property available for exclusive buyout", "confirmed", "website"),
-        f("weddings", "Wedding Services", "On-site wedding planner; premier lakefront setting", "confirmed", "website"),
-        f("corporate", "Corporate Retreats", "Lakefront meeting space, team-building, world-class dining", "confirmed", "website"),
-        f("eventsContact", "Events Contact", "events@lakehousecanandaigua.com | (585) 394-7800", "confirmed", "website"),
-      ]},
-      { id: "nearby", title: "Nearby Attractions", fields: [
-        f("walking", "Walking Distance / On-Site", "Canandaigua Lake (on-site); Canandaigua City Pier (~0.3 mi); Kershaw Park (~0.2 mi); Downtown Canandaigua (~0.5 mi)", "confirmed", "google"),
-        f("under5mi", "Under 5 Miles", "Sonnenberg Gardens & Mansion (~1.9 mi); CMAC Performing Arts Center (~2.5 mi); Naked Dove Brewing (~2 mi)", "confirmed", "google"),
-        f("fiveTo25", "5 - 25 Miles", "Heron Hill Winery (~13 mi); Bristol Mountain Ski Resort (~20 mi); Ganondagan State Historic Site (~22 mi)", "confirmed", "google"),
-        f("regional", "25+ Miles (Regional)", "Rochester (~26 mi); National Museum of Play (~29 mi); ROC Airport (~32 mi); Watkins Glen State Park (~40 mi)", "confirmed", "google"),
-      ]},
-    ]
-    
-    rooms = [
-      { name: "Lakefront King - Main Building", pmsCode: "", desc: "King bed; 180 panoramic lake views; spacious private balcony; rainfall shower", conf: "confirmed", src: "website" },
-      { name: "Lakefront Double Queen - Main Building", pmsCode: "", desc: "2 Double Queen beds; 180 panoramic lake views; private balcony; rainfall shower", conf: "confirmed", src: "website" },
-      { name: "Lakefront Suite - Main Building", pmsCode: "", desc: "King (separate bedroom); panoramic lake view; balcony; parlor with gas fireplace + twin sofa bed; soaking tub, rainfall shower", conf: "confirmed", src: "website" },
-      { name: "Cottage King - North Cottage", pmsCode: "", desc: "King bed; partial lake views; private balcony; rainfall shower. DOG-FRIENDLY rooms = 1st floor ONLY, book by phone", conf: "confirmed", src: "website" },
-      { name: "Town View King & Double Queen", pmsCode: "", desc: "King or 2 Double Queens; town/garden views (no lake); lower price point", conf: "confirmed", src: "website" },
-      { name: "Cottage Suite - North Cottage", pmsCode: "", desc: "King (separate bedroom); parlor + twin sofa bed; lake views. Dog-friendly first floor only", conf: "confirmed", src: "website" },
-    ]
-  } else {
-    // Default empty sections for non-Lake House
-    secs = defaultSections()
-    // Set property name
-    secs[0].fields![0].value = pName
-    secs[0].fields![0].confidence = "confirmed"
-    secs[0].fields![0].source = "website"
-    sources.website.count++
-    
-    rooms = [{ name: "", pmsCode: "", desc: "", conf: "missing", src: null }]
-  }
-
-  const allFields = secs.flatMap((s) => [...(s.fields || []), ...(s.meta || [])])
-  const stats = {
+// Roll up confidence/source counts from sections so the header chips and
+// "critical missing" warning stay in sync with the current data.
+function computeStats(sections: Section[]): PropertyData["stats"] {
+  const allFields = sections.flatMap((s) => [
+    ...(s.fields || []),
+    ...(s.meta || []),
+  ])
+  return {
     confirmed: allFields.filter((f) => f.confidence === "confirmed").length,
     likely: allFields.filter((f) => f.confidence === "likely").length,
     review: allFields.filter((f) => f.confidence === "review").length,
     missing: allFields.filter((f) => f.confidence === "missing").length,
-    critical: allFields.filter((f) => f.confidence === "missing" && f.critical),
-    generatedCount: secs.filter((s) => s.generated).length,
-  }
-  
-  const now = new Date()
-  return { 
-    id: `kb_${Date.now()}`,
-    pName, 
-    pType, 
-    sections: secs, 
-    rooms,
-    sources, 
-    stats,
-    createdAt: now,
-    updatedAt: now,
+    critical: allFields.filter(
+      (f) => f.confidence === "missing" && f.critical,
+    ),
+    generatedCount: sections.filter((s) => s.generated).length,
   }
 }
 
@@ -608,59 +420,264 @@ function ConfidenceBadge({ level, small = false }: { level: ConfidenceLevel; sma
 }
 
 // ─── Auto-fill Card ───
-function AutoFillCard({ onScrapeComplete, hasData }: { onScrapeComplete: (query: string) => void; hasData: boolean }) {
+//
+// Drives the 7-step animation from the real research request lifecycle.
+// Steps 1→6 advance on a timer cascade; step 7 ("Generating knowledge
+// base") is held until `onScrapeComplete` resolves so the UI never claims
+// success ahead of the network. On rejection we drop into an error state
+// and preserve the typed URL so the operator can retry.
+// Cycling status messages shown while step 7 is held (LLM still working).
+// Plausible-but-vague — true descriptions of what the model does over the
+// full research run, even if the precise step at any given second isn't
+// knowable without streaming progress from Anthropic.
+const HOLD_MESSAGES = [
+  "Compiling property overview…",
+  "Cataloging dining venues…",
+  "Verifying contact information…",
+  "Mapping nearby attractions…",
+  "Reading pet & accessibility policies…",
+  "Identifying room types…",
+  "Cross-referencing sources…",
+  "Building structured knowledge base…",
+  "Finalizing fields…",
+]
+
+function AutoFillCard({
+  onScrapeComplete,
+  hasData,
+}: {
+  onScrapeComplete: (query: string, signal?: AbortSignal) => Promise<void>
+  hasData: boolean
+}) {
   const [expanded, setExpanded] = useState(false)
   const [url, setUrl] = useState("")
   const [scanning, setScanning] = useState(false)
   const [step, setStep] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const [holdIdx, setHoldIdx] = useState(0)
+  const abortRef = useRef<AbortController | null>(null)
 
-  const startScrape = () => {
-    if (!url.trim()) return
+  // Tick a 1-second elapsed counter while scanning so the operator sees
+  // forward motion even when no other UI element is changing.
+  useEffect(() => {
+    if (!scanning) {
+      setElapsed(0)
+      return
+    }
+    const start = Date.now()
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [scanning])
+
+  // Once the cascade hits the held step (Generating knowledge base), cycle
+  // through plausible status messages every 4s so the user sees ongoing
+  // activity instead of a frozen header.
+  useEffect(() => {
+    if (!scanning || step <= SCAN_STEPS.length - 1) return
+    setHoldIdx(0)
+    const id = setInterval(
+      () => setHoldIdx((i) => (i + 1) % HOLD_MESSAGES.length),
+      4000,
+    )
+    return () => clearInterval(id)
+  }, [scanning, step])
+
+  const runScrape = async () => {
+    const query = url.trim()
+    if (!query) return
     setScanning(true)
     setStep(1)
-    
+    setError(null)
+
+    // Advance through steps 2..7 over the cascade. Hold at 7 (Generating
+    // knowledge base) until the response resolves; jump ahead if the
+    // response beats the animation.
+    const timers: ReturnType<typeof setTimeout>[] = []
     let total = 0
-    SCAN_STEPS.forEach((s, i) => {
-      total += s.dur
-      setTimeout(() => setStep(i + 2), total)
-    })
-    setTimeout(() => {
-      onScrapeComplete(url)
+    for (let i = 0; i < SCAN_STEPS.length - 1; i++) {
+      total += SCAN_STEPS[i].dur
+      const next = i + 2
+      timers.push(setTimeout(() => setStep(next), total))
+    }
+    const clearTimers = () => {
+      for (const t of timers) clearTimeout(t)
+      timers.length = 0
+    }
+
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    try {
+      await onScrapeComplete(query, controller.signal)
+      clearTimers()
+      // step > SCAN_STEPS.length renders all checkmarks complete.
+      setStep(SCAN_STEPS.length + 1)
+      await new Promise((r) => setTimeout(r, 400))
       setScanning(false)
       setExpanded(false)
       setUrl("")
       setStep(0)
-    }, total + 400)
+    } catch (e) {
+      clearTimers()
+      // Operator-initiated cancel: silently reset, don't toast or surface
+      // an error card. They know what they did.
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setScanning(false)
+        setStep(0)
+        return
+      }
+      setScanning(false)
+      setStep(0)
+      const msg = formatScrapeError(e)
+      setError(msg)
+      toast.error(`Research failed: ${msg}`)
+    } finally {
+      abortRef.current = null
+    }
   }
 
-  if (scanning) {
-    return (
-      <Card className="mb-5 border-primary">
-        <CardContent className="p-5">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-primary animate-pulse" />
-            </div>
-            <div className="text-sm font-semibold text-foreground">Analyzing {url}</div>
-          </div>
-          <div className="grid grid-cols-7 gap-1.5">
-            {SCAN_STEPS.map((s, i) => {
-              const active = step === i + 1
-              const complete = step > i + 1
-              return (
-                <div key={i} className={cn("flex flex-col items-center gap-1.5 transition-opacity", step >= i + 1 ? "opacity-100" : "opacity-30")}>
-                  <div className={cn(
-                    "w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold",
-                    complete ? "bg-primary border-primary text-primary-foreground" : active ? "bg-primary/10 border-primary text-primary" : "border-border text-muted-foreground"
-                  )}>
-                    {complete ? <Check className="w-2.5 h-2.5" /> : i + 1}
-                  </div>
-                  <div className={cn("text-[10px] text-center leading-tight", complete ? "text-primary" : active ? "text-foreground font-medium" : "text-muted-foreground")}>
-                    {s.label}
-                  </div>
+  const onAnalyze = () => {
+    if (!url.trim()) return
+    if (hasData) {
+      setConfirming(true)
+      return
+    }
+    void runScrape()
+  }
+
+  const onCancelScan = () => {
+    abortRef.current?.abort()
+  }
+
+  // The held-step subtitle shows cycling messages; intermediate steps show
+  // the current step label so the operator always sees what's happening.
+  const heldStep = step > SCAN_STEPS.length - 1
+  const subtitle = heldStep
+    ? HOLD_MESSAGES[holdIdx]
+    : SCAN_STEPS[Math.max(0, step - 1)]?.label ?? ""
+
+  const scanningOverlay = (
+    <Dialog
+      open={scanning}
+      onOpenChange={(open) => {
+        // Block close-by-overlay/escape — only the explicit Cancel button
+        // should abort an in-flight research run.
+        if (!open) return
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-2xl"
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        showCloseButton={false}
+      >
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3 min-w-0">
+            <span className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4 text-primary" />
+            </span>
+            <span className="truncate min-w-0" title={url}>
+              Researching {shortenQuery(url)}
+            </span>
+          </DialogTitle>
+          <DialogDescription
+            key={subtitle}
+            className="flex items-center gap-2 pt-1 text-sm animate-in fade-in duration-300"
+          >
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
+            <span className="truncate">{subtitle}</span>
+            <span className="ml-auto text-xs text-muted-foreground tabular-nums shrink-0">
+              {elapsed}s
+            </span>
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-7 gap-1.5 mt-2">
+          {SCAN_STEPS.map((s, i) => {
+            const active = step === i + 1
+            const complete = step > i + 1
+            return (
+              <div
+                key={i}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 transition-opacity",
+                  step >= i + 1 ? "opacity-100" : "opacity-30",
+                )}
+              >
+                <div
+                  className={cn(
+                    "w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-bold transition-colors",
+                    complete
+                      ? "bg-primary border-primary text-primary-foreground"
+                      : active
+                        ? "bg-primary/10 border-primary text-primary"
+                        : "border-border text-muted-foreground",
+                  )}
+                >
+                  {complete ? (
+                    <Check className="w-3 h-3" />
+                  ) : active ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    i + 1
+                  )}
                 </div>
-              )
-            })}
+                <div
+                  className={cn(
+                    "text-[10px] text-center leading-tight",
+                    complete
+                      ? "text-primary"
+                      : active
+                        ? "text-foreground font-medium"
+                        : "text-muted-foreground",
+                  )}
+                >
+                  {s.label}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="text-xs text-muted-foreground mt-2">
+          This usually takes 30–90 seconds. The page is locked while the
+          research runs to avoid losing your work.
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <Button variant="outline" size="sm" onClick={onCancelScan}>
+            Cancel
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+
+  if (error) {
+    return (
+      <Card className="mb-5 border-destructive">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
+              <AlertCircle className="w-4 h-4 text-destructive" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-foreground">Research failed</div>
+              <div className="text-xs text-muted-foreground mt-1 break-words">{error}</div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button size="sm" onClick={() => { setError(null); void runScrape() }}>Retry</Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { setError(null); setUrl(""); setExpanded(false) }}
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -668,47 +685,116 @@ function AutoFillCard({ onScrapeComplete, hasData }: { onScrapeComplete: (query:
   }
 
   return (
-    <Card className={cn("mb-5 transition-colors", expanded && "border-primary")}>
-      <CardContent className={cn("p-4", expanded && "pb-5")}>
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <Sparkles className="w-4 h-4 text-primary" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-foreground">
-              {hasData ? "Re-scan from website" : "Auto-fill from website"}
+    <>
+      <Card className={cn("mb-5 transition-colors", expanded && "border-primary")}>
+        <CardContent className={cn("p-4", expanded && "pb-5")}>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4 text-primary" />
             </div>
-            <div className="text-xs text-muted-foreground">
-              {hasData ? "Scan again to refresh data from public sources" : "Paste a hotel URL or name and AI will populate this knowledge base"}
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-foreground">
+                {hasData ? "Re-scan from website" : "Auto-fill from website"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {hasData ? "Scan again to refresh data from public sources" : "Paste a hotel URL or name and AI will populate this knowledge base"}
+              </div>
             </div>
+            {!expanded && (
+              <Button size="sm" onClick={() => setExpanded(true)} className="gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                {hasData ? "Re-scan" : "Auto-fill"}
+              </Button>
+            )}
           </div>
-          {!expanded && (
-            <Button size="sm" onClick={() => setExpanded(true)} className="gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              {hasData ? "Re-scan" : "Auto-fill"}
-            </Button>
+          {expanded && (
+            <div className="mt-4 flex gap-2">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="e.g. The Lake House on Canandaigua or lakehousecanandaigua.com"
+                  onKeyDown={(e) => e.key === "Enter" && onAnalyze()}
+                  maxLength={2000}
+                  autoFocus
+                />
+              </div>
+              <Button onClick={onAnalyze} disabled={!url.trim()}>Analyze</Button>
+              <Button variant="outline" onClick={() => { setExpanded(false); setUrl(""); }}>Cancel</Button>
+            </div>
           )}
-        </div>
-        {expanded && (
-          <div className="mt-4 flex gap-2">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="e.g. The Lake House on Canandaigua or lakehousecanandaigua.com"
-                onKeyDown={(e) => e.key === "Enter" && startScrape()}
-                autoFocus
-              />
-            </div>
-            <Button onClick={startScrape} disabled={!url.trim()}>Analyze</Button>
-            <Button variant="outline" onClick={() => { setExpanded(false); setUrl(""); }}>Cancel</Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Re-scan from website?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This replaces researched fields with fresh data. Any field you've manually edited will be kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setConfirming(false); void runScrape() }}>
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {scanningOverlay}
+    </>
   )
+}
+
+// Compress URLs to host+path so the scanning header doesn't blow out the
+// card width when the operator pastes a long tracking-param URL. Plain
+// names pass through unchanged.
+function shortenQuery(q: string): string {
+  const trimmed = q.trim()
+  try {
+    const u = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`)
+    const path = u.pathname === "/" ? "" : u.pathname
+    return u.hostname + path
+  } catch {
+    return trimmed
+  }
+}
+
+function formatScrapeError(e: unknown): string {
+  if (e instanceof ApiError) {
+    const body = e.body as { detail?: unknown } | undefined
+    const detail = body?.detail
+    if (typeof detail === "string") return detail
+    // FastAPI 422 returns `detail` as an array of {type, loc, msg, ...}
+    // Pydantic error objects. Surface the human-readable msg + loc so the
+    // operator can see what failed without React crashing on raw objects.
+    if (Array.isArray(detail)) {
+      const msgs = detail
+        .map((d) => {
+          if (!d || typeof d !== "object") return null
+          const obj = d as { msg?: unknown; loc?: unknown }
+          const msg = typeof obj.msg === "string" ? obj.msg : null
+          const loc = Array.isArray(obj.loc) ? obj.loc.join(".") : null
+          if (msg && loc) return `${loc}: ${msg}`
+          return msg
+        })
+        .filter((s): s is string => Boolean(s))
+      if (msgs.length > 0) return msgs.join("; ")
+    }
+    if (detail !== undefined) {
+      try {
+        return JSON.stringify(detail)
+      } catch {
+        // fall through
+      }
+    }
+    return `${e.status} ${e.message}`
+  }
+  return e instanceof Error ? e.message : String(e)
 }
 
 
@@ -718,9 +804,9 @@ function KnowledgeBaseTab({
   setData, 
   onScrapeComplete 
 }: { 
-  data: PropertyData; 
-  setData: React.Dispatch<React.SetStateAction<PropertyData>>; 
-  onScrapeComplete: (query: string) => void 
+  data: PropertyData;
+  setData: React.Dispatch<React.SetStateAction<PropertyData>>;
+  onScrapeComplete: (query: string, signal?: AbortSignal) => Promise<void>
 }) {
   const [sections, setSections] = useState<Section[]>(data.sections)
   const [activeSec, setActiveSec] = useState(data.sections[0]?.id || "overview")
@@ -728,28 +814,34 @@ function KnowledgeBaseTab({
   const [editValue, setEditValue] = useState("")
   const [addingSec, setAddingSec] = useState(false)
   const [newSecTitle, setNewSecTitle] = useState("")
-  const initializedRef = useRef(false)
 
-  // Initialize sections from data only once
+  // Two-way sync between local `sections` state and parent `data.sections`.
+  // Identity comparison on both sides keeps the round-trip from looping:
+  // when one side writes through the other, both refs match and the
+  // opposite effect no-ops on the next render.
+  //
+  // The previous "initialize once" pattern silently dropped parent updates
+  // after mount — research (or any other parent-driven setData) populated
+  // `data.sections` but the child's stale local copy kept rendering empty
+  // fields. The mirror-image hazard: a subsequent local edit would then
+  // push the stale snapshot back up, overwriting the research result.
   useEffect(() => {
-    if (!initializedRef.current) {
+    if (sections !== data.sections) {
       setSections(data.sections)
-      initializedRef.current = true
     }
+    // We intentionally only react to data.sections changing; the inner
+    // identity guard handles re-entry from our own up-sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.sections])
 
-  // Sync sections back to data when sections change (but not on initial load)
   useEffect(() => {
-    if (initializedRef.current) {
-      setData(prev => {
-        // Only update if sections actually changed
-        if (JSON.stringify(prev.sections) !== JSON.stringify(sections)) {
-          return { ...prev, sections }
-        }
-        return prev
-      })
+    if (sections !== data.sections) {
+      setData((prev) =>
+        prev.sections === sections ? prev : { ...prev, sections },
+      )
     }
-  }, [sections, setData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sections])
 
   const sec = sections.find((s) => s.id === activeSec)
   const hasData = !!data.pName
@@ -2382,8 +2474,60 @@ export default function KnowledgeBasePage() {
     }
   }, [hotelId, hotel?.display_name])
 
-  const handleScrapeComplete = (query: string) => {
-    setData(generateMockData(query))
+  // Run an LLM-powered research call for the given URL/property name and
+  // splice the result into `data`. Manual edits on existing fields are
+  // preserved across re-scans (see preserveEdits in lib/research.ts).
+  // On error, throws back up so AutoFillCard can render its error state.
+  const handleScrapeComplete = async (
+    query: string,
+    signal?: AbortSignal,
+  ) => {
+    if (!hotelId) {
+      throw new Error("No hotel selected")
+    }
+    const fresh = await researchProperty(
+      hotelId,
+      query,
+      data.sections as unknown as ResearchSection[],
+      signal,
+    )
+    // Surfaced in browser DevTools so future "I clicked Analyze and nothing
+    // happened" reports have evidence. Counts are cheap to compute and the
+    // full payload is one expand-click away if deeper inspection is needed.
+    const filledFields = fresh.sections.reduce(
+      (n, s) =>
+        n +
+        (s.fields ?? []).filter((f) => f.value && f.value.trim() !== "").length,
+      0,
+    )
+    console.info(
+      "[research] response received",
+      {
+        p_name: fresh.p_name,
+        p_type: fresh.p_type,
+        sections: fresh.sections.length,
+        filledFields,
+        sources: fresh.sources,
+        metadata: fresh.research_metadata,
+      },
+      fresh,
+    )
+    setData((prev) => {
+      const mergedSections = preserveEdits(
+        fresh.sections,
+        prev.sections as unknown as ResearchSection[],
+      ) as unknown as Section[]
+      return {
+        ...prev,
+        pName: fresh.p_name,
+        pType: fresh.p_type,
+        sections: mergedSections,
+        rooms: fresh.rooms as Room[],
+        sources: fresh.sources,
+        stats: computeStats(mergedSections),
+        updatedAt: new Date(),
+      }
+    })
   }
 
   const handleSave = async () => {
