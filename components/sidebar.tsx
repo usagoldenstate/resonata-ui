@@ -7,6 +7,7 @@ import { ChevronDown } from "lucide-react"
 
 import { featureFlags } from "@/lib/env"
 import { useHotel } from "@/lib/hotel-context"
+import { confirmDiscardUnsaved } from "@/lib/unsaved-guard"
 
 type NavItem = { label: string; href: string; visible: boolean }
 
@@ -36,6 +37,14 @@ export function Sidebar() {
 
   const visibleNavItems = navItems.filter((item) => item.visible)
 
+  // Block in-app navigation when the current page reports unsaved edits.
+  // Used on every <Link> click and the hotel <select> change handler.
+  const guardedNav = (e: React.MouseEvent) => {
+    if (!confirmDiscardUnsaved()) {
+      e.preventDefault()
+    }
+  }
+
   return (
     <aside className="w-52 bg-sidebar border-r border-sidebar-border flex flex-col">
       <div className="p-6">
@@ -59,7 +68,17 @@ export function Sidebar() {
         ) : (
           <select
             value={hotelId ?? ""}
-            onChange={(e) => setHotelId(e.target.value)}
+            onChange={(e) => {
+              if (e.target.value === hotelId) return
+              if (!confirmDiscardUnsaved()) {
+                // Revert the visible selection. The element is uncontrolled-ish
+                // here (re-renders from `hotelId` state), so resetting the
+                // value attribute syncs the DOM with our refusal to switch.
+                e.target.value = hotelId ?? ""
+                return
+              }
+              setHotelId(e.target.value)
+            }}
             className="w-full text-sm rounded-md border border-sidebar-border bg-background px-2 py-1.5"
           >
             {hotels.map((h) => (
@@ -79,6 +98,7 @@ export function Sidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  onClick={guardedNav}
                   className={`w-full text-left px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${
                     isActive
                       ? "text-sidebar-foreground font-medium"
@@ -123,6 +143,7 @@ export function Sidebar() {
                       <li key={subItem.href}>
                         <Link
                           href={subItem.href}
+                          onClick={guardedNav}
                           className={`w-full text-left px-4 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-2 ${
                             isSubActive
                               ? "text-sidebar-foreground font-medium"
@@ -146,6 +167,7 @@ export function Sidebar() {
       <div className="p-4 border-t border-sidebar-border">
         <Link
           href="/settings"
+          onClick={guardedNav}
           className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-sidebar-foreground transition-colors flex items-center gap-2"
         >
           <span className="w-1.5 h-1.5 rounded-full bg-transparent" />

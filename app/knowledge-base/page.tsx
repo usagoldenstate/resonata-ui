@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import {
   Building2,
@@ -70,6 +70,7 @@ import {
 import { cn } from "@/lib/utils"
 import { api, ApiError } from "@/lib/api"
 import { useHotel } from "@/lib/hotel-context"
+import { registerUnsavedGuard } from "@/lib/unsaved-guard"
 import {
   entriesToSections,
   sectionsToEntries,
@@ -812,6 +813,10 @@ function KnowledgeBaseTab({
   const [activeSec, setActiveSec] = useState(data.sections[0]?.id || "overview")
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editValue, setEditValue] = useState("")
+  // When Escape is used to bail out of an edit, blur fires next as the
+  // textarea unmounts. This ref tells the blur handler to skip the auto-commit
+  // for that one event so Escape acts as "discard typed value".
+  const skipBlurRef = useRef(false)
   const [addingSec, setAddingSec] = useState(false)
   const [newSecTitle, setNewSecTitle] = useState("")
 
@@ -1051,7 +1056,7 @@ function KnowledgeBaseTab({
                 onClick={() => setActiveSec(s.id)}
                 className={cn(
                   "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors mb-0.5",
-                  activeSec === s.id ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  activeSec === s.id ? "bg-primary/10 text-primary font-medium hover:bg-primary/15" : "text-muted-foreground hover:bg-primary/5 hover:text-foreground"
                 )}
               >
                 <span className={activeSec === s.id ? "text-primary" : "text-muted-foreground/70"}>
@@ -1138,22 +1143,30 @@ function KnowledgeBaseTab({
                             </div>
                             <div className="flex-1 min-w-0">
                               {editing ? (
-                                <div className="flex gap-2">
-                                  <Input
-                                    className="flex-1"
-                                    value={editValue}
-                                    onChange={(e) => setEditValue(e.target.value)}
-                                    autoFocus
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") { updateCatalogMeta(field.key, editValue); setEditingField(null) }
-                                      if (e.key === "Escape") setEditingField(null)
-                                    }}
-                                  />
-                                  <Button size="sm" onClick={() => { updateCatalogMeta(field.key, editValue); setEditingField(null) }}>Save</Button>
-                                  <Button size="icon" variant="outline" className="h-9 w-9" onClick={() => setEditingField(null)}>
-                                    <X className="w-4 h-4" />
-                                  </Button>
-                                </div>
+                                <Input
+                                  className="flex-1"
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  autoFocus
+                                  onBlur={() => {
+                                    if (skipBlurRef.current) {
+                                      skipBlurRef.current = false
+                                      return
+                                    }
+                                    updateCatalogMeta(field.key, editValue)
+                                    setEditingField(null)
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      updateCatalogMeta(field.key, editValue)
+                                      setEditingField(null)
+                                    }
+                                    if (e.key === "Escape") {
+                                      skipBlurRef.current = true
+                                      setEditingField(null)
+                                    }
+                                  }}
+                                />
                               ) : (
                                 <div className="flex items-center gap-2 cursor-pointer min-h-[28px]" onClick={() => startEdit(`meta_${field.key}`, field.value)}>
                                   {field.value ? (
@@ -1446,22 +1459,26 @@ function KnowledgeBaseTab({
                           </div>
                           <div className="flex-1 min-w-0">
                             {editing ? (
-                              <div className="flex gap-2">
-                                <textarea
-                                  className="flex-1 min-h-[36px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
-                                  value={editValue}
-                                  onChange={(e) => setEditValue(e.target.value)}
-                                  autoFocus
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" && e.metaKey) saveFieldEdit(field.key)
-                                    if (e.key === "Escape") setEditingField(null)
-                                  }}
-                                />
-                                <div className="flex flex-col gap-1">
-                                  <Button size="sm" onClick={() => saveFieldEdit(field.key)}>Save</Button>
-                                  <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>Cancel</Button>
-                                </div>
-                              </div>
+                              <textarea
+                                className="flex-1 w-full min-h-[36px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                autoFocus
+                                onBlur={() => {
+                                  if (skipBlurRef.current) {
+                                    skipBlurRef.current = false
+                                    return
+                                  }
+                                  saveFieldEdit(field.key)
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && e.metaKey) saveFieldEdit(field.key)
+                                  if (e.key === "Escape") {
+                                    skipBlurRef.current = true
+                                    setEditingField(null)
+                                  }
+                                }}
+                              />
                             ) : (
                               <div className="flex items-start gap-2 cursor-pointer min-h-[28px]" onClick={() => startEdit(field.key, field.value)}>
                                 {field.value ? (
@@ -1615,22 +1632,26 @@ function KnowledgeBaseTab({
                             </div>
                             <div className="flex-1 min-w-0">
                               {editing ? (
-                                <div className="flex gap-2">
-                                  <textarea
-                                    className="flex-1 min-h-[36px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
-                                    value={editValue}
-                                    onChange={(e) => setEditValue(e.target.value)}
-                                    autoFocus
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter" && e.metaKey) saveFieldEdit(field.key)
-                                      if (e.key === "Escape") setEditingField(null)
-                                    }}
-                                  />
-                                  <div className="flex flex-col gap-1">
-                                    <Button size="sm" onClick={() => saveFieldEdit(field.key)}>Save</Button>
-                                    <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>Cancel</Button>
-                                  </div>
-                                </div>
+                                <textarea
+                                  className="flex-1 w-full min-h-[36px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  autoFocus
+                                  onBlur={() => {
+                                    if (skipBlurRef.current) {
+                                      skipBlurRef.current = false
+                                      return
+                                    }
+                                    saveFieldEdit(field.key)
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && e.metaKey) saveFieldEdit(field.key)
+                                    if (e.key === "Escape") {
+                                      skipBlurRef.current = true
+                                      setEditingField(null)
+                                    }
+                                  }}
+                                />
                               ) : (
                                 <div className="flex items-start gap-2 cursor-pointer min-h-[28px]" onClick={() => startEdit(field.key, field.value)}>
                                   {field.value ? (
@@ -1708,22 +1729,26 @@ function KnowledgeBaseTab({
                         </div>
                         <div className="flex-1 min-w-0">
                           {editing ? (
-                            <div className="flex gap-2">
-                              <textarea
-                                className="flex-1 min-h-[36px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
-                                value={editValue}
-                                onChange={(e) => setEditValue(e.target.value)}
-                                autoFocus
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" && e.metaKey) saveFieldEdit(field.key)
-                                  if (e.key === "Escape") setEditingField(null)
-                                }}
-                              />
-                              <div className="flex flex-col gap-1">
-                                <Button size="sm" onClick={() => saveFieldEdit(field.key)}>Save</Button>
-                                <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>Cancel</Button>
-                              </div>
-                            </div>
+                            <textarea
+                              className="flex-1 w-full min-h-[36px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              autoFocus
+                              onBlur={() => {
+                                if (skipBlurRef.current) {
+                                  skipBlurRef.current = false
+                                  return
+                                }
+                                saveFieldEdit(field.key)
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && e.metaKey) saveFieldEdit(field.key)
+                                if (e.key === "Escape") {
+                                  skipBlurRef.current = true
+                                  setEditingField(null)
+                                }
+                              }}
+                            />
                           ) : (
                             <div className="flex items-start gap-2 cursor-pointer min-h-[28px]" onClick={() => startEdit(field.key, field.value)}>
                               {field.value ? (
@@ -2092,6 +2117,7 @@ function AgentConfigTab({
   registerSave,
   onStateChange,
   onErrorChange,
+  onDirtyChange,
 }: {
   hotelId: string
   registerSave: (fn: (() => Promise<void>) | null) => void
@@ -2099,6 +2125,7 @@ function AgentConfigTab({
     React.SetStateAction<"idle" | "saving" | "saved" | "error">
   >
   onErrorChange: React.Dispatch<React.SetStateAction<string | null>>
+  onDirtyChange: (dirty: boolean) => void
 }) {
   const [phoneParts, setPhoneParts] = useState<PhoneParts>(EMPTY_PARTS)
   // Holds a previously-saved value the three-field input can't parse (e.g.
@@ -2111,27 +2138,65 @@ function AgentConfigTab({
   const [agentName, setAgentName] = useState("")
   const [firstMessage, setFirstMessage] = useState("")
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Saved-baseline JSON snapshot of the form. Null while loading or before
+  // first successful load. Compared against the live snapshot to derive dirty.
+  const [savedJson, setSavedJson] = useState<string | null>(null)
+
+  const formSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        phoneParts,
+        agentName,
+        firstMessage,
+        maxCallMin,
+        transferRules,
+        preferredRateCode,
+      }),
+    [
+      phoneParts,
+      agentName,
+      firstMessage,
+      maxCallMin,
+      transferRules,
+      preferredRateCode,
+    ],
+  )
+  const dirty = savedJson !== null && formSnapshot !== savedJson
 
   useEffect(() => {
     let cancelled = false
     setLoadError(null)
+    setSavedJson(null)
     ;(async () => {
       try {
         const hotel = await api<HotelDetail>(`/api/v1/admin/hotels/${hotelId}`)
         if (cancelled) return
         const parsed = parsePhoneParts(hotel.transfer_phone_number)
-        if (parsed) {
-          setPhoneParts(parsed)
-          setLegacyPhone(null)
-        } else {
-          setPhoneParts(EMPTY_PARTS)
-          setLegacyPhone(hotel.transfer_phone_number || null)
-        }
-        setAgentName(hotel.agent_name ?? "")
-        setFirstMessage(hotel.first_message ?? "")
-        setMaxCallMin(String(hotel.max_call_minutes ?? "6"))
-        setTransferRules(hotel.transfer_rules ?? "")
-        setPreferredRateCode(String(hotel.preferred_rate_code ?? ""))
+        const loadedPhoneParts = parsed ?? EMPTY_PARTS
+        const loadedAgentName = hotel.agent_name ?? ""
+        const loadedFirstMessage = hotel.first_message ?? ""
+        const loadedMaxCallMin = String(hotel.max_call_minutes ?? "6")
+        const loadedTransferRules = hotel.transfer_rules ?? ""
+        const loadedPreferredRateCode = String(hotel.preferred_rate_code ?? "")
+        setPhoneParts(loadedPhoneParts)
+        setLegacyPhone(parsed ? null : hotel.transfer_phone_number || null)
+        setAgentName(loadedAgentName)
+        setFirstMessage(loadedFirstMessage)
+        setMaxCallMin(loadedMaxCallMin)
+        setTransferRules(loadedTransferRules)
+        setPreferredRateCode(loadedPreferredRateCode)
+        // Baseline must match the shape `formSnapshot` produces, so dirty
+        // reads false immediately after load.
+        setSavedJson(
+          JSON.stringify({
+            phoneParts: loadedPhoneParts,
+            agentName: loadedAgentName,
+            firstMessage: loadedFirstMessage,
+            maxCallMin: loadedMaxCallMin,
+            transferRules: loadedTransferRules,
+            preferredRateCode: loadedPreferredRateCode,
+          }),
+        )
       } catch (e) {
         if (cancelled) return
         setLoadError(
@@ -2147,6 +2212,37 @@ function AgentConfigTab({
       cancelled = true
     }
   }, [hotelId])
+
+  // Push dirty state up so the parent can show the indicator next to the
+  // top-level Save button.
+  useEffect(() => {
+    onDirtyChange(dirty)
+  }, [dirty, onDirtyChange])
+
+  // In-app navigation guard (sidebar links, hotel selector). Ref keeps the
+  // registered closure stable across dirty toggles.
+  const dirtyRef = useRef(dirty)
+  useEffect(() => {
+    dirtyRef.current = dirty
+  }, [dirty])
+  useEffect(() => {
+    return registerUnsavedGuard(() =>
+      dirtyRef.current
+        ? "You have unsaved Agent Configuration changes. Leave anyway?"
+        : null,
+    )
+  }, [])
+
+  // Refresh/tab-close guard.
+  useEffect(() => {
+    if (!dirty) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ""
+    }
+    window.addEventListener("beforeunload", handler)
+    return () => window.removeEventListener("beforeunload", handler)
+  }, [dirty])
 
   const handleSave = async () => {
     const normalizedPhone = buildE164FromParts(phoneParts)
@@ -2170,6 +2266,9 @@ function AgentConfigTab({
           transfer_rules: transferRules || null,
         },
       })
+      // Snapshot at save time matches the form right now; use it as the new
+      // baseline so dirty drops back to false.
+      setSavedJson(formSnapshot)
       onStateChange("saved")
       setTimeout(() => onStateChange((s) => (s === "saved" ? "idle" : s)), 3000)
     } catch (e) {
@@ -2413,12 +2512,24 @@ export default function KnowledgeBasePage() {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // Saved-baseline JSON of the KB. We compare against the current serialization
+  // to detect unsaved edits. Null while loading or before first successful load
+  // so the dirty indicator doesn't flash during hotel switches.
+  const [savedEntriesJson, setSavedEntriesJson] = useState<string | null>(null)
+  const currentEntriesJson = useMemo(
+    () => JSON.stringify(sectionsToEntries(data.sections)),
+    [data.sections],
+  )
+  const kbDirty =
+    savedEntriesJson !== null && currentEntriesJson !== savedEntriesJson
+
   // Agent Config tab owns its own form state but delegates save-state and the
   // save trigger to the parent, so the page-level top Save button can drive it.
   const [configSaveState, setConfigSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle")
   const [configSaveError, setConfigSaveError] = useState<string | null>(null)
+  const [configDirty, setConfigDirty] = useState(false)
   const configSaveRef = useRef<(() => Promise<void>) | null>(null)
   const registerConfigSave = useCallback(
     (fn: (() => Promise<void>) | null) => {
@@ -2437,6 +2548,7 @@ export default function KnowledgeBasePage() {
     let cancelled = false
     setLoadState("loading")
     setLoadError(null)
+    setSavedEntriesJson(null)
     ;(async () => {
       try {
         const entries = await api<KnowledgeEntry[]>(
@@ -2456,6 +2568,7 @@ export default function KnowledgeBasePage() {
           sections: hydrated,
           updatedAt: new Date(),
         }))
+        setSavedEntriesJson(JSON.stringify(sectionsToEntries(hydrated)))
         setLoadState("ready")
       } catch (e) {
         if (cancelled) return
@@ -2473,6 +2586,33 @@ export default function KnowledgeBasePage() {
       cancelled = true
     }
   }, [hotelId, hotel?.display_name])
+
+  // Refresh/tab-close guard. Fires the browser's native "Leave site?" prompt
+  // when the KB has unsaved edits.
+  useEffect(() => {
+    if (!kbDirty) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ""
+    }
+    window.addEventListener("beforeunload", handler)
+    return () => window.removeEventListener("beforeunload", handler)
+  }, [kbDirty])
+
+  // In-app navigation guard. Sidebar links and the hotel selector check this
+  // via lib/unsaved-guard before changing route/hotel. Ref keeps the registered
+  // closure stable so we don't re-register on every dirty toggle.
+  const kbDirtyRef = useRef(kbDirty)
+  useEffect(() => {
+    kbDirtyRef.current = kbDirty
+  }, [kbDirty])
+  useEffect(() => {
+    return registerUnsavedGuard(() =>
+      kbDirtyRef.current
+        ? "You have unsaved Knowledge Base changes. Leave anyway?"
+        : null,
+    )
+  }, [])
 
   // Run an LLM-powered research call for the given URL/property name and
   // splice the result into `data`. Manual edits on existing fields are
@@ -2540,6 +2680,7 @@ export default function KnowledgeBasePage() {
         method: "PUT",
         body: { entries },
       })
+      setSavedEntriesJson(JSON.stringify(entries))
       setSaveState("saved")
       // Ephemeral success flash — clear after a few seconds so repeated
       // saves can show the indicator again.
@@ -2618,8 +2759,21 @@ export default function KnowledgeBasePage() {
               if (activeTab === "config") return configSaveRef.current?.()
               return handleSave()
             }
+            const tabDirty =
+              (activeTab === "kb" && kbDirty) ||
+              (activeTab === "config" && configDirty)
+            const showDirty =
+              tabDirty &&
+              topSaveState !== "saving" &&
+              topSaveState !== "saved"
             return (
               <div className="flex items-center gap-3">
+                {showDirty && (
+                  <span className="text-xs text-amber-600 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    Unsaved changes
+                  </span>
+                )}
                 {topSaveState === "saved" && (
                   <span className="text-xs text-emerald-600 flex items-center gap-1">
                     <Check className="w-3.5 h-3.5" /> Saved
@@ -2660,20 +2814,25 @@ export default function KnowledgeBasePage() {
           ))}
         </div>
 
-        {/* Tab Content */}
+        {/* Tab Content. Always-mount + display-toggle so each tab keeps its
+            own React state across switches (in particular AgentConfigTab,
+            whose form fields live in local useState). */}
         <div className="flex-1 overflow-auto bg-muted/30">
-          {activeTab === "kb" && (
+          <div className={activeTab === "kb" ? "" : "hidden"}>
             <KnowledgeBaseTab data={data} setData={setData} onScrapeComplete={handleScrapeComplete} />
-          )}
-          {activeTab === "rooms" && <RoomMappingTab hotelId={hotelId} />}
-          {activeTab === "config" && (
+          </div>
+          <div className={activeTab === "rooms" ? "" : "hidden"}>
+            <RoomMappingTab hotelId={hotelId} />
+          </div>
+          <div className={activeTab === "config" ? "" : "hidden"}>
             <AgentConfigTab
               hotelId={hotelId}
               registerSave={registerConfigSave}
               onStateChange={setConfigSaveState}
               onErrorChange={setConfigSaveError}
+              onDirtyChange={setConfigDirty}
             />
-          )}
+          </div>
         </div>
       </div>
     </div>
