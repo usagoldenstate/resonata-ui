@@ -22,8 +22,7 @@ const navItems: NavItem[] = [
 ]
 
 const reportingSubItems = [
-  { label: "Call Volume", href: "/reporting/call-volume" },
-  { label: "Conversion Rate", href: "/reporting/conversion-rate" },
+  { label: "Call Metrics", href: "/reporting/call-metrics" },
   { label: "Not Booked Reasons", href: "/reporting/not-booked" },
   { label: "Revenue", href: "/reporting/revenue" },
   { label: "Booking Lead Time", href: "/reporting/lead-time" },
