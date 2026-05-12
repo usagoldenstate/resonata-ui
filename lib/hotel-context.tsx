@@ -1,6 +1,8 @@
 "use client"
 
-// Selected-hotel context. Fetches the hotel list once on mount, persists the
+// Selected-hotel context for the internal sandbox UI. Customer launch must
+// replace this admin-backed list with /me and /me/hotels authorization data.
+// Fetches the hotel list once on mount, persists the
 // current selection in localStorage so a reload lands back on the same hotel,
 // and exposes a setter the hotel picker calls. Every page that talks to the
 // backend reads `hotelId` from here.

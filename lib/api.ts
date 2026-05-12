@@ -27,6 +27,19 @@ type Options = {
   signal?: AbortSignal
 }
 
+type QueryValue = string | number | boolean | null | undefined
+
+function withQuery(path: string, params: Record<string, QueryValue>): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      search.set(key, String(value))
+    }
+  }
+  const query = search.toString()
+  return query ? `${path}?${query}` : path
+}
+
 export async function api<T = unknown>(path: string, opts: Options = {}): Promise<T> {
   if (!env.apiUrl) {
     throw new ApiError(
@@ -65,4 +78,78 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
     return undefined as T
   }
   return (await res.json()) as T
+}
+
+export type CallMetricsSummary = {
+  total_calls: number
+  calls_booked: number
+  conversion_rate: number
+  missed_opportunities: number
+  bookings_last_updated_at: string | null
+}
+
+export type CallMetricsHourlyResponse = {
+  coverage_days: number
+  hours: Array<{
+    hour: number
+    calls: number
+    avg_calls: number
+  }>
+}
+
+export type CallMetricsDailyRow = {
+  date: string
+  calls: number
+  booked: number
+}
+
+export type CallMetricsMonthlyRow = {
+  month: string
+  calls: number
+  booked: number
+}
+
+type CallMetricsBaseParams = {
+  hotel_id: string
+  min_duration_seconds?: number
+}
+
+export function fetchCallMetricsSummary(
+  params: CallMetricsBaseParams & { start_date: string; end_date: string },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<CallMetricsSummary>(
+    withQuery("/api/v1/reporting/call-metrics/summary", params),
+    opts,
+  )
+}
+
+export function fetchCallMetricsHourly(
+  params: CallMetricsBaseParams,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<CallMetricsHourlyResponse>(
+    withQuery("/api/v1/reporting/call-metrics/volume/hourly", params),
+    opts,
+  )
+}
+
+export function fetchCallMetricsDaily(
+  params: CallMetricsBaseParams & { start_date: string; end_date: string },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<CallMetricsDailyRow[]>(
+    withQuery("/api/v1/reporting/call-metrics/volume/daily", params),
+    opts,
+  )
+}
+
+export function fetchCallMetricsMonthly(
+  params: CallMetricsBaseParams & { start_month: string; end_month: string },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<CallMetricsMonthlyRow[]>(
+    withQuery("/api/v1/reporting/call-metrics/volume/monthly", params),
+    opts,
+  )
 }
