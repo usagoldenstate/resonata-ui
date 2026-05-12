@@ -141,7 +141,7 @@ const allCalls = [
     { speaker: "Agent", text: "Perfect. Two nights in a standard room, $340 total. Self-parking noted. May I have your name?" },
     { speaker: "Guest", text: "Brandon H." },
   ]},
-  { id: 16, guest: "Patricia W.", phone: "+1 (555) 678-9013", email: "patricia.w@email.com", callDate: "Apr 5, 2026", bookingDate: "Apr 11-12, 2026", time: "2:15 PM", duration: "4m 45s", outcome: "Not Booked", value: "—", adr: "—", notes: "Price too high", transcript: [
+  { id: 16, guest: "Patricia W.", phone: "+1 (555) 678-9013", email: "patricia.w@email.com", callDate: "Apr 5, 2026", bookingDate: "Apr 11-12, 2026", time: "2:15 PM", duration: "4m 45s", outcome: "Not Booked", notBookedReason: "Price", value: "—", adr: "—", notes: "Price too high", transcript: [
     { speaker: "Agent", text: "Good afternoon, The Grand Monarch Hotel. How may I help you?" },
     { speaker: "Guest", text: "Hi, I'm looking for a room for next weekend. What are your rates?" },
     { speaker: "Agent", text: "For next weekend, our standard rooms start at $195 per night, and our deluxe rooms are $275 per night." },
@@ -151,7 +151,7 @@ const allCalls = [
     { speaker: "Agent", text: "I understand. If you change your mind, feel free to call back. We also have last-minute deals that sometimes become available." },
     { speaker: "Guest", text: "Okay, thank you for your time." },
   ]},
-  { id: 17, guest: "Steven R.", phone: "+1 (555) 789-0124", email: "steven.r@email.com", callDate: "Apr 5, 2026", bookingDate: "May 22-25, 2026", time: "11:30 AM", duration: "3m 20s", outcome: "Not Booked", value: "—", adr: "—", notes: "No availability for requested dates", transcript: [
+  { id: 17, guest: "Steven R.", phone: "+1 (555) 789-0124", email: "steven.r@email.com", callDate: "Apr 5, 2026", bookingDate: "May 22-25, 2026", time: "11:30 AM", duration: "3m 20s", outcome: "Not Booked", notBookedReason: "Availability", value: "—", adr: "—", notes: "No availability for requested dates", transcript: [
     { speaker: "Agent", text: "The Grand Monarch Hotel, this is Casey speaking." },
     { speaker: "Guest", text: "Hi Casey, I'd like to book a room for the Memorial Day weekend." },
     { speaker: "Agent", text: "Let me check availability for you... I'm sorry, but we're fully booked for Memorial Day weekend. It's one of our busiest times." },
@@ -160,7 +160,7 @@ const allCalls = [
     { speaker: "Guest", text: "No, we specifically need that weekend. I'll try somewhere else. Thanks anyway." },
     { speaker: "Agent", text: "I'm sorry we couldn't accommodate you. Please consider us for future stays!" },
   ]},
-  { id: 18, guest: "Karen L.", phone: "+1 (555) 890-1235", email: "karen.l@email.com", callDate: "Apr 4, 2026", bookingDate: "Jun 5-8, 2026", time: "3:45 PM", duration: "5m 10s", outcome: "Not Booked", value: "—", adr: "—", notes: "Chose competitor hotel", transcript: [
+  { id: 18, guest: "Karen L.", phone: "+1 (555) 890-1235", email: "karen.l@email.com", callDate: "Apr 4, 2026", bookingDate: "Jun 5-8, 2026", time: "3:45 PM", duration: "5m 10s", outcome: "Not Booked", notBookedReason: "Other", value: "—", adr: "—", notes: "Chose competitor hotel", transcript: [
     { speaker: "Agent", text: "Thank you for calling The Grand Monarch Hotel." },
     { speaker: "Guest", text: "Hi, I'm comparing hotels for a family reunion. Can you tell me about your group rates?" },
     { speaker: "Agent", text: "Absolutely! For groups of 10 rooms or more, we offer a 15% discount. We also have meeting spaces available." },
@@ -169,7 +169,7 @@ const allCalls = [
     { speaker: "Guest", text: "I appreciate you checking, but I think we'll go with the Seaside Resort. The breakfast is important for our group." },
     { speaker: "Agent", text: "I understand. Thank you for considering us, and please keep us in mind for future events." },
   ]},
-  { id: 19, guest: "Daniel M.", phone: "+1 (555) 901-2346", email: "daniel.m@email.com", callDate: "Apr 4, 2026", bookingDate: "Apr 18-20, 2026", time: "10:00 AM", duration: "2m 55s", outcome: "Not Booked", value: "—", adr: "—", notes: "Pet policy issue", transcript: [
+  { id: 19, guest: "Daniel M.", phone: "+1 (555) 901-2346", email: "daniel.m@email.com", callDate: "Apr 4, 2026", bookingDate: "Apr 18-20, 2026", time: "10:00 AM", duration: "2m 55s", outcome: "Not Booked", notBookedReason: "Policy", value: "—", adr: "—", notes: "Pet policy issue", transcript: [
     { speaker: "Agent", text: "Good morning, The Grand Monarch Hotel." },
     { speaker: "Guest", text: "Hi, do you allow pets? I have a large dog." },
     { speaker: "Agent", text: "We do accept pets, but there's a size limit of 25 pounds and a $50 per night pet fee." },
@@ -186,6 +186,8 @@ const timespanOptions = [
   { value: "90", label: "Last 90 days" },
   { value: "year", label: "This year" },
 ]
+
+const notBookedReasonOptions = ["Price", "Availability", "Amenities", "Policy", "Other"]
 
 function OutcomeBadge({ outcome }: { outcome: string }) {
   const styles: Record<string, string> = {
@@ -204,6 +206,7 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
 export default function CallLogPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [outcomeFilter, setOutcomeFilter] = useState("all")
+  const [notBookedReasonFilter, setNotBookedReasonFilter] = useState("all")
   const [timespan, setTimespan] = useState("30")
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const [dateFrom, setDateFrom] = useState("")
@@ -254,6 +257,8 @@ export default function CallLogPage() {
       call.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       call.notes.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesOutcome = outcomeFilter === "all" || call.outcome.toLowerCase() === outcomeFilter
+    const matchesNotBookedReason = notBookedReasonFilter === "all" ||
+      (call.outcome === "Not Booked" && call.notBookedReason === notBookedReasonFilter)
     
     // Date filtering - supports both call date and booking date
     let matchesDate = true
@@ -298,7 +303,7 @@ export default function CallLogPage() {
       }
     }
 
-    return matchesSearch && matchesOutcome && matchesDate && matchesTime
+    return matchesSearch && matchesOutcome && matchesNotBookedReason && matchesDate && matchesTime
   })
 
   const totalCalls = filteredCalls.length
@@ -416,6 +421,19 @@ export default function CallLogPage() {
               <SelectItem value="missed">Missed</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={notBookedReasonFilter} onValueChange={setNotBookedReasonFilter}>
+            <SelectTrigger className="w-52 bg-card border-border">
+              <SelectValue placeholder="Not booked reasons" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Not booked reasons</SelectItem>
+              {notBookedReasonOptions.map((reason) => (
+                <SelectItem key={reason} value={reason}>
+                  {reason}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           
           {/* Date Range Filters */}
           <div className="flex items-center gap-2">
@@ -477,7 +495,7 @@ export default function CallLogPage() {
           </div>
 
           {/* Clear Filters */}
-          {(dateFrom || dateTo || timeFrom || timeTo) && (
+          {(dateFrom || dateTo || timeFrom || timeTo || notBookedReasonFilter !== "all") && (
             <Button
               variant="ghost"
               size="sm"
@@ -486,6 +504,7 @@ export default function CallLogPage() {
                 setDateTo("")
                 setTimeFrom("")
                 setTimeTo("")
+                setNotBookedReasonFilter("all")
               }}
               className="text-muted-foreground hover:text-foreground"
             >
@@ -524,6 +543,7 @@ export default function CallLogPage() {
                     </button>
                   </th>
 <th className="p-4 font-medium">Outcome</th>
+  <th className="p-4 font-medium">Not Booked Reason</th>
   <th className="p-4 font-medium">
   <button className="flex items-center gap-1 hover:text-foreground">
   Stay Value <ArrowUpDown className="w-3 h-3" />
@@ -563,13 +583,22 @@ export default function CallLogPage() {
                       <td className="p-4">
                         <OutcomeBadge outcome={call.outcome} />
                       </td>
+                      <td className="p-4">
+                        {call.notBookedReason ? (
+                          <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
+                            {call.notBookedReason}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
 <td className="p-4 text-muted-foreground">{call.value}</td>
   <td className="p-4 text-muted-foreground">{call.adr}</td>
   <td className="p-4 text-muted-foreground max-w-xs truncate">{call.notes}</td>
                     </tr>
                     {expandedRow === call.id && (
                       <tr key={`${call.id}-transcript`} className="bg-muted/20">
-                        <td colSpan={11} className="p-0">
+                        <td colSpan={12} className="p-0">
                           <div className="p-6 border-b border-border">
                             <h4 className="text-sm font-semibold text-foreground mb-4">Call Transcript</h4>
                             <div className="space-y-3 max-h-80 overflow-y-auto">

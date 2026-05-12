@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Building2, Phone, Clock, Users, Mail, Globe, Save, FileText, X, Plus, ChevronDown, ChevronUp } from "lucide-react"
+import { Building2, Phone, Users, Mail, Globe, Save, FileText, X, Plus, ChevronDown, ChevronUp } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -38,7 +38,6 @@ export default function SettingsPage() {
     { id: "conversion", name: "Conversion Analytics", description: "Booking conversion rates" },
     { id: "not-booked", name: "Not Booked Analysis", description: "Why guests didn't book" },
     { id: "revenue", name: "Revenue Summary", description: "Room and upsell revenue" },
-    { id: "lead-time", name: "Booking Lead Time", description: "Advance booking patterns" },
   ]
 
   // Each subscriber has individual daily/weekly preferences per report
@@ -61,9 +60,6 @@ export default function SettingsPage() {
     "revenue": [
       { email: "manager@hotel.com", daily: true, weekly: true },
       { email: "accounting@hotel.com", daily: true, weekly: true },
-    ],
-    "lead-time": [
-      { email: "manager@hotel.com", daily: false, weekly: true },
     ],
   })
 

@@ -16,16 +16,14 @@ function flag(raw: string | undefined): boolean {
 export const featureFlags = {
   showDashboard: flag(process.env.NEXT_PUBLIC_SHOW_DASHBOARD),
   showReporting: flag(process.env.NEXT_PUBLIC_SHOW_REPORTING),
-  showCallLog: flag(process.env.NEXT_PUBLIC_SHOW_CALL_LOG),
-  showFaqs: flag(process.env.NEXT_PUBLIC_SHOW_FAQS),
+  showCallLog: true,
+  showFaqs: true,
 } as const
 
 // Hidden-page routes that the middleware should redirect. Keep in one
 // place so sidebar + middleware stay in sync.
 export const pageFlagByPrefix: Array<{ prefix: string; visible: boolean }> = [
   { prefix: "/reporting", visible: featureFlags.showReporting },
-  { prefix: "/call-log", visible: featureFlags.showCallLog },
-  { prefix: "/faqs", visible: featureFlags.showFaqs },
 ]
 
 // Special-case: the dashboard lives at "/" — matching by prefix would match

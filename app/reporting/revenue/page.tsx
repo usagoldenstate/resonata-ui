@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Sidebar } from "@/components/sidebar"
-import { TrendingUp, TrendingDown, DollarSign } from "lucide-react"
+import { TrendingUp } from "lucide-react"
 
 // Monthly revenue data
 const monthlyRevenue = [
@@ -53,14 +53,36 @@ const timespanOptions = [
   { value: "year", label: "This year" },
 ]
 
+const getTimespanScale = (value: string) => {
+  if (value === "year") {
+    return 1
+  }
+
+  return Number(value) / 365
+}
+
 export default function RevenueReportingPage() {
   const [timespan, setTimespan] = useState("year")
 
-  const totalRoomRevenue = monthlyRevenue.reduce((acc, m) => acc + m.roomRevenue, 0)
-  const totalUpsellRevenue = monthlyRevenue.reduce((acc, m) => acc + m.upsellRevenue, 0)
+  const timespanScale = getTimespanScale(timespan)
+  const filteredRevenueByRoomType = revenueByRoomType.map((room) => {
+    const bookings = Math.max(1, Math.round(room.bookings * timespanScale))
+    const revenue = Math.round(room.revenue * timespanScale)
+
+    return {
+      ...room,
+      revenue,
+      bookings,
+      avgRate: Math.round(revenue / bookings),
+    }
+  })
+
+  const totalRoomRevenue = filteredRevenueByRoomType.reduce((acc, r) => acc + r.revenue, 0)
+  const annualUpsellRevenue = monthlyRevenue.reduce((acc, m) => acc + m.upsellRevenue, 0)
+  const totalUpsellRevenue = Math.round(annualUpsellRevenue * timespanScale)
   const totalRevenue = totalRoomRevenue + totalUpsellRevenue
   const maxMonthlyRevenue = Math.max(...monthlyRevenue.map(m => m.roomRevenue + m.upsellRevenue))
-  const totalBookings = revenueByRoomType.reduce((acc, r) => acc + r.bookings, 0)
+  const totalBookings = filteredRevenueByRoomType.reduce((acc, r) => acc + r.bookings, 0)
   const avgDailyRate = Math.round(totalRoomRevenue / totalBookings)
   const maxUpsellRevenue = Math.max(...upsellCategories.map(c => c.revenue))
 
@@ -72,7 +94,7 @@ export default function RevenueReportingPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-2xl font-semibold text-foreground">Revenue Reporting</h2>
-            <p className="text-sm text-muted-foreground">Track room and upsell revenue performance</p>
+            <p className="text-sm text-muted-foreground">Booked revenue via our agent</p>
           </div>
           <Select value={timespan} onValueChange={setTimespan}>
             <SelectTrigger className="w-40 bg-card border-border">
@@ -88,50 +110,102 @@ export default function RevenueReportingPage() {
           </Select>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="border border-border rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide">
+                Selected Time Span Metrics
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Updates when the date range changes
+              </p>
+            </div>
+            <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded">
+              {timespanOptions.find((option) => option.value === timespan)?.label}
+            </span>
+          </div>
+
+          {/* Summary Cards */}
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                  Total Revenue
+                </p>
+                <p className="text-2xl font-semibold text-card-foreground">${(totalRevenue / 1000).toFixed(1)}k</p>
+                <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
+                  <TrendingUp className="w-3 h-3" /> 15% vs prior year
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                  Room Revenue
+                </p>
+                <p className="text-2xl font-semibold text-card-foreground">${(totalRoomRevenue / 1000).toFixed(1)}k</p>
+                <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
+                  <TrendingUp className="w-3 h-3" /> 12% vs prior year
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                  Avg Daily Rate (ADR)
+                </p>
+                <p className="text-2xl font-semibold text-card-foreground">${avgDailyRate}</p>
+                <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
+                  <TrendingUp className="w-3 h-3" /> 8% vs prior year
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Revenue by Room Type */}
           <Card className="border-border">
-            <CardContent className="p-4">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                Total Revenue
+            <CardContent className="p-6">
+              <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-1">
+                Revenue by Room Type
+              </h3>
+              <p className="text-xs text-muted-foreground mb-6">
+                Performance by accommodation category
               </p>
-              <p className="text-2xl font-semibold text-card-foreground">${(totalRevenue / 1000).toFixed(1)}k</p>
-              <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
-                <TrendingUp className="w-3 h-3" /> 15% vs prior year
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                Room Revenue
-              </p>
-              <p className="text-2xl font-semibold text-card-foreground">${(totalRoomRevenue / 1000).toFixed(1)}k</p>
-              <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
-                <TrendingUp className="w-3 h-3" /> 12% vs prior year
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                Upsell Revenue
-              </p>
-              <p className="text-2xl font-semibold text-card-foreground">${(totalUpsellRevenue / 1000).toFixed(1)}k</p>
-              <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
-                <TrendingUp className="w-3 h-3" /> 24% vs prior year
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                Avg Daily Rate (ADR)
-              </p>
-              <p className="text-2xl font-semibold text-card-foreground">${avgDailyRate}</p>
-              <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
-                <TrendingUp className="w-3 h-3" /> 8% vs prior year
-              </p>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left p-3 text-xs font-medium text-muted-foreground">Room Type</th>
+                      <th className="text-right p-3 text-xs font-medium text-muted-foreground">Revenue</th>
+                      <th className="text-right p-3 text-xs font-medium text-muted-foreground">Bookings</th>
+                      <th className="text-right p-3 text-xs font-medium text-muted-foreground">Avg Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRevenueByRoomType.map((room) => (
+                      <tr key={room.type} className="border-b border-border last:border-0">
+                        <td className="p-3 text-sm text-card-foreground">{room.type}</td>
+                        <td className="p-3 text-sm text-card-foreground text-right font-medium">${(room.revenue / 1000).toFixed(0)}k</td>
+                        <td className="p-3 text-sm text-muted-foreground text-right">{room.bookings.toLocaleString()}</td>
+                        <td className="p-3 text-sm text-muted-foreground text-right">${room.avgRate}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-muted/50">
+                      <td className="p-3 text-sm font-medium text-card-foreground">Total</td>
+                      <td className="p-3 text-sm font-medium text-card-foreground text-right">
+                        ${(filteredRevenueByRoomType.reduce((acc, r) => acc + r.revenue, 0) / 1000).toFixed(0)}k
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground text-right">
+                        {filteredRevenueByRoomType.reduce((acc, r) => acc + r.bookings, 0).toLocaleString()}
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground text-right">—</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -145,7 +219,7 @@ export default function RevenueReportingPage() {
             <p className="text-xs text-muted-foreground mb-6">
               Room revenue vs upsell revenue by month
             </p>
-            
+
             <div className="flex items-end gap-2 h-56 mb-4">
               {monthlyRevenue.map((month) => {
                 const total = month.roomRevenue + month.upsellRevenue
@@ -155,11 +229,11 @@ export default function RevenueReportingPage() {
                   <div key={month.month} className="flex-1 flex flex-col items-center gap-1">
                     <div className="w-full flex flex-col items-center justify-end h-48">
                       <div className="w-full max-w-10 flex flex-col relative group cursor-pointer">
-                        <div 
+                        <div
                           className="w-full bg-[#c4a84b] rounded-t transition-all hover:opacity-80"
                           style={{ height: `${upsellHeight * 1.8}px` }}
                         />
-                        <div 
+                        <div
                           className="w-full bg-[#6b7a4a] transition-all hover:opacity-80"
                           style={{ height: `${roomHeight * 1.8}px` }}
                         />
@@ -187,87 +261,38 @@ export default function RevenueReportingPage() {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-2 gap-6">
-          {/* Upsell Categories */}
-          <Card className="border-border">
-            <CardContent className="p-6">
-              <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-1">
-                Upsell Categories
-              </h3>
-              <p className="text-xs text-muted-foreground mb-6">
-                Revenue breakdown by upsell type
-              </p>
-              
-              <div className="space-y-4">
-                {upsellCategories.map((category) => (
-                  <div key={category.name}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm text-card-foreground">{category.name}</span>
-                      <span className="text-sm font-medium text-card-foreground">${(category.revenue / 1000).toFixed(1)}k</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-[#c4a84b] rounded-full"
-                          style={{ width: `${(category.revenue / maxUpsellRevenue) * 100}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-muted-foreground w-12 text-right">{category.percentage}%</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">{category.count} transactions</p>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+        {/* Upsell Categories */}
+        <Card className="border-border">
+          <CardContent className="p-6">
+            <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-1">
+              Upsell Categories
+            </h3>
+            <p className="text-xs text-muted-foreground mb-6">
+              Revenue breakdown by upsell type
+            </p>
 
-          {/* Revenue by Room Type */}
-          <Card className="border-border">
-            <CardContent className="p-6">
-              <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-1">
-                Revenue by Room Type
-              </h3>
-              <p className="text-xs text-muted-foreground mb-6">
-                Performance by accommodation category
-              </p>
-              
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left p-3 text-xs font-medium text-muted-foreground">Room Type</th>
-                      <th className="text-right p-3 text-xs font-medium text-muted-foreground">Revenue</th>
-                      <th className="text-right p-3 text-xs font-medium text-muted-foreground">Bookings</th>
-                      <th className="text-right p-3 text-xs font-medium text-muted-foreground">Avg Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {revenueByRoomType.map((room) => (
-                      <tr key={room.type} className="border-b border-border last:border-0">
-                        <td className="p-3 text-sm text-card-foreground">{room.type}</td>
-                        <td className="p-3 text-sm text-card-foreground text-right font-medium">${(room.revenue / 1000).toFixed(0)}k</td>
-                        <td className="p-3 text-sm text-muted-foreground text-right">{room.bookings.toLocaleString()}</td>
-                        <td className="p-3 text-sm text-muted-foreground text-right">${room.avgRate}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-muted/50">
-                      <td className="p-3 text-sm font-medium text-card-foreground">Total</td>
-                      <td className="p-3 text-sm font-medium text-card-foreground text-right">
-                        ${(revenueByRoomType.reduce((acc, r) => acc + r.revenue, 0) / 1000).toFixed(0)}k
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground text-right">
-                        {revenueByRoomType.reduce((acc, r) => acc + r.bookings, 0).toLocaleString()}
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground text-right">—</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            <div className="space-y-4">
+              {upsellCategories.map((category) => (
+                <div key={category.name}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-card-foreground">{category.name}</span>
+                    <span className="text-sm font-medium text-card-foreground">${(category.revenue / 1000).toFixed(1)}k</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#c4a84b] rounded-full"
+                        style={{ width: `${(category.revenue / maxUpsellRevenue) * 100}%` }}
+                        />
+                    </div>
+                    <span className="text-xs text-muted-foreground w-12 text-right">{category.percentage}%</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">{category.count} transactions</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </main>
     </div>
   )

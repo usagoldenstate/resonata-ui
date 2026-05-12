@@ -20,11 +20,12 @@ const notBookedReasonsDetailed = {
     percentage: 34,
     color: "bg-[#6b7a4a]",
     subcategories: [
-      { name: "Room rate too high", count: 72, percentage: 46 },
-      { name: "Competitor offered lower rate", count: 41, percentage: 26 },
-      { name: "Resort fees", count: 23, percentage: 15 },
-      { name: "Parking fees", count: 12, percentage: 8 },
-      { name: "No discount available", count: 8, percentage: 5 },
+      { name: "Rate exceeds budget", count: 55, percentage: 35 },
+      { name: "Better price found elsewhere", count: 38, percentage: 24 },
+      { name: "Unexpected fees and taxes", count: 27, percentage: 17 },
+      { name: "Poor perceived value", count: 18, percentage: 12 },
+      { name: "No acceptable discount available", count: 12, percentage: 8 },
+      { name: "Other", count: 6, percentage: 4 },
     ],
     seasonality: [
       { month: "Jan", count: 8 }, { month: "Feb", count: 6 }, { month: "Mar", count: 12 },
@@ -33,11 +34,11 @@ const notBookedReasonsDetailed = {
       { month: "Oct", count: 9 }, { month: "Nov", count: 5 }, { month: "Dec", count: 4 },
     ],
     calls: [
-      { id: 101, guest: "Patricia W.", callDate: "Apr 5, 2026", bookingDate: "Apr 11-12", subcategory: "Room rate too high" },
-      { id: 102, guest: "Mark T.", callDate: "Apr 4, 2026", bookingDate: "May 15-18", subcategory: "Competitor offered lower rate" },
-      { id: 103, guest: "Susan K.", callDate: "Apr 3, 2026", bookingDate: "Apr 20-22", subcategory: "Resort fees" },
-      { id: 104, guest: "John D.", callDate: "Apr 2, 2026", bookingDate: "Jun 1-4", subcategory: "Room rate too high" },
-      { id: 105, guest: "Lisa M.", callDate: "Apr 1, 2026", bookingDate: "Apr 18-19", subcategory: "No discount available" },
+      { id: 101, guest: "Patricia W.", callDate: "Apr 5, 2026", bookingDate: "Apr 11-12", subcategory: "Rate exceeds budget" },
+      { id: 102, guest: "Mark T.", callDate: "Apr 4, 2026", bookingDate: "May 15-18", subcategory: "Better price found elsewhere" },
+      { id: 103, guest: "Susan K.", callDate: "Apr 3, 2026", bookingDate: "Apr 20-22", subcategory: "Unexpected fees and taxes" },
+      { id: 104, guest: "John D.", callDate: "Apr 2, 2026", bookingDate: "Jun 1-4", subcategory: "Rate exceeds budget" },
+      { id: 105, guest: "Lisa M.", callDate: "Apr 1, 2026", bookingDate: "Apr 18-19", subcategory: "No acceptable discount available" },
     ]
   },
   Availability: {
@@ -45,10 +46,9 @@ const notBookedReasonsDetailed = {
     percentage: 24,
     color: "bg-[#c4a84b]",
     subcategories: [
-      { name: "Fully booked for dates", count: 58, percentage: 52 },
-      { name: "Room type unavailable", count: 31, percentage: 28 },
-      { name: "Minimum stay requirement", count: 15, percentage: 13 },
-      { name: "Group block conflict", count: 8, percentage: 7 },
+      { name: "Dates unavailable", count: 58, percentage: 52 },
+      { name: "Desired roomtype unavailable", count: 31, percentage: 28 },
+      { name: "No availability", count: 23, percentage: 20 },
     ],
     seasonality: [
       { month: "Jan", count: 4 }, { month: "Feb", count: 3 }, { month: "Mar", count: 6 },
@@ -57,11 +57,11 @@ const notBookedReasonsDetailed = {
       { month: "Oct", count: 5 }, { month: "Nov", count: 2 }, { month: "Dec", count: 2 },
     ],
     calls: [
-      { id: 201, guest: "Steven R.", callDate: "Apr 5, 2026", bookingDate: "May 22-25", subcategory: "Fully booked for dates" },
-      { id: 202, guest: "Amy L.", callDate: "Apr 4, 2026", bookingDate: "Jul 4-7", subcategory: "Fully booked for dates" },
-      { id: 203, guest: "Robert J.", callDate: "Apr 3, 2026", bookingDate: "Jun 12-14", subcategory: "Room type unavailable" },
-      { id: 204, guest: "Nancy P.", callDate: "Apr 2, 2026", bookingDate: "May 1-2", subcategory: "Minimum stay requirement" },
-      { id: 205, guest: "Kevin B.", callDate: "Apr 1, 2026", bookingDate: "Aug 15-18", subcategory: "Fully booked for dates" },
+      { id: 201, guest: "Steven R.", callDate: "Apr 5, 2026", bookingDate: "May 22-25", subcategory: "Dates unavailable" },
+      { id: 202, guest: "Amy L.", callDate: "Apr 4, 2026", bookingDate: "Jul 4-7", subcategory: "Dates unavailable" },
+      { id: 203, guest: "Robert J.", callDate: "Apr 3, 2026", bookingDate: "Jun 12-14", subcategory: "Desired roomtype unavailable" },
+      { id: 204, guest: "Nancy P.", callDate: "Apr 2, 2026", bookingDate: "May 1-2", subcategory: "No availability" },
+      { id: 205, guest: "Kevin B.", callDate: "Apr 1, 2026", bookingDate: "Aug 15-18", subcategory: "Dates unavailable" },
     ]
   },
   Amenities: {
@@ -69,11 +69,20 @@ const notBookedReasonsDetailed = {
     percentage: 19,
     color: "bg-[#8b5a3c]",
     subcategories: [
-      { name: "No restaurant on-site", count: 28, percentage: 31 },
-      { name: "No pool/spa", count: 24, percentage: 27 },
-      { name: "No fitness center", count: 15, percentage: 17 },
-      { name: "No room service", count: 12, percentage: 13 },
-      { name: "No shuttle service", count: 10, percentage: 12 },
+      { name: "Pool & Recreation", count: 14, percentage: 16 },
+      { name: "Fitness & Wellness", count: 11, percentage: 12 },
+      { name: "Food & Beverage", count: 10, percentage: 11 },
+      { name: "Wi-Fi & Connectivity", count: 8, percentage: 9 },
+      { name: "Parking & Transportation", count: 7, percentage: 8 },
+      { name: "In-Room Amenities", count: 7, percentage: 8 },
+      { name: "Bathroom Features", count: 6, percentage: 7 },
+      { name: "Family & Kid-Friendly", count: 5, percentage: 6 },
+      { name: "Pet Policy / Pet Accommodations", count: 5, percentage: 6 },
+      { name: "Accessibility / Mobility Needs", count: 4, percentage: 4 },
+      { name: "Business Services", count: 4, percentage: 4 },
+      { name: "Laundry & Housekeeping", count: 3, percentage: 3 },
+      { name: "Outdoor & Recreational Amenities", count: 3, percentage: 3 },
+      { name: "Other Amenity Gaps", count: 2, percentage: 2 },
     ],
     seasonality: [
       { month: "Jan", count: 5 }, { month: "Feb", count: 4 }, { month: "Mar", count: 7 },
@@ -82,11 +91,11 @@ const notBookedReasonsDetailed = {
       { month: "Oct", count: 5 }, { month: "Nov", count: 3 }, { month: "Dec", count: 2 },
     ],
     calls: [
-      { id: 301, guest: "Michelle R.", callDate: "Apr 5, 2026", bookingDate: "Apr 25-27", subcategory: "No restaurant on-site" },
-      { id: 302, guest: "Brian K.", callDate: "Apr 4, 2026", bookingDate: "May 8-10", subcategory: "No pool/spa" },
-      { id: 303, guest: "Jennifer S.", callDate: "Apr 3, 2026", bookingDate: "Jun 5-7", subcategory: "No fitness center" },
-      { id: 304, guest: "Thomas W.", callDate: "Apr 2, 2026", bookingDate: "Apr 19-21", subcategory: "No restaurant on-site" },
-      { id: 305, guest: "Angela M.", callDate: "Apr 1, 2026", bookingDate: "May 20-23", subcategory: "No shuttle service" },
+      { id: 301, guest: "Michelle R.", callDate: "Apr 5, 2026", bookingDate: "Apr 25-27", subcategory: "Food & Beverage" },
+      { id: 302, guest: "Brian K.", callDate: "Apr 4, 2026", bookingDate: "May 8-10", subcategory: "Pool & Recreation" },
+      { id: 303, guest: "Jennifer S.", callDate: "Apr 3, 2026", bookingDate: "Jun 5-7", subcategory: "Fitness & Wellness" },
+      { id: 304, guest: "Thomas W.", callDate: "Apr 2, 2026", bookingDate: "Apr 19-21", subcategory: "Wi-Fi & Connectivity" },
+      { id: 305, guest: "Angela M.", callDate: "Apr 1, 2026", bookingDate: "May 20-23", subcategory: "Parking & Transportation" },
     ]
   },
   Policy: {
@@ -94,10 +103,17 @@ const notBookedReasonsDetailed = {
     percentage: 8,
     color: "bg-[#64748b]",
     subcategories: [
-      { name: "Cancellation policy", count: 15, percentage: 41 },
-      { name: "Pet policy", count: 12, percentage: 32 },
-      { name: "Check-in/out times", count: 6, percentage: 16 },
-      { name: "Age restrictions", count: 4, percentage: 11 },
+      { name: "Cancellation & Refund Policy", count: 8, percentage: 22 },
+      { name: "Deposit & Payment Policy", count: 6, percentage: 16 },
+      { name: "Pet Policy", count: 5, percentage: 14 },
+      { name: "Age & ID Requirements", count: 4, percentage: 11 },
+      { name: "Occupancy / Guest Limit Policy", count: 3, percentage: 8 },
+      { name: "Smoking Policy", count: 3, percentage: 8 },
+      { name: "Check-in / Check-out Policy", count: 3, percentage: 8 },
+      { name: "Length-of-Stay Requirements", count: 2, percentage: 5 },
+      { name: "Group / Event Policy", count: 1, percentage: 3 },
+      { name: "Accessibility", count: 1, percentage: 3 },
+      { name: "Other Policy Restriction", count: 1, percentage: 3 },
     ],
     seasonality: [
       { month: "Jan", count: 2 }, { month: "Feb", count: 2 }, { month: "Mar", count: 3 },
@@ -106,11 +122,11 @@ const notBookedReasonsDetailed = {
       { month: "Oct", count: 2 }, { month: "Nov", count: 2 }, { month: "Dec", count: 1 },
     ],
     calls: [
-      { id: 401, guest: "Daniel M.", callDate: "Apr 4, 2026", bookingDate: "Apr 18-20", subcategory: "Pet policy" },
-      { id: 402, guest: "Carol H.", callDate: "Apr 3, 2026", bookingDate: "May 5-8", subcategory: "Cancellation policy" },
-      { id: 403, guest: "Gary N.", callDate: "Apr 2, 2026", bookingDate: "Jun 10-12", subcategory: "Check-in/out times" },
-      { id: 404, guest: "Diana F.", callDate: "Apr 1, 2026", bookingDate: "Apr 22-24", subcategory: "Pet policy" },
-      { id: 405, guest: "Paul V.", callDate: "Mar 31, 2026", bookingDate: "May 15-17", subcategory: "Cancellation policy" },
+      { id: 401, guest: "Daniel M.", callDate: "Apr 4, 2026", bookingDate: "Apr 18-20", subcategory: "Pet Policy" },
+      { id: 402, guest: "Carol H.", callDate: "Apr 3, 2026", bookingDate: "May 5-8", subcategory: "Cancellation & Refund Policy" },
+      { id: 403, guest: "Gary N.", callDate: "Apr 2, 2026", bookingDate: "Jun 10-12", subcategory: "Check-in / Check-out Policy" },
+      { id: 404, guest: "Diana F.", callDate: "Apr 1, 2026", bookingDate: "Apr 22-24", subcategory: "Deposit & Payment Policy" },
+      { id: 405, guest: "Paul V.", callDate: "Mar 31, 2026", bookingDate: "May 15-17", subcategory: "Age & ID Requirements" },
     ]
   },
   Other: {
@@ -118,10 +134,9 @@ const notBookedReasonsDetailed = {
     percentage: 15,
     color: "bg-[#9ca3af]",
     subcategories: [
-      { name: "Just browsing/comparing", count: 25, percentage: 37 },
-      { name: "Location not ideal", count: 18, percentage: 27 },
-      { name: "Changed travel plans", count: 14, percentage: 21 },
-      { name: "Unspecified", count: 10, percentage: 15 },
+      { name: "Location & Property Fit", count: 25, percentage: 37 },
+      { name: "Not Ready to Book", count: 24, percentage: 36 },
+      { name: "Unclassified / Other", count: 18, percentage: 27 },
     ],
     seasonality: [
       { month: "Jan", count: 4 }, { month: "Feb", count: 3 }, { month: "Mar", count: 5 },
@@ -130,11 +145,11 @@ const notBookedReasonsDetailed = {
       { month: "Oct", count: 4 }, { month: "Nov", count: 3 }, { month: "Dec", count: 2 },
     ],
     calls: [
-      { id: 501, guest: "Karen L.", callDate: "Apr 4, 2026", bookingDate: "Jun 5-8", subcategory: "Just browsing/comparing" },
-      { id: 502, guest: "Richard G.", callDate: "Apr 3, 2026", bookingDate: "May 10-12", subcategory: "Location not ideal" },
-      { id: 503, guest: "Sandra T.", callDate: "Apr 2, 2026", bookingDate: "Apr 28-30", subcategory: "Changed travel plans" },
-      { id: 504, guest: "William C.", callDate: "Apr 1, 2026", bookingDate: "May 22-25", subcategory: "Just browsing/comparing" },
-      { id: 505, guest: "Barbara E.", callDate: "Mar 31, 2026", bookingDate: "Jun 1-3", subcategory: "Unspecified" },
+      { id: 501, guest: "Karen L.", callDate: "Apr 4, 2026", bookingDate: "Jun 5-8", subcategory: "Not Ready to Book" },
+      { id: 502, guest: "Richard G.", callDate: "Apr 3, 2026", bookingDate: "May 10-12", subcategory: "Location & Property Fit" },
+      { id: 503, guest: "Sandra T.", callDate: "Apr 2, 2026", bookingDate: "Apr 28-30", subcategory: "Not Ready to Book" },
+      { id: 504, guest: "William C.", callDate: "Apr 1, 2026", bookingDate: "May 22-25", subcategory: "Unclassified / Other" },
+      { id: 505, guest: "Barbara E.", callDate: "Mar 31, 2026", bookingDate: "Jun 1-3", subcategory: "Location & Property Fit" },
     ]
   }
 }
@@ -252,23 +267,23 @@ export default function NotBookedReportingPage() {
 
             {/* Reasons Breakdown */}
             <Card className="border-border">
-              <CardContent className="p-6">
-                <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-6">
+              <CardContent className="p-5">
+                <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-4">
                   Reasons Breakdown
                 </h3>
                 
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {notBookedReasons.map((reason) => (
                     <button
                       key={reason.reason}
                       onClick={() => setSelectedReason(reason.reason)}
-                      className="w-full text-left hover:bg-muted/50 rounded-lg p-3 -m-3 transition-colors"
+                      className="w-full text-left rounded-md border border-border px-4 py-3 transition-colors hover:border-card-foreground/50 hover:bg-muted/70"
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-card-foreground">{reason.reason}</span>
+                        <span className="text-base font-medium text-card-foreground">{reason.reason}</span>
                         <span className="text-sm text-muted-foreground">{reason.count} ({reason.percentage}%)</span>
                       </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div className="h-4 bg-muted rounded-full overflow-hidden">
                         <div 
                           className={`h-full ${reason.color} rounded-full transition-all`}
                           style={{ width: `${reason.percentage}%` }}
@@ -279,8 +294,8 @@ export default function NotBookedReportingPage() {
                 </div>
 
                 {/* Summary Bar */}
-                <div className="mt-8 pt-6 border-t border-border">
-                  <p className="text-xs text-muted-foreground mb-2">Distribution</p>
+                <div className="mt-5 pt-4 border-t border-border">
+                  <p className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-2">Distribution</p>
                   <div className="flex h-4 rounded-full overflow-hidden">
                     {notBookedReasons.map((reason) => (
                       <div
@@ -291,7 +306,7 @@ export default function NotBookedReportingPage() {
                       />
                     ))}
                   </div>
-                  <div className="flex flex-wrap gap-4 mt-3">
+                  <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2">
                     {notBookedReasons.map((reason) => (
                       <div key={reason.reason} className="flex items-center gap-2">
                         <div className={`w-2 h-2 rounded-full ${reason.color}`} />
@@ -306,7 +321,7 @@ export default function NotBookedReportingPage() {
         ) : (
           <>
             {/* Selected Reason Detail View */}
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-3 gap-4 mb-6">
               <Card className="border-border">
                 <CardContent className="p-4">
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
@@ -315,17 +330,6 @@ export default function NotBookedReportingPage() {
                   <p className="text-2xl font-semibold text-card-foreground">{selectedReasonData?.count}</p>
                   <p className="text-xs mt-1 text-muted-foreground">
                     {selectedReasonData?.percentage}% of all not booked
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="border-border">
-                <CardContent className="p-4">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                    Subcategories
-                  </p>
-                  <p className="text-2xl font-semibold text-card-foreground">{selectedReasonData?.subcategories.length}</p>
-                  <p className="text-xs mt-1 text-muted-foreground">
-                    Distinct issues
                   </p>
                 </CardContent>
               </Card>
@@ -357,91 +361,57 @@ export default function NotBookedReportingPage() {
               </Card>
             </div>
 
-            <div className="grid grid-cols-2 gap-6 mb-6">
-              {/* Subcategories */}
-              <Card className="border-border">
-                <CardContent className="p-6">
-                  <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-4">
-                    Subcategories
-                  </h3>
-                  <div className="space-y-3">
-                    {selectedReasonData?.subcategories.map((sub) => (
-                      <div key={sub.name}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm text-card-foreground">{sub.name}</span>
-                          <span className="text-xs text-muted-foreground">{sub.count} ({sub.percentage}%)</span>
-                        </div>
-                        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full ${selectedReasonData.color} rounded-full`}
-                            style={{ width: `${sub.percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Seasonality */}
-              <Card className="border-border">
-                <CardContent className="p-6">
-                  <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-4">
-                    Monthly Trend
-                  </h3>
-                  <div className="flex items-end gap-2 h-32">
-                    {selectedReasonData?.seasonality.map((month) => (
-                      <div key={month.month} className="flex-1 flex flex-col items-center gap-1">
-                        <div className="w-full flex flex-col items-center justify-end h-24">
-                          <div 
-                            className={`w-full max-w-6 ${selectedReasonData.color} rounded-t relative group cursor-pointer transition-all hover:opacity-80`}
-                            style={{ height: `${(month.count / maxSeasonalityCount) * 100}%` }}
-                          >
-                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-card-foreground text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                              {month.count}
-                            </div>
-                          </div>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground">{month.month}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Recent Calls */}
-            <Card className="border-border">
+            {/* Subcategories */}
+            <Card className="border-border mb-6">
               <CardContent className="p-6">
                 <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-4">
-                  Recent Calls
+                  Subcategories
                 </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left p-3 text-xs font-medium text-muted-foreground">Guest</th>
-                        <th className="text-left p-3 text-xs font-medium text-muted-foreground">Call Date</th>
-                        <th className="text-left p-3 text-xs font-medium text-muted-foreground">Requested Dates</th>
-                        <th className="text-left p-3 text-xs font-medium text-muted-foreground">Issue</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedReasonData?.calls.map((call) => (
-                        <tr key={call.id} className="border-b border-border last:border-0">
-                          <td className="p-3 text-sm text-card-foreground">{call.guest}</td>
-                          <td className="p-3 text-sm text-muted-foreground">{call.callDate}</td>
-                          <td className="p-3 text-sm text-muted-foreground">{call.bookingDate}</td>
-                          <td className="p-3">
-                            <span className="text-xs bg-muted px-2 py-1 rounded">{call.subcategory}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className={`grid grid-cols-1 gap-x-8 gap-y-3 ${selectedReason === "Availability" || selectedReason === "Other" ? "" : "xl:grid-cols-2"}`}>
+                  {selectedReasonData?.subcategories.map((sub) => (
+                    <div key={sub.name}>
+                      <div className="flex items-center justify-between gap-4 mb-1.5">
+                        <span className="text-base text-card-foreground">{sub.name}</span>
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">{sub.count} ({sub.percentage}%)</span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${selectedReasonData.color} rounded-full`}
+                          style={{ width: `${sub.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
+
+            {/* Seasonality */}
+            <Card className="border-border mb-6">
+              <CardContent className="p-6">
+                <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-4">
+                  Monthly Trend
+                </h3>
+                <div className="flex items-end gap-2 h-32">
+                  {selectedReasonData?.seasonality.map((month) => (
+                    <div key={month.month} className="flex-1 flex flex-col items-center gap-1">
+                      <div className="w-full flex flex-col items-center justify-end h-24">
+                        <div
+                          className={`w-full max-w-6 ${selectedReasonData.color} rounded-t relative group cursor-pointer transition-all hover:opacity-80`}
+                          style={{ height: `${(month.count / maxSeasonalityCount) * 100}%` }}
+                        >
+                          <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-card-foreground text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {month.count}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground">{month.month}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
           </>
         )}
       </main>

@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { Sidebar } from "@/components/sidebar"
-import { CalendarIcon, TrendingUp, TrendingDown, GitCompareArrows, ChevronRight, DollarSign, Clock } from "lucide-react"
+import { CalendarIcon, TrendingUp, TrendingDown, GitCompareArrows, ChevronRight, DollarSign } from "lucide-react"
 import { format, subDays } from "date-fns"
 
 // Seeded random number generator for consistent server/client data
@@ -471,60 +471,6 @@ export default function Dashboard() {
                         </div>
                         <span className="text-xs text-muted-foreground">${(primaryStats.totalUpsell / 1000).toFixed(1)}k</span>
                       </div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          {/* Booking Lead Time Section */}
-          <Link href="/reporting/lead-time" className="block col-span-2">
-            <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all cursor-pointer group">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-card-foreground">Booking Lead Time</h3>
-                    <p className="text-xs text-muted-foreground">How far in advance guests inquire before their stay date</p>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
-                </div>
-                
-                <div className="grid grid-cols-4 gap-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                      <Clock className="w-5 h-5 text-[#6b7a4a]" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-semibold text-card-foreground">18 days</p>
-                      <p className="text-xs text-muted-foreground">Avg Lead Time</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                      <Clock className="w-5 h-5 text-[#6b7a4a]" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-semibold text-card-foreground">12 days</p>
-                      <p className="text-xs text-muted-foreground">Median Lead Time</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#c4a84b]/10 flex items-center justify-center">
-                      <TrendingUp className="w-5 h-5 text-[#c4a84b]" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-semibold text-card-foreground">31%</p>
-                      <p className="text-xs text-muted-foreground">Same-Week Bookings</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#8b5a3c]/10 flex items-center justify-center">
-                      <CalendarIcon className="w-5 h-5 text-[#8b5a3c]" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-semibold text-card-foreground">14%</p>
-                      <p className="text-xs text-muted-foreground">60+ Day Bookings</p>
                     </div>
                   </div>
                 </div>

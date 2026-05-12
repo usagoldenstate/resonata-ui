@@ -9,8 +9,6 @@ import { NextResponse, type NextRequest } from "next/server"
 const SHOW = {
   dashboard: process.env.NEXT_PUBLIC_SHOW_DASHBOARD === "true",
   reporting: process.env.NEXT_PUBLIC_SHOW_REPORTING === "true",
-  callLog: process.env.NEXT_PUBLIC_SHOW_CALL_LOG === "true",
-  faqs: process.env.NEXT_PUBLIC_SHOW_FAQS === "true",
 }
 
 // Landing page when a hidden page is blocked. Knowledge Base is always on,
@@ -20,8 +18,6 @@ const FALLBACK = "/knowledge-base"
 function isHidden(pathname: string): boolean {
   if (pathname === "/") return !SHOW.dashboard
   if (pathname.startsWith("/reporting")) return !SHOW.reporting
-  if (pathname.startsWith("/call-log")) return !SHOW.callLog
-  if (pathname.startsWith("/faqs")) return !SHOW.faqs
   return false
 }
 

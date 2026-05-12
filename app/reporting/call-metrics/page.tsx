@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Plus, TrendingDown, TrendingUp } from "lucide-react"
+import { Plus, TrendingDown, TrendingUp, X } from "lucide-react"
 
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
@@ -30,13 +30,36 @@ const monthlyCallVolume = [
 ]
 
 const dailyCallVolume = [
-  { label: "Mon", calls: 212, booked: 52 },
-  { label: "Tue", calls: 238, booked: 58 },
-  { label: "Wed", calls: 246, booked: 60 },
-  { label: "Thu", calls: 252, booked: 61 },
-  { label: "Fri", calls: 274, booked: 67 },
-  { label: "Sat", calls: 229, booked: 56 },
-  { label: "Sun", calls: 196, booked: 48 },
+  { label: "6", day: "Mon", calls: 348, booked: 85 },
+  { label: "7", day: "Tue", calls: 382, booked: 93 },
+  { label: "8", day: "Wed", calls: 590, booked: 143 },
+  { label: "9", day: "Thu", calls: 602, booked: 146 },
+  { label: "10", day: "Fri", calls: 488, booked: 119 },
+  { label: "11", day: "Sat", calls: 472, booked: 115 },
+  { label: "12", day: "Sun", calls: 586, booked: 142 },
+  { label: "13", day: "Mon", calls: 456, booked: 111 },
+  { label: "14", day: "Tue", calls: 468, booked: 114 },
+  { label: "15", day: "Wed", calls: 675, booked: 164 },
+  { label: "16", day: "Thu", calls: 704, booked: 171 },
+  { label: "17", day: "Fri", calls: 512, booked: 124 },
+  { label: "18", day: "Sat", calls: 402, booked: 98 },
+  { label: "19", day: "Sun", calls: 515, booked: 125 },
+  { label: "20", day: "Mon", calls: 428, booked: 104 },
+  { label: "21", day: "Tue", calls: 378, booked: 92 },
+  { label: "22", day: "Wed", calls: 552, booked: 134 },
+  { label: "23", day: "Thu", calls: 698, booked: 170 },
+  { label: "24", day: "Fri", calls: 612, booked: 149 },
+  { label: "25", day: "Sat", calls: 508, booked: 123 },
+  { label: "26", day: "Sun", calls: 620, booked: 151 },
+  { label: "27", day: "Mon", calls: 535, booked: 130 },
+  { label: "28", day: "Tue", calls: 390, booked: 95 },
+  { label: "29", day: "Wed", calls: 418, booked: 102 },
+  { label: "30", day: "Thu", calls: 556, booked: 135 },
+  { label: "31", day: "Fri", calls: 563, booked: 137 },
+  { label: "1", day: "Sat", calls: 455, booked: 111 },
+  { label: "2", day: "Sun", calls: 588, booked: 143 },
+  { label: "3", day: "Mon", calls: 596, booked: 145 },
+  { label: "4", day: "Tue", calls: 488, booked: 119 },
 ]
 
 const hourlyCallVolume = [
@@ -73,6 +96,24 @@ const timespanOptions = [
   { value: "year", label: "This year" },
 ]
 
+const dailyRangeOptions = [
+  { value: "7", label: "Last 7 days" },
+  { value: "14", label: "Last 14 days" },
+  { value: "30", label: "Last month" },
+]
+
+const hourlyRangeOptions = [
+  { value: "7", label: "Last 7 days" },
+  { value: "14", label: "Last 14 days" },
+  { value: "30", label: "Last 30 days" },
+]
+
+const monthlyRangeOptions = [
+  { value: "6", label: "Last 6 months" },
+  { value: "12", label: "Last 12 months" },
+  { value: "ytd", label: "Year to date" },
+]
+
 const chartViewOptions = [
   { value: "hourly", label: "Hourly" },
   { value: "daily", label: "Daily" },
@@ -80,28 +121,66 @@ const chartViewOptions = [
 ]
 
 type ChartView = "hourly" | "daily" | "monthly"
+type ComparisonPeriod = "previous" | "lastYear" | "lastQuarter"
+
+const getPreviousPeriodLabel = (timespan: string) => {
+  if (timespan === "90") return "Previous 90 days"
+  if (timespan === "12") return "Previous 12 months"
+  if (timespan === "year") return "Previous year"
+
+  return "Previous 30 days"
+}
+
+const getComparisonDateLabel = (period: ComparisonPeriod, timespan: string) => {
+  if (period === "lastYear") return "Same period last year"
+  if (period === "lastQuarter") return "Same period last quarter"
+
+  return getPreviousPeriodLabel(timespan)
+}
 
 export default function CallMetricsReportingPage() {
   const [timespan, setTimespan] = useState("30")
   const [chartRange, setChartRange] = useState("12")
   const [chartView, setChartView] = useState<ChartView>("monthly")
   const [showComparison, setShowComparison] = useState(false)
+  const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonPeriod>("previous")
 
   const stats = useMemo(() => {
     const totalCalls = monthlyCallVolume.reduce((acc, month) => acc + month.calls, 0)
     const totalBooked = monthlyCallVolume.reduce((acc, month) => acc + month.booked, 0)
     const conversionRate = Math.round((totalBooked / totalCalls) * 1000) / 10
-    const peakMonth = monthlyCallVolume.reduce((peak, month) => (month.calls > peak.calls ? month : peak), monthlyCallVolume[0])
-
     return {
       conversionRate,
       totalCalls,
       totalBooked,
-      missed: totalCalls - totalBooked,
-      peakMonth,
-      maxMonthlyVolume: Math.max(...monthlyCallVolume.map((month) => month.calls)),
+      transferRate: 12.8,
     }
   }, [])
+
+  const comparisonStats = useMemo(() => {
+    const multiplier = comparisonPeriod === "lastYear" ? 0.82 : comparisonPeriod === "lastQuarter" ? 0.9 : 0.89
+    const bookedMultiplier = comparisonPeriod === "lastYear" ? 0.76 : comparisonPeriod === "lastQuarter" ? 0.86 : 0.8
+
+    return {
+      conversionRate: Math.max(0, Math.round((stats.conversionRate - (comparisonPeriod === "lastYear" ? 3.6 : comparisonPeriod === "lastQuarter" ? 1.8 : 2.4)) * 10) / 10),
+      totalCalls: Math.round(stats.totalCalls * multiplier),
+      totalBooked: Math.round(stats.totalBooked * bookedMultiplier),
+      transferRate: Math.max(0, Math.round((stats.transferRate - (comparisonPeriod === "lastYear" ? 1.5 : comparisonPeriod === "lastQuarter" ? 0.9 : 1.2)) * 10) / 10),
+    }
+  }, [comparisonPeriod, stats])
+
+  const comparisonOptions = [
+    { value: "previous", label: getPreviousPeriodLabel(timespan) },
+    { value: "lastYear", label: "Same period last year" },
+    { value: "lastQuarter", label: "Same period last quarter" },
+  ]
+  const comparisonDateLabel = getComparisonDateLabel(comparisonPeriod, timespan)
+  const chartRangeOptions = chartView === "daily" ? dailyRangeOptions : chartView === "monthly" ? monthlyRangeOptions : hourlyRangeOptions
+
+  const handleChartViewChange = (value: ChartView) => {
+    setChartView(value)
+    setChartRange(value === "daily" ? "30" : value === "monthly" ? "12" : "30")
+  }
 
   const chartConfig = useMemo(() => {
     if (chartView === "hourly") {
@@ -127,48 +206,57 @@ export default function CallMetricsReportingPage() {
     }
 
     if (chartView === "daily") {
-      const peak = dailyCallVolume.reduce((top, day) => (day.calls > top.calls ? day : top), dailyCallVolume[0])
-      const total = dailyCallVolume.reduce((sum, day) => sum + day.calls, 0)
+      const days = chartRange === "7" || chartRange === "14" ? Number(chartRange) : 30
+      const dailyData = dailyCallVolume.slice(-days)
+      const peak = dailyData.reduce((top, day) => (day.calls > top.calls ? day : top), dailyData[0])
+      const total = dailyData.reduce((sum, day) => sum + day.calls, 0)
+      const labelEvery = days === 30 ? 5 : days === 14 ? 2 : 1
 
       return {
         title: "Daily Call Volume",
-        description: "Average calls by day of week across the selected window.",
-        data: dailyCallVolume,
+        description: "Total calls per day across the selected window.",
+        data: dailyData,
         barColor: "#6b7a4a",
-        legend: "Avg calls per day",
-        axisLabel: "Day of Week",
-        yLabels: ["300", "225", "150", "75", "0"],
+        legend: "Calls per day",
+        axisLabel: "Date",
+        yLabels: ["900", "675", "450", "225", "0"],
         metrics: [
-          { label: "Peak day", value: peak.label },
-          { label: "Weekly avg", value: Math.round(total / dailyCallVolume.length).toString() },
+          { label: "Peak", value: peak.day },
+          { label: "Avg / day", value: Math.round(total / dailyData.length).toString() },
         ],
-        labelEvery: 1,
+        labelEvery,
         fillColumns: false,
-        labelClassName: "translate-y-3",
+        labelClassName: "",
       }
     }
+
+    const monthlyData = monthlyCallVolume
+      .slice(chartRange === "6" ? -6 : chartRange === "ytd" ? 0 : -12)
+      .map((month) => ({
+        label: month.month,
+        calls: month.calls,
+        booked: month.booked,
+      }))
+    const peakMonth = monthlyData.reduce((peak, month) => (month.calls > peak.calls ? month : peak), monthlyData[0])
+    const totalCalls = monthlyData.reduce((total, month) => total + month.calls, 0)
 
     return {
       title: "Monthly Call Volume",
       description: "Total calls grouped by month - seasonality at a glance.",
-      data: monthlyCallVolume.map((month) => ({
-        label: month.month,
-        calls: month.calls,
-        booked: month.booked,
-      })),
-      barColor: "#6b7a4a",
+      data: monthlyData,
+      barColor: "#9ca3af",
       legend: "Calls per month",
       axisLabel: "Month",
       yLabels: ["2.7k", "2.0k", "1.4k", "675", "0"],
       metrics: [
-        { label: "Peak", value: stats.peakMonth.month },
-        { label: "Total", value: stats.totalCalls.toLocaleString() },
+        { label: "Peak", value: peakMonth.label },
+        { label: "Total", value: totalCalls.toLocaleString() },
       ],
       labelEvery: 1,
       fillColumns: false,
       labelClassName: "",
     }
-  }, [chartView, stats.peakMonth.month, stats.totalCalls])
+  }, [chartRange, chartView])
 
   const chartMax = Math.max(...chartConfig.data.map((item) => item.calls))
 
@@ -176,72 +264,138 @@ export default function CallMetricsReportingPage() {
     <div className="min-h-screen bg-background flex">
       <Sidebar />
       <main className="flex-1 p-8">
-        <div className="flex items-center justify-between mb-8">
+        <div className="mb-8">
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Call Metrics</h1>
             <p className="text-sm text-muted-foreground">
               Track booking performance and call patterns from your voice agent
             </p>
           </div>
-          <Select value={timespan} onValueChange={setTimespan}>
-            <SelectTrigger className="w-40 bg-card border-border">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {timespanOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
 
         <section className="mb-8">
-          <h2 className="text-sm font-medium text-foreground uppercase tracking-wide mb-6">
-            Conversion Rate
-          </h2>
+          <div className="rounded-lg border border-border p-4">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">
+                  Conversion Metrics
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Updates when the date range changes
+                </p>
+              </div>
+              <Select value={timespan} onValueChange={setTimespan}>
+                <SelectTrigger className="w-40 bg-card border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {timespanOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
-            <MetricCard
-              label="Conversion Rate"
-              value={`${stats.conversionRate}%`}
-              trend="2.4pp vs prior period"
-              direction="up"
-            />
-            <MetricCard
-              label="Total Call Volume"
-              value={stats.totalCalls.toLocaleString()}
-              trend="12% vs prior period"
-              direction="up"
-            />
-            <MetricCard
-              label="Calls Booked"
-              value={stats.totalBooked.toLocaleString()}
-              trend="18% vs prior period"
-              direction="up"
-            />
-            <MetricCard
-              label="Missed Opportunities"
-              value={stats.missed.toLocaleString()}
-              trend="9% vs prior period"
-              direction="down"
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+              <MetricCard
+                label="Conversion Rate"
+                value={`${stats.conversionRate}%`}
+                trend="2.4pp vs prior period"
+                direction="up"
+              />
+              <MetricCard
+                label="Total Call Volume"
+                value={stats.totalCalls.toLocaleString()}
+                trend="12% vs prior period"
+                direction="up"
+              />
+              <MetricCard
+                label="Calls Booked"
+                value={stats.totalBooked.toLocaleString()}
+                trend="18% vs prior period"
+                direction="up"
+              />
+              <MetricCard
+                label="Transfer Rate"
+                value={`${stats.transferRate}%`}
+                trend="1.2pp vs prior period"
+                direction="down"
+              />
+            </div>
+
+            {!showComparison ? (
+              <Button
+                variant="outline"
+                onClick={() => setShowComparison(true)}
+                className="border-border"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Compare with another period
+              </Button>
+            ) : null}
+
+            {showComparison ? (
+              <div className="relative mt-6 rounded-lg border border-border bg-card p-5 pt-12 shadow-sm">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowComparison(false)}
+                  aria-label="Remove comparison"
+                  className="absolute right-4 top-4 h-7 w-7 text-card-foreground hover:bg-muted"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+
+                <div className="mb-5 flex justify-end">
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    <span className="text-sm font-medium text-muted-foreground">Comparing with:</span>
+                    <Select value={comparisonPeriod} onValueChange={(value) => setComparisonPeriod(value as ComparisonPeriod)}>
+                      <SelectTrigger className="h-10 w-56 bg-card border-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {comparisonOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                  <ComparisonMetricCard
+                    label="Conversion Rate"
+                    value={`${comparisonStats.conversionRate}%`}
+                    period={comparisonDateLabel}
+                  />
+                  <ComparisonMetricCard
+                    label="Total Call Volume"
+                    value={comparisonStats.totalCalls.toLocaleString()}
+                    period={comparisonDateLabel}
+                  />
+                  <ComparisonMetricCard
+                    label="Calls Booked"
+                    value={comparisonStats.totalBooked.toLocaleString()}
+                    period={comparisonDateLabel}
+                  />
+                  <ComparisonMetricCard
+                    label="Transfer Rate"
+                    value={`${comparisonStats.transferRate}%`}
+                    period={comparisonDateLabel}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
-
-          <Button
-            variant={showComparison ? "default" : "outline"}
-            onClick={() => setShowComparison(!showComparison)}
-            className={showComparison ? "bg-[#6b7a4a] hover:bg-[#5a6940]" : "border-border"}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Compare with another period
-          </Button>
         </section>
 
         <Card className="border-border">
           <CardContent className="p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-8">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between mb-12">
               <div>
                 <h2 className="text-sm font-medium text-card-foreground uppercase tracking-wide">
                   {chartConfig.title}
@@ -260,7 +414,7 @@ export default function CallMetricsReportingPage() {
                     </span>
                   </div>
                 ))}
-                <Select value={chartView} onValueChange={(value) => setChartView(value as ChartView)}>
+                <Select value={chartView} onValueChange={(value) => handleChartViewChange(value as ChartView)}>
                   <SelectTrigger className="h-9 w-32 bg-card border-border text-sm">
                     <SelectValue />
                   </SelectTrigger>
@@ -277,7 +431,7 @@ export default function CallMetricsReportingPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {timespanOptions.map((option) => (
+                    {chartRangeOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -287,42 +441,22 @@ export default function CallMetricsReportingPage() {
               </div>
             </div>
 
-            <div className="relative h-72 pl-12 pb-16">
+            <div className="relative h-72 pl-12 pb-16 mt-2">
               <div className="absolute inset-x-12 top-0 h-px bg-border" />
               <div className="absolute inset-x-12 top-[25%] h-px bg-border" />
               <div className="absolute inset-x-12 top-[50%] h-px bg-border" />
               <div className="absolute inset-x-12 top-[75%] h-px bg-border" />
               <div className="absolute inset-x-12 bottom-16 h-px bg-[#cfc8ba]" />
 
-              <div className="absolute left-0 top-[-7px] text-[11px] text-muted-foreground">
-                {chartConfig.yLabels[0]}
-              </div>
-              <div className="absolute left-0 top-[calc(25%-7px)] text-[11px] text-muted-foreground">
-                {chartConfig.yLabels[1]}
-              </div>
-              <div className="absolute left-0 top-[calc(50%-7px)] text-[11px] text-muted-foreground">
-                {chartConfig.yLabels[2]}
-              </div>
-              <div className="absolute left-1 top-[calc(75%-7px)] text-[11px] text-muted-foreground">
-                {chartConfig.yLabels[3]}
-              </div>
-              <div className="absolute left-5 bottom-14 text-[11px] text-muted-foreground">
-                {chartConfig.yLabels[4]}
+              <div className="absolute left-0 top-0 bottom-16 flex flex-col justify-between text-[11px] text-muted-foreground">
+                {chartConfig.yLabels.map((label) => (
+                  <span key={label} className="min-w-8 text-right leading-none">
+                    {label}
+                  </span>
+                ))}
               </div>
               <div className="absolute left-2 top-[-22px] text-[10px] font-medium uppercase text-muted-foreground">
                 Calls
-              </div>
-
-              <div
-                className="absolute left-12 right-0 top-0 bottom-16 grid"
-                style={{ gridTemplateColumns: `repeat(${chartConfig.data.length}, minmax(0, 1fr))` }}
-              >
-                {chartConfig.data.map((item, index) => (
-                  <div
-                    key={item.label}
-                    className={chartConfig.fillColumns || index % 2 === 0 ? "bg-[#f0eee7]" : "bg-transparent"}
-                  />
-                ))}
               </div>
 
               <div
@@ -376,6 +510,28 @@ export default function CallMetricsReportingPage() {
         </Card>
       </main>
     </div>
+  )
+}
+
+function ComparisonMetricCard({
+  label,
+  value,
+  period,
+}: {
+  label: string
+  value: string
+  period: string
+}) {
+  return (
+    <Card className="border-dashed border-border bg-card">
+      <CardContent className="p-6">
+        <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+        <p className="text-2xl font-semibold text-muted-foreground">{value}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{period}</p>
+      </CardContent>
+    </Card>
   )
 }
 

@@ -11,13 +11,12 @@ import { confirmDiscardUnsaved } from "@/lib/unsaved-guard"
 
 type NavItem = { label: string; href: string; visible: boolean }
 
-// Every page has an explicit `visible` flag. Knowledge Base and Settings are
-// always on — they're the MVP scope. Everything else is gated by the matching
-// NEXT_PUBLIC_SHOW_* env var and hidden by default.
+// Every page has an explicit `visible` flag. Knowledge Base, Call Log, and
+// FAQs are always on. Dashboard remains gated by its feature flag.
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/", visible: featureFlags.showDashboard },
-  { label: "Call Log", href: "/call-log", visible: featureFlags.showCallLog },
-  { label: "FAQs", href: "/faqs", visible: featureFlags.showFaqs },
+  { label: "Call Log", href: "/call-log", visible: true },
+  { label: "FAQs", href: "/faqs", visible: true },
   { label: "Knowledge Base", href: "/knowledge-base", visible: true },
 ]
 
@@ -25,7 +24,6 @@ const reportingSubItems = [
   { label: "Call Metrics", href: "/reporting/call-metrics" },
   { label: "Not Booked Reasons", href: "/reporting/not-booked" },
   { label: "Revenue", href: "/reporting/revenue" },
-  { label: "Booking Lead Time", href: "/reporting/lead-time" },
 ]
 
 export function Sidebar() {
