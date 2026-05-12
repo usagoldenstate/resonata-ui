@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Sidebar } from "@/components/sidebar"
-import { ChevronLeft, TrendingUp, TrendingDown } from "lucide-react"
+import { ChevronLeft, TrendingDown } from "lucide-react"
 
 // Detailed reasons for not booking with subcategories
 const notBookedReasonsDetailed = {

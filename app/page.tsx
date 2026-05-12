@@ -75,12 +75,17 @@ const timespanOptions = [
   { value: "custom", label: "Custom range" },
 ]
 
-interface DateRange {
+interface DashboardDateRange {
   from: Date
   to: Date
 }
 
-function getStats(dateRange: DateRange) {
+type CalendarRange = {
+  from: Date | undefined
+  to?: Date
+}
+
+function getStats(dateRange: DashboardDateRange) {
   const filteredData = allDailyData.filter(d => d.date >= dateRange.from && d.date <= dateRange.to)
   const totalCalls = filteredData.reduce((acc, d) => acc + d.calls, 0)
   const totalBooked = filteredData.reduce((acc, d) => acc + d.booked, 0)
@@ -95,12 +100,12 @@ export default function Dashboard() {
   today.setHours(0, 0, 0, 0)
 
   const [primaryTimespan, setPrimaryTimespan] = useState("30")
-  const [primaryDateRange, setPrimaryDateRange] = useState<DateRange>({
+  const [primaryDateRange, setPrimaryDateRange] = useState<DashboardDateRange>({
     from: subDays(today, 30),
     to: today
   })
   const [primaryCalendarOpen, setPrimaryCalendarOpen] = useState(false)
-  const [primaryTempRange, setPrimaryTempRange] = useState<{ from?: Date; to?: Date }>({
+  const [primaryTempRange, setPrimaryTempRange] = useState<CalendarRange>({
     from: primaryDateRange.from,
     to: primaryDateRange.to
   })
@@ -108,12 +113,12 @@ export default function Dashboard() {
   const [showComparison, setShowComparison] = useState(false)
   const [callVolumeType, setCallVolumeType] = useState<"total" | "lead">("total")
   const [comparisonTimespan, setComparisonTimespan] = useState("30")
-  const [comparisonDateRange, setComparisonDateRange] = useState<DateRange>({
+  const [comparisonDateRange, setComparisonDateRange] = useState<DashboardDateRange>({
     from: subDays(today, 60),
     to: subDays(today, 31)
   })
   const [comparisonCalendarOpen, setComparisonCalendarOpen] = useState(false)
-  const [comparisonTempRange, setComparisonTempRange] = useState<{ from?: Date; to?: Date }>({
+  const [comparisonTempRange, setComparisonTempRange] = useState<CalendarRange>({
     from: comparisonDateRange.from,
     to: comparisonDateRange.to
   })
@@ -201,7 +206,7 @@ export default function Dashboard() {
                     mode="range"
                     selected={primaryTempRange}
                     onSelect={(range) => {
-                      setPrimaryTempRange(range || {})
+                      setPrimaryTempRange(range || { from: undefined })
                       if (range?.from && range?.to) {
                         setPrimaryDateRange({ from: range.from, to: range.to })
                         setPrimaryCalendarOpen(false)
@@ -242,7 +247,7 @@ export default function Dashboard() {
                       mode="range"
                       selected={comparisonTempRange}
                       onSelect={(range) => {
-                        setComparisonTempRange(range || {})
+                        setComparisonTempRange(range || { from: undefined })
                         if (range?.from && range?.to) {
                           setComparisonDateRange({ from: range.from, to: range.to })
                           setComparisonCalendarOpen(false)

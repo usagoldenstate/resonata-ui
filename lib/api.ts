@@ -85,7 +85,7 @@ export type CallMetricsSummary = {
   calls_booked: number
   conversion_rate: number
   missed_opportunities: number
-  bookings_last_updated_at: string | null
+  attribution_last_discovered_at: string | null
 }
 
 export type CallMetricsHourlyResponse = {

@@ -19,19 +19,15 @@ import {
   Accessibility,
   Search,
   Check,
-  ChevronDown,
   ChevronRight,
   Plus,
   X,
   Globe,
   Bookmark,
   Tag,
-  ArrowLeft,
-  MoreVertical,
   Pencil,
   Trash2,
   Save,
-  Gift,
   Dumbbell,
   Compass,
   Users,
@@ -44,12 +40,6 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -98,7 +88,7 @@ interface Field {
 
 interface CatalogItem {
   id: string
-  [key: string]: string
+  [key: string]: string | null
   conf: string
   src: string | null
 }
@@ -107,6 +97,7 @@ interface CatalogSchema {
   key: string
   label: string
   flex: string
+  type?: "boolean"
 }
 
 interface Room {

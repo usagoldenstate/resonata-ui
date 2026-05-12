@@ -243,9 +243,9 @@ export default function CallMetricsReportingPage() {
             </div>
           </div>
 
-          {summary.data?.bookings_last_updated_at === null ? (
+          {summary.data?.attribution_last_discovered_at === null ? (
             <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              Booking verification has not run for this hotel yet. Call volume is live; booked and conversion metrics may be incomplete.
+              Hotel booking sync has not completed for this hotel yet. Call volume is live; booked and conversion metrics may be incomplete.
             </div>
           ) : null}
 
@@ -271,9 +271,9 @@ export default function CallMetricsReportingPage() {
             />
           </div>
 
-          {summary.data?.bookings_last_updated_at ? (
+          {summary.data?.attribution_last_discovered_at ? (
             <p className="mt-3 text-xs text-muted-foreground">
-              Booking verification last ran {formatDateTime(summary.data.bookings_last_updated_at)}.
+              Hotel booking sync last completed {formatDateTime(summary.data.attribution_last_discovered_at)}.
             </p>
           ) : null}
         </section>
