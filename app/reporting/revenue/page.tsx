@@ -96,22 +96,10 @@ export default function RevenueReportingPage() {
             <h2 className="text-2xl font-semibold text-foreground">Revenue Reporting</h2>
             <p className="text-sm text-muted-foreground">Booked revenue via our agent</p>
           </div>
-          <Select value={timespan} onValueChange={setTimespan}>
-            <SelectTrigger className="w-40 bg-card border-border">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {timespanOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
 
         <div className="border border-border rounded-lg p-4 mb-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between gap-4 mb-4">
             <div>
               <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide">
                 Selected Time Span Metrics
@@ -120,9 +108,18 @@ export default function RevenueReportingPage() {
                 Updates when the date range changes
               </p>
             </div>
-            <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded">
-              {timespanOptions.find((option) => option.value === timespan)?.label}
-            </span>
+            <Select value={timespan} onValueChange={setTimespan}>
+              <SelectTrigger className="w-40 shrink-0 bg-card border-border">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {timespanOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Summary Cards */}
