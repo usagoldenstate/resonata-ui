@@ -2,6 +2,7 @@
 
 import { RedirectToSignIn, useAuth, useClerk } from "@clerk/nextjs"
 
+import { CurrentUserProvider } from "@/lib/current-user-context"
 import { HotelProvider } from "@/lib/hotel-context"
 import { __setClerkTokenGetter, __setUnauthorizedHandler } from "@/lib/api"
 
@@ -30,7 +31,9 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   return (
     <>
       <ClerkTokenBridge />
-      <HotelProvider>{children}</HotelProvider>
+      <CurrentUserProvider>
+        <HotelProvider>{children}</HotelProvider>
+      </CurrentUserProvider>
     </>
   )
 }

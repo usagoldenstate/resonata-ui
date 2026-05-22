@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { useClerk } from "@clerk/nextjs"
 import { ChevronDown, LogOut } from "lucide-react"
 
+import { useCurrentUser } from "@/lib/current-user-context"
 import { featureFlags } from "@/lib/env"
 import { useHotel } from "@/lib/hotel-context"
 import { confirmDiscardUnsaved } from "@/lib/unsaved-guard"
@@ -32,6 +33,7 @@ export function Sidebar() {
   const isReportingActive = pathname.startsWith("/reporting")
   const [reportingExpanded, setReportingExpanded] = useState(isReportingActive)
   const { hotels, hotelId, setHotelId, loading, error } = useHotel()
+  const { isPlatformAdmin } = useCurrentUser()
   const { signOut } = useClerk()
 
   const visibleNavItems = navItems.filter((item) => item.visible)
@@ -172,6 +174,24 @@ export function Sidebar() {
           <span className="w-1.5 h-1.5 rounded-full bg-transparent" />
           Settings
         </Link>
+        {isPlatformAdmin ? (
+          <Link
+            href="/dev-pages"
+            onClick={guardedNav}
+            className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-2 ${
+              pathname === "/dev-pages"
+                ? "text-sidebar-foreground font-medium"
+                : "text-muted-foreground hover:text-sidebar-foreground"
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                pathname === "/dev-pages" ? "bg-[#6b7a4a]" : "bg-transparent"
+              }`}
+            />
+            Dev Pages
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={async () => {

@@ -126,9 +126,52 @@ export type CallMetricsMonthlyRow = {
   booked: number
 }
 
+export type CurrentUser = {
+  user_id: string
+  email: string
+  role: string
+  is_active: boolean
+}
+
+export type PersonaState = {
+  content: string
+  source: "override" | "disk"
+  saved_at: string | null
+}
+
+export type PersonaHistoryEntry = {
+  content: string
+  saved_at: string
+}
+
 type CallMetricsBaseParams = {
   hotel_id: string
   min_duration_seconds?: number
+}
+
+export function fetchCurrentUser(opts: Pick<Options, "signal"> = {}) {
+  return api<CurrentUser>("/api/v1/me", opts)
+}
+
+export function fetchPersona(opts: Pick<Options, "signal"> = {}) {
+  return api<PersonaState>("/api/v1/admin/persona", opts)
+}
+
+export function updatePersona(content: string) {
+  return api<PersonaState>("/api/v1/admin/persona", {
+    method: "POST",
+    body: { content },
+  })
+}
+
+export function clearPersona() {
+  return api<PersonaState>("/api/v1/admin/persona", {
+    method: "DELETE",
+  })
+}
+
+export function fetchPersonaHistory(opts: Pick<Options, "signal"> = {}) {
+  return api<PersonaHistoryEntry[]>("/api/v1/admin/persona/history", opts)
 }
 
 export function fetchCallMetricsSummary(
