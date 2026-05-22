@@ -3,7 +3,8 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ChevronDown } from "lucide-react"
+import { useClerk } from "@clerk/nextjs"
+import { ChevronDown, LogOut } from "lucide-react"
 
 import { featureFlags } from "@/lib/env"
 import { useHotel } from "@/lib/hotel-context"
@@ -31,6 +32,7 @@ export function Sidebar() {
   const isReportingActive = pathname.startsWith("/reporting")
   const [reportingExpanded, setReportingExpanded] = useState(isReportingActive)
   const { hotels, hotelId, setHotelId, loading, error } = useHotel()
+  const { signOut } = useClerk()
 
   const visibleNavItems = navItems.filter((item) => item.visible)
 
@@ -170,6 +172,17 @@ export function Sidebar() {
           <span className="w-1.5 h-1.5 rounded-full bg-transparent" />
           Settings
         </Link>
+        <button
+          type="button"
+          onClick={async () => {
+            window.localStorage.removeItem("resonata.selected_hotel_id")
+            await signOut({ redirectUrl: "/sign-in" })
+          }}
+          className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-sidebar-foreground transition-colors flex items-center gap-2"
+        >
+          <LogOut className="w-4 h-4" />
+          Sign out
+        </button>
       </div>
     </aside>
   )

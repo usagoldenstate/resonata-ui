@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
-import { HotelProvider } from '@/lib/hotel-context'
+import { ClerkProvider } from '@clerk/nextjs'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
@@ -37,12 +37,14 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className="font-sans antialiased">
-        <HotelProvider>{children}</HotelProvider>
-        <Toaster />
-        {process.env.NODE_ENV === 'production' && <Analytics />}
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+        <body className="font-sans antialiased">
+          {children}
+          <Toaster />
+          {process.env.NODE_ENV === 'production' && <Analytics />}
+        </body>
+      </html>
+    </ClerkProvider>
   )
 }

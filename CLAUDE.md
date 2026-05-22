@@ -20,24 +20,25 @@ This is a Next.js 16 App Router + React 19 admin UI for the Resonata voice-agent
 All backend calls go through the `api<T>(path, opts)` wrapper in `lib/api.ts`. It:
 
 - Prefixes `NEXT_PUBLIC_API_URL` (set per-env; points at FastAPI, e.g. `http://localhost:8000` in dev).
-- Injects `X-Admin-Token` from `NEXT_PUBLIC_ADMIN_TOKEN`. The token is intentionally public-to-browser — acceptable for the single-operator MVP, not for a public rollout.
+- Reads the Clerk session token from the bridge mounted in `app/(protected)/layout.tsx` and sends it as `Authorization: Bearer ...`.
 - Sends `ngrok-skip-browser-warning: true` so ngrok-fronted dev backends work.
+- On a backend 401, clears `resonata.selected_hotel_id` and signs the user out to `/sign-in`.
 - Throws `ApiError` (with status + parsed body) on non-2xx.
 
 When adding backend calls, always go through `api()`; do not call `fetch` directly.
 
 ### Hotel selection (`lib/hotel-context.tsx`)
 
-`<HotelProvider>` wraps the app in `app/layout.tsx` and is the single source of truth for the currently selected hotel. It loads `GET /api/v1/admin/hotels` once on mount, persists the selection in `localStorage` under `resonata.selected_hotel_id`, and falls back to the first active hotel on first load. Every data-bound page reads `hotelId` from `useHotel()` and scopes its requests to it.
+`<HotelProvider>` is mounted only after Clerk reports `isLoaded && isSignedIn` in `app/(protected)/layout.tsx`. It loads `GET /api/v1/me/hotels` once on mount, persists the selection in `localStorage` under `resonata.selected_hotel_id`, and falls back to the first accessible active hotel on first load. Every data-bound page reads `hotelId` from `useHotel()` and scopes its requests to it.
 
 ### Feature flags + hidden pages
 
 Pages that aren't wired to the backend yet are hidden behind `NEXT_PUBLIC_SHOW_*` env vars (see `.env.example`). The flags are enforced in **two** places that must stay in sync:
 
 - `components/sidebar.tsx` hides nav items.
-- `middleware.ts` redirects direct navigation (including bookmarks) to `/knowledge-base` as the fallback.
+- `proxy.ts` combines Clerk route protection with direct-navigation redirects (including bookmarks) to `/knowledge-base` as the fallback.
 
-`lib/env.ts` exports the parsed flags (`featureFlags`, `pageFlagByPrefix`, `dashboardVisible`). The dashboard lives at `/` and is handled as an exact-match special case in the middleware — do not add it to the prefix list. Middleware env is frozen at build time (edge runtime), so flag changes require a redeploy.
+`lib/env.ts` exports the parsed flags (`featureFlags`, `pageFlagByPrefix`, `dashboardVisible`). The dashboard lives at `/` and is handled as an exact-match special case in the proxy — do not add it to the prefix list. Proxy env is frozen at build time (edge runtime), so flag changes require a redeploy.
 
 ### Knowledge Base serialization (`lib/knowledge-serialize.ts`)
 

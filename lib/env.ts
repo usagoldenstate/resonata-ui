@@ -4,7 +4,6 @@
 
 export const env = {
   apiUrl: process.env.NEXT_PUBLIC_API_URL ?? "",
-  adminToken: process.env.NEXT_PUBLIC_ADMIN_TOKEN ?? "",
 } as const
 
 // Feature flags — one per page, defaulted to false. Explicit "true" string
@@ -20,12 +19,12 @@ export const featureFlags = {
   showFaqs: true,
 } as const
 
-// Hidden-page routes that the middleware should redirect. Keep in one
-// place so sidebar + middleware stay in sync.
+// Hidden-page routes that the proxy should redirect. Keep in one
+// place so sidebar + proxy stay in sync.
 export const pageFlagByPrefix: Array<{ prefix: string; visible: boolean }> = [
   { prefix: "/reporting", visible: featureFlags.showReporting },
 ]
 
 // Special-case: the dashboard lives at "/" — matching by prefix would match
-// everything, so we handle it separately in the middleware with an exact check.
+// everything, so we handle it separately in the proxy with an exact check.
 export const dashboardVisible = featureFlags.showDashboard

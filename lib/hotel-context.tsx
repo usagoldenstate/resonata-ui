@@ -1,8 +1,7 @@
 "use client"
 
-// Selected-hotel context for the internal sandbox UI. Customer launch must
-// replace this admin-backed list with /me and /me/hotels authorization data.
-// Fetches the hotel list once on mount, persists the
+// Selected-hotel context for authenticated users. Fetches the caller's
+// accessible active hotels once on mount, persists the
 // current selection in localStorage so a reload lands back on the same hotel,
 // and exposes a setter the hotel picker calls. Every page that talks to the
 // backend reads `hotelId` from here.
@@ -41,7 +40,7 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
     setLoading(true)
     setError(null)
     try {
-      const list = await api<HotelListItem[]>("/api/v1/admin/hotels")
+      const list = await api<HotelListItem[]>("/api/v1/me/hotels")
       setHotels(list)
       // Restore stored selection if it still exists in the list; otherwise
       // default to the first active hotel so pages aren't stuck in an empty

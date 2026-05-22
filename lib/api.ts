@@ -1,7 +1,4 @@
-// Small fetch wrapper that injects the admin token on every request.
-// The backend reads it from the `X-Admin-Token` header; token comes from
-// `NEXT_PUBLIC_ADMIN_TOKEN` and is visible in the browser — fine for the
-// MVP single-operator deployment, not for a public customer rollout.
+"use client"
 
 import { env } from "./env"
 
@@ -28,6 +25,19 @@ type Options = {
 }
 
 type QueryValue = string | number | boolean | null | undefined
+type TokenGetter = () => Promise<string | null>
+type UnauthorizedHandler = () => Promise<void>
+
+let clerkTokenGetter: TokenGetter | null = null
+let unauthorizedHandler: UnauthorizedHandler | null = null
+
+export function __setClerkTokenGetter(getter: TokenGetter) {
+  clerkTokenGetter = getter
+}
+
+export function __setUnauthorizedHandler(handler: UnauthorizedHandler) {
+  unauthorizedHandler = handler
+}
 
 function withQuery(path: string, params: Record<string, QueryValue>): string {
   const search = new URLSearchParams()
@@ -53,8 +63,9 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
     "Content-Type": "application/json",
     "ngrok-skip-browser-warning": "true",
   }
-  if (env.adminToken) {
-    headers["X-Admin-Token"] = env.adminToken
+  const token = await clerkTokenGetter?.()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
   }
 
   const res = await fetch(url, {
@@ -65,6 +76,12 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
   })
 
   if (!res.ok) {
+    if (res.status === 401 && unauthorizedHandler) {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("resonata.selected_hotel_id")
+      }
+      await unauthorizedHandler()
+    }
     let body: unknown = undefined
     try {
       body = await res.json()
