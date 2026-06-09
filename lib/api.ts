@@ -126,6 +126,47 @@ export type CallMetricsMonthlyRow = {
   booked: number
 }
 
+export type NotBookedTaxonomyCategory = {
+  name: string
+  addressable: boolean
+  catch_all: string
+  subcategories: string[]
+}
+
+export type NotBookedTaxonomyResponse = {
+  categories: NotBookedTaxonomyCategory[]
+}
+
+export type NotBookedSubcategoryCount = {
+  name: string
+  count: number
+  percentage: number
+}
+
+export type NotBookedCategoryBreakdown = {
+  category: string
+  count: number
+  percentage: number
+  subcategories: NotBookedSubcategoryCount[]
+}
+
+export type NotBookedBreakdownResponse = {
+  total_not_booked: number
+  prior_period_total: number
+  addressable_count: number
+  addressable_percentage: number
+  lost_revenue_cents_estimate: number | null
+  lost_revenue_is_estimate: boolean
+  attribution_last_discovered_at: string | null
+  categories: NotBookedCategoryBreakdown[]
+}
+
+export type NotBookedSeasonalityRow = {
+  month: string
+  category: string
+  count: number
+}
+
 export type CurrentUser = {
   user_id: string
   email: string
@@ -210,6 +251,36 @@ export function fetchCallMetricsMonthly(
 ) {
   return api<CallMetricsMonthlyRow[]>(
     withQuery("/api/v1/reporting/call-metrics/volume/monthly", params),
+    opts,
+  )
+}
+
+export function fetchNotBookedTaxonomy(
+  params: { hotel_id: string },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<NotBookedTaxonomyResponse>(
+    withQuery("/api/v1/reporting/not-booked/taxonomy", params),
+    opts,
+  )
+}
+
+export function fetchNotBookedBreakdown(
+  params: CallMetricsBaseParams & { start_date: string; end_date: string },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<NotBookedBreakdownResponse>(
+    withQuery("/api/v1/reporting/not-booked/breakdown", params),
+    opts,
+  )
+}
+
+export function fetchNotBookedSeasonality(
+  params: CallMetricsBaseParams & { start_month: string; end_month: string },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<NotBookedSeasonalityRow[]>(
+    withQuery("/api/v1/reporting/not-booked/seasonality", params),
     opts,
   )
 }
