@@ -167,6 +167,51 @@ export type NotBookedSeasonalityRow = {
   count: number
 }
 
+export type CallAnalyticsSummary = {
+  status: string
+  outcome: string | null
+  sentiment: string | null
+  booking_made: boolean | null
+  booking_link_sent: boolean | null
+  not_bookable_reason: string | null
+  not_booked_reason_category: string | null
+  not_booked_reason_subcategory: string | null
+  not_booked_reason_version: string | null
+}
+
+export type CallListItem = {
+  id: string
+  provider_call_id: string
+  hotel_id: string | null
+  summary: string | null
+  duration_seconds: number | null
+  analytics: CallAnalyticsSummary | null
+  created_at: string
+  updated_at: string
+}
+
+export type CallListPage = {
+  items: CallListItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+// Server-derived outcome buckets — must match `CallOutcome` in the backend's
+// api/router.py (booked > link_sent > not_booked; unfinished analytics = pending).
+export type CallOutcomeFilter = "booked" | "link_sent" | "not_booked" | "pending"
+
+export type CallDetail = {
+  id: string
+  provider_call_id: string
+  hotel_id: string | null
+  transcript: string | null
+  summary: string | null
+  duration_seconds: number | null
+  created_at: string
+  updated_at: string
+}
+
 export type CurrentUser = {
   user_id: string
   email: string
@@ -213,6 +258,25 @@ export function clearPersona() {
 
 export function fetchPersonaHistory(opts: Pick<Options, "signal"> = {}) {
   return api<PersonaHistoryEntry[]>("/api/v1/admin/persona/history", opts)
+}
+
+export function fetchCalls(
+  params: {
+    hotel_id: string
+    limit?: number
+    offset?: number
+    outcome?: CallOutcomeFilter
+    not_booked_reason?: string
+    date_from?: string
+    date_to?: string
+  },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<CallListPage>(withQuery("/api/v1/calls", params), opts)
+}
+
+export function fetchCallDetail(callId: string, opts: Pick<Options, "signal"> = {}) {
+  return api<CallDetail>(`/api/v1/calls/${callId}`, opts)
 }
 
 export function fetchCallMetricsSummary(
