@@ -150,8 +150,11 @@ export default function NotBookedReportingPage() {
 
   const peakMonth = useMemo(() => {
     if (monthlyTrend.length === 0) return "--"
-    return monthlyTrend.reduce((max, m) => (m.count > max.count ? m : max), monthlyTrend[0])
-      .month
+    const peak = monthlyTrend.reduce(
+      (max, m) => (m.count > max.count ? m : max),
+      monthlyTrend[0],
+    )
+    return peak.count > 0 ? peak.month : "--"
   }, [monthlyTrend])
 
   const topSubcategory = useMemo(() => {
