@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { AlertTriangle, ChevronLeft, Loader2, TrendingDown, TrendingUp } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
@@ -50,6 +51,7 @@ type LoadState<T> = {
 const emptyState = <T,>(): LoadState<T> => ({ loading: false, data: null, error: null })
 
 export default function NotBookedReportingPage() {
+  const router = useRouter()
   const { hotelId, loading: hotelLoading, error: hotelError } = useHotel()
   const [timespan, setTimespan] = useState("30")
   const [selectedReason, setSelectedReason] = useState<string | null>(null)
@@ -88,8 +90,10 @@ export default function NotBookedReportingPage() {
     return () => controller.abort()
   }, [hotelId, range.start, range.end])
 
+  // One response covers all categories × 12 months; the page filters
+  // client-side, so fetch once per hotel instead of on every category click.
   useEffect(() => {
-    if (!hotelId || !selectedReason) {
+    if (!hotelId) {
       setSeasonality(emptyState())
       return
     }
@@ -108,7 +112,7 @@ export default function NotBookedReportingPage() {
       })
 
     return () => controller.abort()
-  }, [hotelId, selectedReason])
+  }, [hotelId])
 
   const breakdownData = breakdown.data
   const categories = useMemo(() => breakdownData?.categories ?? [], [breakdownData])
@@ -162,6 +166,20 @@ export default function NotBookedReportingPage() {
     if (subs.length === 0) return null
     return subs.reduce((top, s) => (s.count > top.count ? s : top), subs[0])
   }, [selectedReasonData])
+
+  // Drill into the call log pre-filtered to this category/subcategory and the
+  // same date range. outcome=not_booked keeps the list on the same universe
+  // as these counts (bookable leads, excluding attribution-confirmed bookings).
+  const drillIntoCallLog = (category: string, subcategory: string) => {
+    const params = new URLSearchParams({
+      outcome: "not_booked",
+      not_booked_reason: category,
+      not_booked_subcategory: subcategory,
+      date_from: range.start,
+      date_to: range.end,
+    })
+    router.push(`/call-log?${params.toString()}`)
+  }
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -320,11 +338,14 @@ export default function NotBookedReportingPage() {
                       </p>
                       <div className="flex h-4 rounded-full overflow-hidden bg-muted">
                         {categories.map((reason) => (
-                          <div
+                          <button
                             key={reason.category}
+                            type="button"
+                            onClick={() => setSelectedReason(reason.category)}
                             className={`${COLOR_BY_CATEGORY[reason.category] ?? DEFAULT_COLOR} transition-all hover:opacity-80 cursor-pointer`}
                             style={{ width: `${reason.percentage}%` }}
                             title={`${reason.category}: ${formatPercent(reason.percentage)}`}
+                            aria-label={`View ${reason.category} details`}
                           />
                         ))}
                       </div>
@@ -403,7 +424,13 @@ export default function NotBookedReportingPage() {
                   }`}
                 >
                   {(selectedReasonData?.subcategories ?? []).map((sub) => (
-                    <div key={sub.name}>
+                    <button
+                      key={sub.name}
+                      type="button"
+                      onClick={() => drillIntoCallLog(selectedReason, sub.name)}
+                      className="w-full text-left rounded-md px-2 py-1.5 -mx-2 transition-colors hover:bg-muted/70"
+                      title={`View these calls in the call log`}
+                    >
                       <div className="flex items-center justify-between gap-4 mb-1.5">
                         <span className="text-base text-card-foreground">{sub.name}</span>
                         <span className="text-sm text-muted-foreground whitespace-nowrap">
@@ -416,7 +443,7 @@ export default function NotBookedReportingPage() {
                           style={{ width: `${sub.percentage}%` }}
                         />
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </CardContent>

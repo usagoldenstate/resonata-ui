@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState, Fragment } from "react"
+import { Suspense, useEffect, useState, Fragment } from "react"
+import { useSearchParams } from "next/navigation"
 import { CalendarIcon, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2, Phone } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,11 +16,13 @@ import {
 import { Sidebar } from "@/components/sidebar"
 import {
   ApiError,
-  type CallAnalyticsSummary,
+  type CallListItem,
   type CallListPage,
   type CallOutcomeFilter,
+  type NotBookedTaxonomyCategory,
   fetchCallDetail,
   fetchCalls,
+  fetchNotBookedTaxonomy,
 } from "@/lib/api"
 import { useHotel } from "@/lib/hotel-context"
 
@@ -30,19 +33,26 @@ const outcomeFilterOptions: Array<{ value: "all" | CallOutcomeFilter; label: str
   { value: "booked", label: "Booked" },
   { value: "link_sent", label: "Link Sent" },
   { value: "not_booked", label: "Not Booked" },
+  { value: "not_bookable", label: "Not Bookable" },
   { value: "pending", label: "Pending" },
 ]
+
+const outcomeFilterValues = new Set(outcomeFilterOptions.map((o) => o.value))
 
 // Mirrors the backend's not-booked taxonomy categories.
 const notBookedReasonOptions = ["Price", "Availability", "Amenities", "Policy", "Other"]
 
-type OutcomeLabel = "Booked" | "Link Sent" | "Not Booked" | "Pending"
+type OutcomeLabel = "Booked" | "Link Sent" | "Not Booked" | "Not Bookable" | "Pending"
 
 // Same precedence as the backend's outcome filter (api/router.py), so a row's
-// badge always matches the filter bucket that returned it.
-function deriveOutcome(analytics: CallAnalyticsSummary | null): OutcomeLabel {
-  if (analytics?.booking_made) return "Booked"
+// badge always matches the filter bucket that returned it. "Booked" comes from
+// the server-derived attribution flag — the classifier no longer writes
+// booking_made.
+function deriveOutcome(call: CallListItem): OutcomeLabel {
+  if (call.booked) return "Booked"
+  const analytics = call.analytics
   if (analytics?.booking_link_sent) return "Link Sent"
+  if (analytics?.outcome === "not_bookable") return "Not Bookable"
   if (analytics?.status === "done") return "Not Booked"
   return "Pending"
 }
@@ -52,6 +62,7 @@ function OutcomeBadge({ outcome }: { outcome: OutcomeLabel }) {
     Booked: "bg-[#6b7a4a]/10 text-[#6b7a4a] border border-[#6b7a4a]/20",
     "Link Sent": "bg-[#c4a84b]/10 text-[#a08930] border border-[#c4a84b]/20 whitespace-nowrap",
     "Not Booked": "bg-[#9ca3af]/10 text-[#6b7280] border border-[#9ca3af]/20 whitespace-nowrap",
+    "Not Bookable": "bg-muted text-muted-foreground border border-border whitespace-nowrap",
     Pending: "bg-muted text-muted-foreground border border-border",
   }
   return (
@@ -112,14 +123,37 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError"
 }
 
+// useSearchParams requires a Suspense boundary during prerender, so the page
+// component just wraps the real one.
 export default function CallLogPage() {
+  return (
+    <Suspense fallback={null}>
+      <CallLogPageInner />
+    </Suspense>
+  )
+}
+
+function CallLogPageInner() {
   const { hotelId, hotels, loading: hotelLoading } = useHotel()
   const hotelName = hotels.find((h) => h.hotel_id === hotelId)?.display_name
 
-  const [outcomeFilter, setOutcomeFilter] = useState<"all" | CallOutcomeFilter>("all")
-  const [notBookedReasonFilter, setNotBookedReasonFilter] = useState("all")
-  const [dateFrom, setDateFrom] = useState("")
-  const [dateTo, setDateTo] = useState("")
+  // Filters can arrive via URL params (drill-through from the Not Booked
+  // Reasons page); they seed the initial state only.
+  const searchParams = useSearchParams()
+  const [outcomeFilter, setOutcomeFilter] = useState<"all" | CallOutcomeFilter>(() => {
+    const param = searchParams.get("outcome")
+    return param && outcomeFilterValues.has(param as CallOutcomeFilter)
+      ? (param as CallOutcomeFilter)
+      : "all"
+  })
+  const [notBookedReasonFilter, setNotBookedReasonFilter] = useState(
+    () => searchParams.get("not_booked_reason") ?? "all",
+  )
+  const [notBookedSubcategoryFilter, setNotBookedSubcategoryFilter] = useState(
+    () => searchParams.get("not_booked_subcategory") ?? "all",
+  )
+  const [dateFrom, setDateFrom] = useState(() => searchParams.get("date_from") ?? "")
+  const [dateTo, setDateTo] = useState(() => searchParams.get("date_to") ?? "")
   const [offset, setOffset] = useState(0)
 
   const [page, setPage] = useState<CallListPage | null>(null)
@@ -129,11 +163,33 @@ export default function CallLogPage() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptState>>({})
 
+  // Subcategory options come from the backend taxonomy (same source the
+  // reporting pages use), scoped to the selected category.
+  const [taxonomy, setTaxonomy] = useState<NotBookedTaxonomyCategory[]>([])
+  useEffect(() => {
+    if (!hotelId) {
+      setTaxonomy([])
+      return
+    }
+    const controller = new AbortController()
+    fetchNotBookedTaxonomy({ hotel_id: hotelId }, { signal: controller.signal })
+      .then((data) => setTaxonomy(data.categories))
+      .catch((err: unknown) => {
+        if (isAbortError(err)) return
+        // Non-fatal: the subcategory dropdown just stays empty.
+        setTaxonomy([])
+      })
+    return () => controller.abort()
+  }, [hotelId])
+
+  const subcategoryOptions =
+    taxonomy.find((c) => c.name === notBookedReasonFilter)?.subcategories ?? []
+
   // Any filter or hotel change restarts pagination from the first page.
   useEffect(() => {
     setOffset(0)
     setExpandedRow(null)
-  }, [hotelId, outcomeFilter, notBookedReasonFilter, dateFrom, dateTo])
+  }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo])
 
   useEffect(() => {
     if (!hotelId) {
@@ -152,6 +208,8 @@ export default function CallLogPage() {
         outcome: outcomeFilter === "all" ? undefined : outcomeFilter,
         not_booked_reason:
           notBookedReasonFilter === "all" ? undefined : notBookedReasonFilter,
+        not_booked_subcategory:
+          notBookedSubcategoryFilter === "all" ? undefined : notBookedSubcategoryFilter,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
       },
@@ -168,7 +226,15 @@ export default function CallLogPage() {
       })
 
     return () => controller.abort()
-  }, [hotelId, offset, outcomeFilter, notBookedReasonFilter, dateFrom, dateTo])
+  }, [
+    hotelId,
+    offset,
+    outcomeFilter,
+    notBookedReasonFilter,
+    notBookedSubcategoryFilter,
+    dateFrom,
+    dateTo,
+  ])
 
   const toggleRow = (id: string) => {
     const next = expandedRow === id ? null : id
@@ -194,7 +260,11 @@ export default function CallLogPage() {
   const items = page?.items ?? []
   const total = page?.total ?? 0
   const hasFilters =
-    outcomeFilter !== "all" || notBookedReasonFilter !== "all" || dateFrom !== "" || dateTo !== ""
+    outcomeFilter !== "all" ||
+    notBookedReasonFilter !== "all" ||
+    notBookedSubcategoryFilter !== "all" ||
+    dateFrom !== "" ||
+    dateTo !== ""
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -247,7 +317,13 @@ export default function CallLogPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={notBookedReasonFilter} onValueChange={setNotBookedReasonFilter}>
+          <Select
+            value={notBookedReasonFilter}
+            onValueChange={(value) => {
+              setNotBookedReasonFilter(value)
+              setNotBookedSubcategoryFilter("all")
+            }}
+          >
             <SelectTrigger className="w-52 bg-card border-border">
               <SelectValue placeholder="Not booked reasons" />
             </SelectTrigger>
@@ -260,6 +336,24 @@ export default function CallLogPage() {
               ))}
             </SelectContent>
           </Select>
+          {notBookedReasonFilter !== "all" && subcategoryOptions.length > 0 && (
+            <Select
+              value={notBookedSubcategoryFilter}
+              onValueChange={setNotBookedSubcategoryFilter}
+            >
+              <SelectTrigger className="w-64 bg-card border-border">
+                <SelectValue placeholder="All subcategories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All subcategories</SelectItem>
+                {subcategoryOptions.map((sub) => (
+                  <SelectItem key={sub} value={sub}>
+                    {sub}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           {/* Call-date range */}
           <div className="flex items-center gap-2">
@@ -286,6 +380,7 @@ export default function CallLogPage() {
               onClick={() => {
                 setOutcomeFilter("all")
                 setNotBookedReasonFilter("all")
+                setNotBookedSubcategoryFilter("all")
                 setDateFrom("")
                 setDateTo("")
               }}
@@ -313,7 +408,7 @@ export default function CallLogPage() {
               <tbody className="text-sm">
                 {items.map((call) => {
                   const startedAt = parseUtc(call.created_at)
-                  const outcome = deriveOutcome(call.analytics)
+                  const outcome = deriveOutcome(call)
                   const transcript = transcripts[call.id]
                   return (
                     <Fragment key={call.id}>

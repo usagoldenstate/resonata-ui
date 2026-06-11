@@ -186,6 +186,8 @@ export type CallListItem = {
   summary: string | null
   duration_seconds: number | null
   analytics: CallAnalyticsSummary | null
+  // Server-derived: a PMS reservation was attributed to this call's link send.
+  booked: boolean
   created_at: string
   updated_at: string
 }
@@ -198,8 +200,14 @@ export type CallListPage = {
 }
 
 // Server-derived outcome buckets — must match `CallOutcome` in the backend's
-// api/router.py (booked > link_sent > not_booked; unfinished analytics = pending).
-export type CallOutcomeFilter = "booked" | "link_sent" | "not_booked" | "pending"
+// api/router.py (booked > link_sent > not_booked > not_bookable; unfinished
+// analytics = pending). "booked" = PMS reservation attributed to the call.
+export type CallOutcomeFilter =
+  | "booked"
+  | "link_sent"
+  | "not_booked"
+  | "not_bookable"
+  | "pending"
 
 export type CallDetail = {
   id: string
@@ -267,6 +275,7 @@ export function fetchCalls(
     offset?: number
     outcome?: CallOutcomeFilter
     not_booked_reason?: string
+    not_booked_subcategory?: string
     date_from?: string
     date_to?: string
   },
