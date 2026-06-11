@@ -3,7 +3,9 @@
 import * as React from "react"
 import {
   AlertTriangle,
+  FileText,
   History,
+  Link2,
   Loader2,
   RefreshCw,
   RotateCcw,
@@ -12,7 +14,9 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { BookingEnginePanel } from "@/components/booking-engine-panel"
 import { Sidebar } from "@/components/sidebar"
+import { cn } from "@/lib/utils"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -43,21 +47,54 @@ const emptyLoadState: LoadState = {
   error: null,
 }
 
+type DevTab = "persona" | "booking-engine"
+
 export default function DevPages() {
   const { loading: userLoading, isPlatformAdmin } = useCurrentUser()
+  const [activeTab, setActiveTab] = React.useState<DevTab>("persona")
+
+  const tabs: Array<{ id: DevTab; label: string; icon: React.ReactNode }> = [
+    { id: "persona", label: "Persona Override", icon: <FileText className="w-4 h-4" /> },
+    { id: "booking-engine", label: "Booking Engine", icon: <Link2 className="w-4 h-4" /> },
+  ]
 
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
       <main className="flex-1 p-8">
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-2xl font-semibold text-foreground">Dev Pages</h1>
         </div>
 
         {userLoading ? (
           <StateNotice tone="muted" message="Loading..." />
         ) : isPlatformAdmin ? (
-          <PersonaOverridePanel />
+          <>
+            <div className="mb-6 flex border-b border-border">
+              {tabs.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTab(t.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors",
+                    activeTab === t.id
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t.icon}
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {/* Both tabs stay mounted so unsaved edits survive switching. */}
+            <div className={activeTab === "persona" ? "" : "hidden"}>
+              <PersonaOverridePanel />
+            </div>
+            <div className={activeTab === "booking-engine" ? "" : "hidden"}>
+              <BookingEnginePanel />
+            </div>
+          </>
         ) : (
           <StateNotice tone="error" message="This page is only available to platform admins." />
         )}

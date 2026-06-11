@@ -268,6 +268,101 @@ export function fetchPersonaHistory(opts: Pick<Options, "signal"> = {}) {
   return api<PersonaHistoryEntry[]>("/api/v1/admin/persona/history", opts)
 }
 
+// ── Booking engine (dev pages) ──────────────────────────────────────────────
+
+export type P3CheckoutUrlStyle = "rates_rooms_inline" | "trailing_rate_room"
+
+export type P3Config = {
+  base_url: string
+  p3_hotel_id: string
+  checkout_url_style: P3CheckoutUrlStyle
+  default_child_bucket: number
+  room_type_mappings: Record<string, string>
+  rate_mappings: Record<string, string>
+  addon_mappings: Record<string, string>
+}
+
+export type BookingEngineState = {
+  hotel_id: string
+  booking_engine_provider: string | null
+  registered_providers: string[]
+  is_active: boolean
+  configurable: boolean
+  config: Partial<P3Config> | null
+  config_valid: boolean
+  config_error: string | null
+}
+
+export type PmsCatalogRoomType = {
+  room_type_id: string
+  room_name: string
+}
+
+export type PmsCatalogRate = {
+  rate_id: string
+  rate_name: string | null
+  rate_code: string | null
+}
+
+export type BookingEnginePmsCatalog = {
+  hotel_id: string
+  pms_provider: string
+  room_types: PmsCatalogRoomType[]
+  rates: PmsCatalogRate[]
+  rates_source: "availability_sample"
+  sample_check_in: string | null
+  sample_check_out: string | null
+  rates_error: string | null
+}
+
+export type BookingEnginePreviewRequest = {
+  config: P3Config
+  check_in: string
+  check_out: string
+  adults: number
+  children: number
+  room_type_id: string
+  rate_id: string
+  addon_selections?: Array<{ addon_id: string; quantity: number }>
+}
+
+export function fetchBookingEngineState(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<BookingEngineState>(
+    `/api/v1/admin/hotels/${hotelId}/booking-engine`,
+    opts,
+  )
+}
+
+export function fetchBookingEnginePmsCatalog(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<BookingEnginePmsCatalog>(
+    `/api/v1/admin/hotels/${hotelId}/booking-engine/pms-catalog`,
+    opts,
+  )
+}
+
+export function updateBookingEngineConfig(hotelId: string, config: P3Config) {
+  return api<BookingEngineState>(`/api/v1/admin/hotels/${hotelId}/booking-engine`, {
+    method: "PUT",
+    body: config,
+  })
+}
+
+export function previewBookingEngineLink(
+  hotelId: string,
+  body: BookingEnginePreviewRequest,
+) {
+  return api<{ url: string }>(
+    `/api/v1/admin/hotels/${hotelId}/booking-engine/preview-link`,
+    { method: "POST", body },
+  )
+}
+
 export function fetchCalls(
   params: {
     hotel_id: string
