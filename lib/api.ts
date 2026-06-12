@@ -363,6 +363,62 @@ export function previewBookingEngineLink(
   )
 }
 
+// ── User hotel access (dev pages) ───────────────────────────────────────────
+
+export type AdminHotelListItem = {
+  hotel_id: string
+  display_name: string
+  pms_provider: string
+  is_active: boolean
+}
+
+export type UserGrantedHotel = {
+  hotel_id: string
+  display_name: string
+  granted_at: string
+}
+
+export type UserAccessItem = {
+  user_id: string
+  auth_subject: string
+  email: string
+  role: string
+  is_active: boolean
+  hotels: UserGrantedHotel[]
+}
+
+export function fetchAdminHotels(opts: Pick<Options, "signal"> = {}) {
+  return api<AdminHotelListItem[]>("/api/v1/admin/hotels", opts)
+}
+
+export function fetchAdminUsers(opts: Pick<Options, "signal"> = {}) {
+  return api<UserAccessItem[]>("/api/v1/admin/users", opts)
+}
+
+export function grantUserHotelAccess(body: {
+  auth_subject: string
+  email: string
+  hotel_id: string
+}) {
+  return api<UserAccessItem>("/api/v1/admin/users/grants", {
+    method: "POST",
+    body,
+  })
+}
+
+export function revokeUserHotelAccess(userId: string, hotelId: string) {
+  return api<UserAccessItem>(`/api/v1/admin/users/${userId}/grants/${hotelId}`, {
+    method: "DELETE",
+  })
+}
+
+export function deleteUser(userId: string) {
+  return api<void>(`/api/v1/admin/users/${userId}`, {
+    method: "DELETE",
+    parseJson: false,
+  })
+}
+
 export function fetchCalls(
   params: {
     hotel_id: string
