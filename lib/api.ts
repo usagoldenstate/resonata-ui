@@ -216,6 +216,9 @@ export type CallDetail = {
   transcript: string | null
   summary: string | null
   duration_seconds: number | null
+  // Server-derived: a playable Twilio recording is attached. The raw sid is never
+  // exposed; audio is fetched by call_id through the authed proxy below.
+  has_recording: boolean
   created_at: string
   updated_at: string
 }
@@ -437,6 +440,33 @@ export function fetchCalls(
 
 export function fetchCallDetail(callId: string, opts: Pick<Options, "signal"> = {}) {
   return api<CallDetail>(`/api/v1/calls/${callId}`, opts)
+}
+
+// The generic api() helper always parses JSON, so recording audio needs its own
+// path: same auth headers, but it returns the raw audio/mpeg body as a Blob for
+// <audio> playback (the browser can't send the Clerk bearer on an <audio src>).
+export async function fetchCallRecording(
+  callId: string,
+  opts: Pick<Options, "signal"> = {},
+): Promise<Blob> {
+  const path = `/api/v1/calls/${callId}/recording`
+  if (!env.apiUrl) {
+    throw new ApiError(0, path, "NEXT_PUBLIC_API_URL is not set — UI cannot reach the backend.")
+  }
+  const url = `${env.apiUrl.replace(/\/$/, "")}${path}`
+  const headers: Record<string, string> = { "ngrok-skip-browser-warning": "true" }
+  const token = await clerkTokenGetter?.()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const res = await fetch(url, { headers, signal: opts.signal })
+  if (!res.ok) {
+    if (res.status === 401 && unauthorizedHandler) {
+      await unauthorizedHandler()
+    }
+    throw new ApiError(res.status, url, `API ${res.status} for ${path}`)
+  }
+  return res.blob()
 }
 
 export function fetchCallMetricsSummary(

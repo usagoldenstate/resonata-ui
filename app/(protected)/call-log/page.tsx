@@ -21,6 +21,7 @@ import {
   type CallOutcomeFilter,
   type NotBookedTaxonomyCategory,
   fetchCallDetail,
+  fetchCallRecording,
   fetchCalls,
   fetchNotBookedTaxonomy,
 } from "@/lib/api"
@@ -108,6 +109,53 @@ type TranscriptState = {
   loading: boolean
   turns: TranscriptTurn[] | null
   error: string | null
+  hasRecording: boolean
+}
+
+// Self-contained recording player: fetches the audio blob through the authed
+// proxy, plays it with the native <audio> controls, and revokes the object URL on
+// unmount. The expanded row is conditionally rendered, so collapsing it unmounts
+// this and frees the blob.
+function CallRecordingPlayer({ callId }: { callId: string }) {
+  const [state, setState] = useState<{ url: string | null; loading: boolean; error: string | null }>({
+    url: null,
+    loading: true,
+    error: null,
+  })
+
+  useEffect(() => {
+    let objectUrl: string | null = null
+    let cancelled = false
+    setState({ url: null, loading: true, error: null })
+    fetchCallRecording(callId)
+      .then((blob) => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(blob)
+        setState({ url: objectUrl, loading: false, error: null })
+      })
+      .catch((err: unknown) => {
+        if (cancelled || isAbortError(err)) return
+        setState({ url: null, loading: false, error: describeError(err) })
+      })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [callId])
+
+  if (state.loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Loading recording…
+      </div>
+    )
+  }
+  if (state.error) {
+    return <p className="text-sm text-destructive">{state.error}</p>
+  }
+  if (!state.url) return null
+  return <audio controls src={state.url} className="w-full" />
 }
 
 function describeError(error: unknown): string {
@@ -240,18 +288,26 @@ function CallLogPageInner() {
     const next = expandedRow === id ? null : id
     setExpandedRow(next)
     if (next && !transcripts[next]) {
-      setTranscripts((prev) => ({ ...prev, [next]: { loading: true, turns: null, error: null } }))
+      setTranscripts((prev) => ({
+        ...prev,
+        [next]: { loading: true, turns: null, error: null, hasRecording: false },
+      }))
       fetchCallDetail(next)
         .then((detail) =>
           setTranscripts((prev) => ({
             ...prev,
-            [next]: { loading: false, turns: parseTranscript(detail.transcript), error: null },
+            [next]: {
+              loading: false,
+              turns: parseTranscript(detail.transcript),
+              error: null,
+              hasRecording: detail.has_recording,
+            },
           })),
         )
         .catch((err: unknown) =>
           setTranscripts((prev) => ({
             ...prev,
-            [next]: { loading: false, turns: null, error: describeError(err) },
+            [next]: { loading: false, turns: null, error: describeError(err), hasRecording: false },
           })),
         )
     }
@@ -459,6 +515,14 @@ function CallLogPageInner() {
                         <tr key={`${call.id}-transcript`} className="bg-muted/20">
                           <td colSpan={6} className="p-0">
                             <div className="p-6 border-b border-border">
+                              {transcript?.hasRecording && (
+                                <div className="mb-6">
+                                  <h4 className="text-sm font-semibold text-foreground mb-3">
+                                    Recording
+                                  </h4>
+                                  <CallRecordingPlayer callId={call.id} />
+                                </div>
+                              )}
                               <h4 className="text-sm font-semibold text-foreground mb-4">
                                 Call Transcript
                               </h4>
