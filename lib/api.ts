@@ -394,6 +394,76 @@ export function fetchAdminHotels(opts: Pick<Options, "signal"> = {}) {
   return api<AdminHotelListItem[]>("/api/v1/admin/hotels", opts)
 }
 
+// ── Hotel detail + settings (Settings page) ─────────────────────────────────
+
+// Full per-hotel row returned by GET /admin/hotels/{id}. The Settings page
+// reads this to populate every backed field; mirrors the backend `HotelDetail`
+// schema (only the fields the UI touches are typed here).
+export type HotelDetail = {
+  hotel_id: string
+  display_name: string
+  timezone: string
+  pms_provider: string
+  booking_engine_provider: string | null
+  agent_name: string | null
+  first_message: string | null
+  email_from: string | null
+  preferred_rate_code: string | null
+  commission_rate_basis_points: number
+  currency: string
+  max_call_minutes: number | null
+  // E.164 inbound DID callers dial to reach this hotel. Platform-admin only.
+  inbound_phone_number: string | null
+  pms_webhook_last_received_at: string | null
+  is_active: boolean
+}
+
+// Operator-safe partial update (PUT /admin/hotels/{id}). Only send changed keys.
+export type HotelOperatorUpdate = {
+  display_name?: string
+  timezone?: string
+  agent_name?: string | null
+  first_message?: string | null
+  preferred_rate_code?: string | null
+  max_call_minutes?: number | null
+}
+
+// Platform-admin-only partial update (PATCH /admin/hotels/{id}/platform-settings).
+export type HotelPlatformUpdate = {
+  email_from?: string | null
+  inbound_phone_number?: string | null
+  booking_engine_provider?: string | null
+  is_active?: boolean
+  commission_rate_basis_points?: number
+}
+
+export function fetchHotelDetail(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<HotelDetail>(`/api/v1/admin/hotels/${hotelId}`, opts)
+}
+
+export function updateHotelOperatorSettings(
+  hotelId: string,
+  body: HotelOperatorUpdate,
+) {
+  return api<HotelDetail>(`/api/v1/admin/hotels/${hotelId}`, {
+    method: "PUT",
+    body,
+  })
+}
+
+export function updateHotelPlatformSettings(
+  hotelId: string,
+  body: HotelPlatformUpdate,
+) {
+  return api<HotelDetail>(`/api/v1/admin/hotels/${hotelId}/platform-settings`, {
+    method: "PATCH",
+    body,
+  })
+}
+
 export function fetchAdminUsers(opts: Pick<Options, "signal"> = {}) {
   return api<UserAccessItem[]>("/api/v1/admin/users", opts)
 }

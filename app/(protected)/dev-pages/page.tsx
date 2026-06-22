@@ -3,6 +3,8 @@
 import * as React from "react"
 import {
   AlertTriangle,
+  Check,
+  Copy,
   FileText,
   History,
   Link2,
@@ -33,6 +35,7 @@ import {
   updatePersona,
 } from "@/lib/api"
 import { useCurrentUser } from "@/lib/current-user-context"
+import { useHotel } from "@/lib/hotel-context"
 import { registerUnsavedGuard } from "@/lib/unsaved-guard"
 
 type LoadState = {
@@ -68,6 +71,8 @@ export default function DevPages() {
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-foreground">Dev Pages</h1>
         </div>
+
+        <HotelSlugBar />
 
         {userLoading ? (
           <StateNotice tone="muted" message="Loading..." />
@@ -105,6 +110,56 @@ export default function DevPages() {
           <StateNotice tone="error" message="This page is only available to platform admins." />
         )}
       </main>
+    </div>
+  )
+}
+
+// Surfaces the selected hotel's slug/id (the value keyed in SQL and webhook
+// routes) so devs don't have to query the DB to find it. Copy button writes
+// the raw slug to the clipboard.
+function HotelSlugBar() {
+  const { hotelId, hotels } = useHotel()
+  const [copied, setCopied] = React.useState(false)
+  const displayName = hotels.find((h) => h.hotel_id === hotelId)?.display_name
+
+  const copy = async () => {
+    if (!hotelId) return
+    try {
+      await navigator.clipboard.writeText(hotelId)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error("Couldn't copy to clipboard")
+    }
+  }
+
+  if (!hotelId) {
+    return (
+      <div className="mb-6 rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+        No hotel selected.
+      </div>
+    )
+  }
+
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Current hotel
+      </span>
+      {displayName ? (
+        <span className="text-sm font-medium text-foreground">{displayName}</span>
+      ) : null}
+      <code className="rounded bg-muted px-2 py-1 font-mono text-sm text-foreground">
+        {hotelId}
+      </code>
+      <button
+        type="button"
+        onClick={copy}
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? "Copied" : "Copy slug"}
+      </button>
     </div>
   )
 }
@@ -294,7 +349,10 @@ function PersonaOverridePanel() {
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           disabled={state.loading}
-          className="min-h-[560px] resize-y bg-card font-mono text-sm leading-6"
+          // Override the base Textarea's `field-sizing-content` (which would grow
+          // the box to fit the whole prompt and push the sidebar controls off
+          // screen). Fixed viewport-height box that scrolls internally instead.
+          className="field-sizing-fixed h-[70vh] resize-y bg-card font-mono text-sm leading-6"
           spellCheck={false}
         />
       </section>
