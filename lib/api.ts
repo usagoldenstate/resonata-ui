@@ -285,13 +285,25 @@ export type P3Config = {
   addon_mappings: Record<string, string>
 }
 
+export type SynxisConfig = {
+  base_url: string
+  chain_id: string
+  synxis_hotel_id: string
+  currency: string
+  locale: string
+}
+
+// The shape of `config` depends on `booking_engine_provider`; each provider's
+// editor narrows it.
+export type BookingEngineConfig = P3Config | SynxisConfig
+
 export type BookingEngineState = {
   hotel_id: string
   booking_engine_provider: string | null
   registered_providers: string[]
   is_active: boolean
   configurable: boolean
-  config: Partial<P3Config> | null
+  config: Record<string, unknown> | null
   config_valid: boolean
   config_error: string | null
 }
@@ -319,13 +331,16 @@ export type BookingEnginePmsCatalog = {
 }
 
 export type BookingEnginePreviewRequest = {
-  config: P3Config
+  config: Record<string, unknown>
   check_in: string
   check_out: string
   adults: number
   children: number
+  // Synxis only — P3 is single-room.
+  rooms?: number
   room_type_id: string
-  rate_id: string
+  // Required by P3, ignored by Synxis.
+  rate_id?: string
   addon_selections?: Array<{ addon_id: string; quantity: number }>
 }
 
@@ -349,7 +364,10 @@ export function fetchBookingEnginePmsCatalog(
   )
 }
 
-export function updateBookingEngineConfig(hotelId: string, config: P3Config) {
+export function updateBookingEngineConfig(
+  hotelId: string,
+  config: BookingEngineConfig,
+) {
   return api<BookingEngineState>(`/api/v1/admin/hotels/${hotelId}/booking-engine`, {
     method: "PUT",
     body: config,

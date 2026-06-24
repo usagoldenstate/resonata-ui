@@ -2,7 +2,8 @@
 
 import { Suspense, useEffect, useState, Fragment } from "react"
 import { useSearchParams } from "next/navigation"
-import { CalendarIcon, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2, Phone } from "lucide-react"
+import { CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Loader2, Phone } from "lucide-react"
+import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -70,6 +71,40 @@ function OutcomeBadge({ outcome }: { outcome: OutcomeLabel }) {
     <span className={`px-3 py-1 rounded-full text-xs font-medium ${styles[outcome]}`}>
       {outcome}
     </span>
+  )
+}
+
+// Call ID cell — clicking copies the provider call id to the clipboard.
+// stopPropagation keeps the click from toggling the row's transcript panel.
+function CopyableCallId({ callId }: { callId: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation()
+    try {
+      await navigator.clipboard.writeText(callId)
+      setCopied(true)
+      toast.success("Call ID copied")
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error("Couldn't copy Call ID")
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={`Copy ${callId}`}
+      className="group flex items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[12rem]"
+    >
+      <span className="truncate">{callId}</span>
+      {copied ? (
+        <Check className="w-3.5 h-3.5 shrink-0 text-[#6b7a4a]" />
+      ) : (
+        <Copy className="w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+      )}
+    </button>
   )
 }
 
@@ -455,6 +490,7 @@ function CallLogPageInner() {
                 <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
                   <th className="p-4 font-medium">Call Date</th>
                   <th className="p-4 font-medium">Time</th>
+                  <th className="p-4 font-medium">Call ID</th>
                   <th className="p-4 font-medium">Duration</th>
                   <th className="p-4 font-medium">Outcome</th>
                   <th className="p-4 font-medium">Not Booked Reason</th>
@@ -492,6 +528,9 @@ function CallLogPageInner() {
                             minute: "2-digit",
                           })}
                         </td>
+                        <td className="p-4">
+                          <CopyableCallId callId={call.provider_call_id} />
+                        </td>
                         <td className="p-4 text-muted-foreground">
                           {formatDuration(call.duration_seconds)}
                         </td>
@@ -513,7 +552,7 @@ function CallLogPageInner() {
                       </tr>
                       {expandedRow === call.id && (
                         <tr key={`${call.id}-transcript`} className="bg-muted/20">
-                          <td colSpan={6} className="p-0">
+                          <td colSpan={7} className="p-0">
                             <div className="p-6 border-b border-border">
                               {transcript?.hasRecording && (
                                 <div className="mb-6">

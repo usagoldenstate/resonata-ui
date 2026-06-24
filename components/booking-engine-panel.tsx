@@ -33,6 +33,7 @@ import {
   type BookingEngineState,
   type P3CheckoutUrlStyle,
   type P3Config,
+  type SynxisConfig,
   fetchBookingEnginePmsCatalog,
   fetchBookingEngineState,
   previewBookingEngineLink,
@@ -41,13 +42,552 @@ import {
 import { useHotel } from "@/lib/hotel-context"
 import { registerUnsavedGuard } from "@/lib/unsaved-guard"
 
-// ── Form state ──────────────────────────────────────────────────────────────
+// ── Shared form primitives ────────────────────────────────────────────────────
 
 type MappingMode = "passthrough" | "map"
 
 type KeyValueRow = { id: number; key: string; value: string }
 
-type FormState = {
+let nextRowId = 1
+function newRow(key = "", value = ""): KeyValueRow {
+  return { id: nextRowId++, key, value }
+}
+
+// ── Panel (provider dispatcher) ───────────────────────────────────────────────
+
+export function BookingEnginePanel() {
+  const { hotelId, hotels, loading: hotelLoading } = useHotel()
+  const hotelName =
+    hotels.find((h) => h.hotel_id === hotelId)?.display_name ?? hotelId ?? ""
+
+  const [state, setState] = React.useState<BookingEngineState | null>(null)
+  const [catalog, setCatalog] = React.useState<BookingEnginePmsCatalog | null>(null)
+  const [loading, setLoading] = React.useState(true)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
+
+  const load = React.useCallback(
+    async (signal?: AbortSignal) => {
+      if (!hotelId) return
+      setLoading(true)
+      setLoadError(null)
+      setCatalog(null)
+      try {
+        const engineState = await fetchBookingEngineState(hotelId, { signal })
+        setState(engineState)
+        // The PMS catalog (room types + a live rate sample) only feeds the P3
+        // mapping editor. Synxis passes PMS room codes through untouched, so it
+        // skips the catalog round-trip entirely.
+        if (engineState.configurable && engineState.booking_engine_provider === "p3") {
+          try {
+            setCatalog(await fetchBookingEnginePmsCatalog(hotelId, { signal }))
+          } catch (e) {
+            if (isAbortError(e)) return
+            toast.error(`PMS catalog unavailable: ${describeError(e)}`)
+          }
+        }
+        setLoading(false)
+      } catch (e) {
+        if (isAbortError(e)) return
+        setLoadError(describeError(e))
+        setLoading(false)
+      }
+    },
+    [hotelId],
+  )
+
+  React.useEffect(() => {
+    const controller = new AbortController()
+    void load(controller.signal)
+    return () => controller.abort()
+  }, [load])
+
+  if (hotelLoading || loading) {
+    return <Notice tone="muted" message="Loading booking engine configuration..." />
+  }
+  if (!hotelId) {
+    return <Notice tone="muted" message="Select a hotel to configure its booking engine." />
+  }
+  if (loadError) {
+    return <Notice tone="error" message={loadError} />
+  }
+  if (!state) return null
+
+  const provider = state.booking_engine_provider
+
+  if (!state.configurable) {
+    return (
+      <div className="max-w-6xl space-y-6">
+        <EditorHeader
+          hotelName={hotelName}
+          provider={provider}
+          configValid={state.config_valid}
+          configError={state.config_error}
+          dirty={false}
+          saving={false}
+          showSave={false}
+          onReload={() => void load()}
+        />
+        <Notice
+          tone="muted"
+          message={
+            provider
+              ? `The "${provider}" booking engine has no UI-editable configuration. Only P3 and Synxis are configurable here.`
+              : "This hotel has no booking engine provider set. Assign one via the platform settings API first."
+          }
+        />
+      </div>
+    )
+  }
+
+  if (provider === "synxis") {
+    return (
+      <SynxisEditor
+        key={hotelId}
+        hotelId={hotelId}
+        hotelName={hotelName}
+        state={state}
+        onState={setState}
+        onReload={() => void load()}
+      />
+    )
+  }
+
+  // Default configurable provider: P3.
+  return (
+    <P3Editor
+      key={hotelId}
+      hotelId={hotelId}
+      hotelName={hotelName}
+      state={state}
+      catalog={catalog}
+      onState={setState}
+      onReload={() => void load()}
+    />
+  )
+}
+
+// ── Shared editor header ──────────────────────────────────────────────────────
+
+function EditorHeader({
+  hotelName,
+  provider,
+  configValid,
+  configError,
+  dirty,
+  saving,
+  showSave,
+  onReload,
+  onSave,
+}: {
+  hotelName: string
+  provider: string | null
+  configValid: boolean
+  configError: string | null
+  dirty: boolean
+  saving: boolean
+  showSave: boolean
+  onReload: () => void
+  onSave?: () => void
+}) {
+  return (
+    <section className="rounded-lg border border-border p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">
+            Booking Engine — {hotelName}
+          </h2>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Badge variant="default">{provider ?? "not set"}</Badge>
+            {configValid ? (
+              <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Config valid
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-destructive">
+                <AlertTriangle className="h-3.5 w-3.5" /> Invalid config
+              </span>
+            )}
+            {dirty ? (
+              <span className="text-xs font-medium text-amber-700">Unsaved changes</span>
+            ) : null}
+          </div>
+          {!configValid && configError ? (
+            <p className="mt-2 text-xs text-destructive">{configError}</p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onReload}
+            disabled={saving}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Reload
+          </Button>
+          {showSave && onSave ? (
+            <Button type="button" onClick={onSave} disabled={saving || !dirty}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// Shared unsaved-changes guards (router + browser unload).
+function useUnsavedGuards(dirty: boolean, message: string) {
+  const dirtyRef = React.useRef(dirty)
+  React.useEffect(() => {
+    dirtyRef.current = dirty
+  }, [dirty])
+  React.useEffect(() => {
+    return registerUnsavedGuard(() => (dirtyRef.current ? message : null))
+  }, [message])
+  React.useEffect(() => {
+    if (!dirty) return
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ""
+    }
+    window.addEventListener("beforeunload", handler)
+    return () => window.removeEventListener("beforeunload", handler)
+  }, [dirty])
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Synxis editor
+// ════════════════════════════════════════════════════════════════════════════
+
+type SynxisFormState = {
+  baseUrl: string
+  chainId: string
+  synxisHotelId: string
+  currency: string
+  locale: string
+}
+
+function synxisFormFromConfig(config: Partial<SynxisConfig> | null): SynxisFormState {
+  return {
+    baseUrl: config?.base_url ?? "",
+    chainId: config?.chain_id ?? "",
+    synxisHotelId: config?.synxis_hotel_id ?? "",
+    currency: config?.currency ?? "USD",
+    locale: config?.locale ?? "en-US",
+  }
+}
+
+function buildSynxisConfig(form: SynxisFormState): SynxisConfig {
+  return {
+    base_url: form.baseUrl.trim(),
+    chain_id: form.chainId.trim(),
+    synxis_hotel_id: form.synxisHotelId.trim(),
+    currency: form.currency.trim() || "USD",
+    locale: form.locale.trim() || "en-US",
+  }
+}
+
+function SynxisEditor({
+  hotelId,
+  hotelName,
+  state,
+  onState,
+  onReload,
+}: {
+  hotelId: string
+  hotelName: string
+  state: BookingEngineState
+  onState: (next: BookingEngineState) => void
+  onReload: () => void
+}) {
+  const [form, setForm] = React.useState<SynxisFormState>(() =>
+    synxisFormFromConfig(state.config as Partial<SynxisConfig> | null),
+  )
+  const [savedSnapshot, setSavedSnapshot] = React.useState(() =>
+    state.config_valid && state.config
+      ? JSON.stringify(buildSynxisConfig(synxisFormFromConfig(state.config as Partial<SynxisConfig>)))
+      : "",
+  )
+  const [saving, setSaving] = React.useState(false)
+
+  // Re-seed when the parent swaps `state` (after a save). Local edits don't
+  // touch `state`, so this won't clobber in-progress typing.
+  React.useEffect(() => {
+    const next = synxisFormFromConfig(state.config as Partial<SynxisConfig> | null)
+    setForm(next)
+    setSavedSnapshot(
+      state.config_valid && state.config ? JSON.stringify(buildSynxisConfig(next)) : "",
+    )
+  }, [state])
+
+  const dirty = JSON.stringify(buildSynxisConfig(form)) !== savedSnapshot
+  useUnsavedGuards(dirty, "You have unsaved booking engine changes. Leave anyway?")
+
+  const save = async () => {
+    const config = buildSynxisConfig(form)
+    if (!config.base_url) {
+      toast.error("Booking engine base URL is required.")
+      return
+    }
+    if (!config.chain_id) {
+      toast.error("Synxis chain id is required.")
+      return
+    }
+    if (!config.synxis_hotel_id) {
+      toast.error("Synxis hotel id is required.")
+      return
+    }
+    setSaving(true)
+    try {
+      const next = await updateBookingEngineConfig(hotelId, config)
+      onState(next)
+      toast.success("Booking engine configuration saved.")
+    } catch (e) {
+      toast.error(describeError(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="max-w-6xl space-y-6">
+      <EditorHeader
+        hotelName={hotelName}
+        provider={state.booking_engine_provider}
+        configValid={state.config_valid}
+        configError={state.config_error}
+        dirty={dirty}
+        saving={saving}
+        showSave
+        onReload={() => {
+          if (dirty && !window.confirm("Discard unsaved booking engine changes?")) return
+          onReload()
+        }}
+        onSave={save}
+      />
+
+      <section className="rounded-lg border border-border p-5">
+        <h3 className="text-sm font-semibold text-foreground">Synxis engine basics</h3>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="synxis-base-url">Booking engine base URL</Label>
+            <Input
+              id="synxis-base-url"
+              value={form.baseUrl}
+              onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
+              placeholder="https://be.synxis.com"
+            />
+            <p className="text-xs text-muted-foreground">
+              HTTPS, no query string. Everything before the <code>?</code> in a live
+              Synxis booking link.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="synxis-hotel-id">Synxis hotel id</Label>
+            <Input
+              id="synxis-hotel-id"
+              value={form.synxisHotelId}
+              onChange={(e) => setForm((f) => ({ ...f, synxisHotelId: e.target.value }))}
+              placeholder="39403"
+            />
+            <p className="text-xs text-muted-foreground">
+              The <code>hotel=</code> value in a live Synxis link.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="synxis-chain-id">Synxis chain id</Label>
+            <Input
+              id="synxis-chain-id"
+              value={form.chainId}
+              onChange={(e) => setForm((f) => ({ ...f, chainId: e.target.value }))}
+              placeholder="17448"
+            />
+            <p className="text-xs text-muted-foreground">
+              The <code>chain=</code> value in a live Synxis link.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:max-w-md">
+          <div className="space-y-1.5">
+            <Label htmlFor="synxis-currency">Currency</Label>
+            <Input
+              id="synxis-currency"
+              value={form.currency}
+              onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+              placeholder="USD"
+            />
+            <p className="text-xs text-muted-foreground">
+              Stamped on <code>currency</code> and <code>productcurrency</code>.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="synxis-locale">Locale</Label>
+            <Input
+              id="synxis-locale"
+              value={form.locale}
+              onChange={(e) => setForm((f) => ({ ...f, locale: e.target.value }))}
+              placeholder="en-US"
+            />
+            <p className="text-xs text-muted-foreground">
+              The <code>locale=</code> value (e.g. <code>en-US</code>).
+            </p>
+          </div>
+        </div>
+
+        <Alert className="mt-5 border-border">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>How the link is built</AlertTitle>
+          <AlertDescription>
+            Dates, room count, and per-room adults/children come from the call. The room
+            code passes through from the PMS room id (e.g. <code>JNR</code>). Verify with
+            a preview link before going live.
+          </AlertDescription>
+        </Alert>
+      </section>
+
+      <SynxisPreviewSection hotelId={hotelId} form={form} />
+    </div>
+  )
+}
+
+function SynxisPreviewSection({
+  hotelId,
+  form,
+}: {
+  hotelId: string
+  form: SynxisFormState
+}) {
+  const [checkIn, setCheckIn] = React.useState(() => isoDatePlus(14))
+  const [checkOut, setCheckOut] = React.useState(() => isoDatePlus(16))
+  const [adults, setAdults] = React.useState("1")
+  const [children, setChildren] = React.useState("0")
+  const [rooms, setRooms] = React.useState("1")
+  const [roomTypeId, setRoomTypeId] = React.useState("")
+  const [building, setBuilding] = React.useState(false)
+  const [url, setUrl] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+
+  const generate = async () => {
+    setError(null)
+    setUrl(null)
+    if (!roomTypeId.trim()) {
+      setError("Enter a room code first.")
+      return
+    }
+    setBuilding(true)
+    try {
+      const result = await previewBookingEngineLink(hotelId, {
+        config: buildSynxisConfig(form),
+        check_in: checkIn,
+        check_out: checkOut,
+        adults: Number(adults) || 1,
+        children: Number(children) || 0,
+        rooms: Number(rooms) || 1,
+        room_type_id: roomTypeId.trim(),
+      })
+      setUrl(result.url)
+    } catch (e) {
+      setError(describeError(e))
+    } finally {
+      setBuilding(false)
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-border p-5">
+      <h3 className="text-sm font-semibold text-foreground">Preview a checkout link</h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Builds a link from the form above — including unsaved changes — without saving or
+        emailing anything. Adults/children are per room.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="synxis-prev-check-in">Check-in</Label>
+          <Input
+            id="synxis-prev-check-in"
+            type="date"
+            value={checkIn}
+            onChange={(e) => setCheckIn(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="synxis-prev-check-out">Check-out</Label>
+          <Input
+            id="synxis-prev-check-out"
+            type="date"
+            value={checkOut}
+            onChange={(e) => setCheckOut(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="synxis-prev-room">Room code</Label>
+          <Input
+            id="synxis-prev-room"
+            value={roomTypeId}
+            onChange={(e) => setRoomTypeId(e.target.value)}
+            placeholder="JNR"
+            className="font-mono"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="synxis-prev-adults">Adults (per room)</Label>
+          <Input
+            id="synxis-prev-adults"
+            type="number"
+            min={1}
+            value={adults}
+            onChange={(e) => setAdults(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="synxis-prev-children">Children (per room)</Label>
+          <Input
+            id="synxis-prev-children"
+            type="number"
+            min={0}
+            value={children}
+            onChange={(e) => setChildren(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="synxis-prev-rooms">Rooms</Label>
+          <Input
+            id="synxis-prev-rooms"
+            type="number"
+            min={1}
+            value={rooms}
+            onChange={(e) => setRooms(e.target.value)}
+          />
+        </div>
+      </div>
+      <Button type="button" className="mt-4" onClick={generate} disabled={building}>
+        {building ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+        Generate preview link
+      </Button>
+      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+      {url ? (
+        <div className="mt-3 rounded-md border border-border bg-card p-3">
+          <p className="break-all font-mono text-xs text-foreground">{url}</p>
+          <Button asChild type="button" variant="outline" size="sm" className="mt-2">
+            <a href={url} target="_blank" rel="noreferrer">
+              <ExternalLink className="h-4 w-4" />
+              Open in new tab
+            </a>
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// P3 editor
+// ════════════════════════════════════════════════════════════════════════════
+
+type P3FormState = {
   baseUrl: string
   p3HotelId: string
   urlStyle: P3CheckoutUrlStyle
@@ -62,12 +602,7 @@ type FormState = {
   addonRows: KeyValueRow[]
 }
 
-let nextRowId = 1
-function newRow(key = "", value = ""): KeyValueRow {
-  return { id: nextRowId++, key, value }
-}
-
-function emptyForm(): FormState {
+function p3EmptyForm(): P3FormState {
   return {
     baseUrl: "",
     p3HotelId: "",
@@ -82,11 +617,11 @@ function emptyForm(): FormState {
   }
 }
 
-function formFromConfig(
+function p3FormFromConfig(
   config: Partial<P3Config> | null,
   catalog: BookingEnginePmsCatalog | null,
-): FormState {
-  const form = emptyForm()
+): P3FormState {
+  const form = p3EmptyForm()
   const roomMappings = config?.room_type_mappings ?? {}
   const rateMappings = config?.rate_mappings ?? {}
 
@@ -104,9 +639,7 @@ function formFromConfig(
     config && Object.keys(rateMappings).length === 0 ? "passthrough" : "map"
 
   form.roomCodes = { ...roomMappings }
-  const catalogRateIds = new Set(
-    (catalog?.rates ?? []).map((rate) => rate.rate_id),
-  )
+  const catalogRateIds = new Set((catalog?.rates ?? []).map((rate) => rate.rate_id))
   for (const [pmsId, p3Code] of Object.entries(rateMappings)) {
     if (catalogRateIds.has(pmsId)) {
       form.rateCodes[pmsId] = p3Code
@@ -114,13 +647,13 @@ function formFromConfig(
       form.extraRateRows.push(newRow(pmsId, p3Code))
     }
   }
-  form.addonRows = Object.entries(config?.addon_mappings ?? {}).map(
-    ([pmsId, p3Code]) => newRow(pmsId, p3Code),
+  form.addonRows = Object.entries(config?.addon_mappings ?? {}).map(([pmsId, p3Code]) =>
+    newRow(pmsId, p3Code),
   )
   return form
 }
 
-function buildConfig(form: FormState): P3Config {
+function buildP3Config(form: P3FormState): P3Config {
   const roomMappings: Record<string, string> = {}
   if (form.roomMode === "map") {
     for (const [pmsId, code] of Object.entries(form.roomCodes)) {
@@ -155,91 +688,46 @@ function buildConfig(form: FormState): P3Config {
   }
 }
 
-// ── Panel ───────────────────────────────────────────────────────────────────
-
-export function BookingEnginePanel() {
-  const { hotelId, hotels, loading: hotelLoading } = useHotel()
-  const hotelName =
-    hotels.find((h) => h.hotel_id === hotelId)?.display_name ?? hotelId
-
-  const [state, setState] = React.useState<BookingEngineState | null>(null)
-  const [catalog, setCatalog] = React.useState<BookingEnginePmsCatalog | null>(null)
-  const [loading, setLoading] = React.useState(true)
-  const [loadError, setLoadError] = React.useState<string | null>(null)
-  const [form, setForm] = React.useState<FormState>(emptyForm())
-  const [savedSnapshot, setSavedSnapshot] = React.useState("")
+function P3Editor({
+  hotelId,
+  hotelName,
+  state,
+  catalog,
+  onState,
+  onReload,
+}: {
+  hotelId: string
+  hotelName: string
+  state: BookingEngineState
+  catalog: BookingEnginePmsCatalog | null
+  onState: (next: BookingEngineState) => void
+  onReload: () => void
+}) {
+  const [form, setForm] = React.useState<P3FormState>(() =>
+    p3FormFromConfig(state.config as Partial<P3Config> | null, catalog),
+  )
+  const [savedSnapshot, setSavedSnapshot] = React.useState(() =>
+    state.config_valid && state.config
+      ? JSON.stringify(
+          buildP3Config(p3FormFromConfig(state.config as Partial<P3Config>, catalog)),
+        )
+      : "",
+  )
   const [saving, setSaving] = React.useState(false)
 
-  const dirty =
-    state?.configurable === true &&
-    JSON.stringify(buildConfig(form)) !== savedSnapshot
-
-  const load = React.useCallback(
-    async (signal?: AbortSignal) => {
-      if (!hotelId) return
-      setLoading(true)
-      setLoadError(null)
-      setCatalog(null)
-      try {
-        const engineState = await fetchBookingEngineState(hotelId, { signal })
-        setState(engineState)
-        let cat: BookingEnginePmsCatalog | null = null
-        if (engineState.configurable) {
-          // Catalog needs a live PMS round-trip; tolerate failure so the
-          // form still renders for manual entry.
-          try {
-            cat = await fetchBookingEnginePmsCatalog(hotelId, { signal })
-            setCatalog(cat)
-          } catch (e) {
-            if (isAbortError(e)) return
-            toast.error(`PMS catalog unavailable: ${describeError(e)}`)
-          }
-        }
-        const nextForm = formFromConfig(engineState.config, cat)
-        setForm(nextForm)
-        setSavedSnapshot(
-          engineState.config_valid && engineState.config
-            ? JSON.stringify(buildConfig(nextForm))
-            : "",
-        )
-        setLoading(false)
-      } catch (e) {
-        if (isAbortError(e)) return
-        setLoadError(describeError(e))
-        setLoading(false)
-      }
-    },
-    [hotelId],
-  )
-
   React.useEffect(() => {
-    const controller = new AbortController()
-    void load(controller.signal)
-    return () => controller.abort()
-  }, [load])
-
-  const dirtyRef = React.useRef(dirty)
-  React.useEffect(() => {
-    dirtyRef.current = dirty
-  }, [dirty])
-  React.useEffect(() => {
-    return registerUnsavedGuard(() =>
-      dirtyRef.current ? "You have unsaved booking engine changes. Leave anyway?" : null,
+    const next = p3FormFromConfig(state.config as Partial<P3Config> | null, catalog)
+    setForm(next)
+    setSavedSnapshot(
+      state.config_valid && state.config ? JSON.stringify(buildP3Config(next)) : "",
     )
-  }, [])
-  React.useEffect(() => {
-    if (!dirty) return
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ""
-    }
-    window.addEventListener("beforeunload", handler)
-    return () => window.removeEventListener("beforeunload", handler)
-  }, [dirty])
+  }, [state, catalog])
+
+  const dirty = JSON.stringify(buildP3Config(form)) !== savedSnapshot
+  useUnsavedGuards(dirty, "You have unsaved booking engine changes. Leave anyway?")
 
   const save = async () => {
-    if (!hotelId) return
-    const config = buildConfig(form)
+    const config = buildP3Config(form)
     if (!config.base_url) {
       toast.error("Booking engine base URL is required.")
       return
@@ -251,10 +739,7 @@ export function BookingEnginePanel() {
     setSaving(true)
     try {
       const next = await updateBookingEngineConfig(hotelId, config)
-      setState(next)
-      const nextForm = formFromConfig(next.config, catalog)
-      setForm(nextForm)
-      setSavedSnapshot(JSON.stringify(buildConfig(nextForm)))
+      onState(next)
       toast.success("Booking engine configuration saved.")
     } catch (e) {
       toast.error(describeError(e))
@@ -263,147 +748,87 @@ export function BookingEnginePanel() {
     }
   }
 
-  if (hotelLoading || loading) {
-    return <Notice tone="muted" message="Loading booking engine configuration..." />
-  }
-  if (!hotelId) {
-    return <Notice tone="muted" message="Select a hotel to configure its booking engine." />
-  }
-  if (loadError) {
-    return <Notice tone="error" message={loadError} />
-  }
-  if (!state) return null
-
   return (
     <div className="max-w-6xl space-y-6">
-      <section className="rounded-lg border border-border p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">
-              Booking Engine — {hotelName}
-            </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant="default">
-                {state.booking_engine_provider ?? "not set"}
-              </Badge>
-              {state.config_valid ? (
-                <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Config valid
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-destructive">
-                  <AlertTriangle className="h-3.5 w-3.5" /> Invalid config
-                </span>
-              )}
-              {dirty ? (
-                <span className="text-xs font-medium text-amber-700">Unsaved changes</span>
-              ) : null}
-            </div>
-            {!state.config_valid && state.config_error ? (
-              <p className="mt-2 text-xs text-destructive">{state.config_error}</p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                if (dirty && !window.confirm("Discard unsaved booking engine changes?")) return
-                void load()
-              }}
-              disabled={saving}
-            >
-              <RefreshCw className="h-4 w-4" />
-              Reload
-            </Button>
-            {state.configurable ? (
-              <Button type="button" onClick={save} disabled={saving || !dirty}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Save
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      {!state.configurable ? (
-        <Notice
-          tone="muted"
-          message={
-            state.booking_engine_provider
-              ? `The "${state.booking_engine_provider}" booking engine has no UI-editable configuration. Only P3 is configurable here.`
-              : "This hotel has no booking engine provider set. Assign one via the platform settings API first."
-          }
-        />
-      ) : (
-        <>
-          <BasicsSection form={form} setForm={setForm} />
-          <MappingSection
-            kind="room"
-            title="Room type mapping"
-            mode={form.roomMode}
-            onModeChange={(roomMode) => setForm((f) => ({ ...f, roomMode }))}
-            rows={(catalog?.room_types ?? []).map((rt) => ({
-              pmsId: rt.room_type_id,
-              label: rt.room_name,
-            }))}
-            extraConfigIds={Object.keys(form.roomCodes).filter(
-              (id) => !(catalog?.room_types ?? []).some((rt) => rt.room_type_id === id),
-            )}
-            codes={form.roomCodes}
-            onCodeChange={(pmsId, code) =>
-              setForm((f) => ({ ...f, roomCodes: { ...f.roomCodes, [pmsId]: code } }))
-            }
-            catalogNote={
-              catalog
-                ? `${catalog.room_types.length} room types from the PMS catalog cache.`
-                : "PMS catalog unavailable — room types could not be listed."
-            }
-          />
-          <MappingSection
-            kind="rate"
-            title="Rate mapping"
-            mode={form.rateMode}
-            onModeChange={(rateMode) => setForm((f) => ({ ...f, rateMode }))}
-            rows={(catalog?.rates ?? []).map((rate) => ({
-              pmsId: rate.rate_id,
-              label: rate.rate_name
-                ? `${rate.rate_name}${rate.rate_code ? ` (${rate.rate_code})` : ""}`
-                : rate.rate_id,
-            }))}
-            extraConfigIds={[]}
-            codes={form.rateCodes}
-            onCodeChange={(pmsId, code) =>
-              setForm((f) => ({ ...f, rateCodes: { ...f.rateCodes, [pmsId]: code } }))
-            }
-            catalogNote={
-              catalog?.rates_error
-                ? catalog.rates_error
-                : catalog
-                  ? `Rates discovered from a live availability sample (${catalog.sample_check_in} → ${catalog.sample_check_out}); the list may be incomplete — add missing rates below.`
-                  : "PMS catalog unavailable — enter rates manually below."
-            }
-            manualRows={form.extraRateRows}
-            onManualRowsChange={(extraRateRows) => setForm((f) => ({ ...f, extraRateRows }))}
-            manualKeyPlaceholder="PMS rate id"
-            manualValuePlaceholder="P3 rate code"
-          />
-          <AddonSection form={form} setForm={setForm} />
-          <PreviewSection hotelId={hotelId} form={form} catalog={catalog} />
-        </>
-      )}
+      <EditorHeader
+        hotelName={hotelName}
+        provider={state.booking_engine_provider}
+        configValid={state.config_valid}
+        configError={state.config_error}
+        dirty={dirty}
+        saving={saving}
+        showSave
+        onReload={() => {
+          if (dirty && !window.confirm("Discard unsaved booking engine changes?")) return
+          onReload()
+        }}
+        onSave={save}
+      />
+      <P3BasicsSection form={form} setForm={setForm} />
+      <MappingSection
+        kind="room"
+        title="Room type mapping"
+        mode={form.roomMode}
+        onModeChange={(roomMode) => setForm((f) => ({ ...f, roomMode }))}
+        rows={(catalog?.room_types ?? []).map((rt) => ({
+          pmsId: rt.room_type_id,
+          label: rt.room_name,
+        }))}
+        extraConfigIds={Object.keys(form.roomCodes).filter(
+          (id) => !(catalog?.room_types ?? []).some((rt) => rt.room_type_id === id),
+        )}
+        codes={form.roomCodes}
+        onCodeChange={(pmsId, code) =>
+          setForm((f) => ({ ...f, roomCodes: { ...f.roomCodes, [pmsId]: code } }))
+        }
+        catalogNote={
+          catalog
+            ? `${catalog.room_types.length} room types from the PMS catalog cache.`
+            : "PMS catalog unavailable — room types could not be listed."
+        }
+      />
+      <MappingSection
+        kind="rate"
+        title="Rate mapping"
+        mode={form.rateMode}
+        onModeChange={(rateMode) => setForm((f) => ({ ...f, rateMode }))}
+        rows={(catalog?.rates ?? []).map((rate) => ({
+          pmsId: rate.rate_id,
+          label: rate.rate_name
+            ? `${rate.rate_name}${rate.rate_code ? ` (${rate.rate_code})` : ""}`
+            : rate.rate_id,
+        }))}
+        extraConfigIds={[]}
+        codes={form.rateCodes}
+        onCodeChange={(pmsId, code) =>
+          setForm((f) => ({ ...f, rateCodes: { ...f.rateCodes, [pmsId]: code } }))
+        }
+        catalogNote={
+          catalog?.rates_error
+            ? catalog.rates_error
+            : catalog
+              ? `Rates discovered from a live availability sample (${catalog.sample_check_in} → ${catalog.sample_check_out}); the list may be incomplete — add missing rates below.`
+              : "PMS catalog unavailable — enter rates manually below."
+        }
+        manualRows={form.extraRateRows}
+        onManualRowsChange={(extraRateRows) => setForm((f) => ({ ...f, extraRateRows }))}
+        manualKeyPlaceholder="PMS rate id"
+        manualValuePlaceholder="P3 rate code"
+      />
+      <AddonSection form={form} setForm={setForm} />
+      <P3PreviewSection hotelId={hotelId} form={form} catalog={catalog} />
     </div>
   )
 }
 
-// ── Basics ──────────────────────────────────────────────────────────────────
+// ── P3 basics ─────────────────────────────────────────────────────────────────
 
-function BasicsSection({
+function P3BasicsSection({
   form,
   setForm,
 }: {
-  form: FormState
-  setForm: React.Dispatch<React.SetStateAction<FormState>>
+  form: P3FormState
+  setForm: React.Dispatch<React.SetStateAction<P3FormState>>
 }) {
   return (
     <section className="rounded-lg border border-border p-5">
@@ -680,8 +1105,8 @@ function AddonSection({
   form,
   setForm,
 }: {
-  form: FormState
-  setForm: React.Dispatch<React.SetStateAction<FormState>>
+  form: P3FormState
+  setForm: React.Dispatch<React.SetStateAction<P3FormState>>
 }) {
   const setRows = (addonRows: KeyValueRow[]) => setForm((f) => ({ ...f, addonRows }))
   return (
@@ -747,21 +1172,15 @@ function AddonSection({
   )
 }
 
-// ── Preview ─────────────────────────────────────────────────────────────────
+// ── P3 preview ──────────────────────────────────────────────────────────────
 
-function isoDatePlus(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
-}
-
-function PreviewSection({
+function P3PreviewSection({
   hotelId,
   form,
   catalog,
 }: {
   hotelId: string
-  form: FormState
+  form: P3FormState
   catalog: BookingEnginePmsCatalog | null
 }) {
   const [checkIn, setCheckIn] = React.useState(() => isoDatePlus(14))
@@ -795,7 +1214,7 @@ function PreviewSection({
     setBuilding(true)
     try {
       const result = await previewBookingEngineLink(hotelId, {
-        config: buildConfig(form),
+        config: buildP3Config(form),
         check_in: checkIn,
         check_out: checkOut,
         adults: Number(adults) || 1,
@@ -910,9 +1329,7 @@ function PreviewSection({
         {building ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
         Generate preview link
       </Button>
-      {error ? (
-        <p className="mt-3 text-sm text-destructive">{error}</p>
-      ) : null}
+      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       {url ? (
         <div className="mt-3 rounded-md border border-border bg-card p-3">
           <p className="break-all font-mono text-xs text-foreground">{url}</p>
@@ -929,6 +1346,12 @@ function PreviewSection({
 }
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
+
+function isoDatePlus(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
 
 function Notice({ tone, message }: { tone: "muted" | "error"; message: string }) {
   return (

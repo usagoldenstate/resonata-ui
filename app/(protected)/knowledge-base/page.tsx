@@ -2004,9 +2004,10 @@ function RoomMappingTab({ hotelId }: { hotelId: string }) {
                 {isExpanded && (
                   <div className="p-4 space-y-3">
                     {r.cached_description && (
-                      <div className="text-xs text-muted-foreground italic">
-                        PMS description: {r.cached_description}
-                      </div>
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                        <span className="font-medium">PMS description:</span>{" "}
+                        {r.cached_description}
+                      </p>
                     )}
                     <div>
                       <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
