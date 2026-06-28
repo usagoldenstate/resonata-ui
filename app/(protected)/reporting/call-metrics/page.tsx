@@ -266,8 +266,12 @@ export default function CallMetricsReportingPage() {
               value={summary.loading ? "..." : formatNumber(summaryData?.calls_booked)}
             />
             <MetricCard
-              label="Missed Opportunities"
-              value={summary.loading ? "..." : formatNumber(summaryData?.missed_opportunities)}
+              label="Customer Satisfaction Score"
+              value={
+                summary.loading
+                  ? "..."
+                  : formatPercent(summaryData?.csat_score ?? undefined)
+              }
             />
           </div>
 

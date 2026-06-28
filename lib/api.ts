@@ -102,7 +102,26 @@ export type CallMetricsSummary = {
   calls_booked: number
   conversion_rate: number
   missed_opportunities: number
+  csat_score: number | null
+  csat_satisfied: number
+  csat_dissatisfied: number
+  csat_mixed: number
+  csat_declined: number
+  csat_responses: number
   attribution_last_discovered_at: string | null
+}
+
+export type CsatFeedbackItem = {
+  provider_call_id: string
+  call_record_id: string | null
+  response: string
+  reason: string | null
+  survey_language: string
+  responded_at: string | null
+}
+
+export type CsatFeedbackResponse = {
+  items: CsatFeedbackItem[]
 }
 
 export type CallMetricsHourlyResponse = {
@@ -563,6 +582,16 @@ export function fetchCallMetricsSummary(
 ) {
   return api<CallMetricsSummary>(
     withQuery("/api/v1/reporting/call-metrics/summary", params),
+    opts,
+  )
+}
+
+export function fetchCsatFeedback(
+  params: { hotel_id: string; start_date: string; end_date: string },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<CsatFeedbackResponse>(
+    withQuery("/api/v1/reporting/csat/feedback", params),
     opts,
   )
 }
