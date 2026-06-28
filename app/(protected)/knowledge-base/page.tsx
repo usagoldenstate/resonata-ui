@@ -1105,7 +1105,9 @@ function KnowledgeBaseTab({
 
       {/* Main content */}
       <div className="flex-1 p-6 overflow-y-auto">
-        <AutoFillCard onScrapeComplete={onScrapeComplete} hasData={hasData} />
+        {activeSec === "overview" && (
+          <AutoFillCard onScrapeComplete={onScrapeComplete} hasData={hasData} />
+        )}
 
         {sec && (
           <Card>
