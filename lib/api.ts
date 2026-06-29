@@ -111,6 +111,27 @@ export type CallMetricsSummary = {
   attribution_last_discovered_at: string | null
 }
 
+// "projected" today; widen to add "actualized" once realized revenue ships.
+export type RevenueBasis = "projected"
+
+export type RevenueTrendRow = {
+  date: string
+  revenue_cents: number
+  booking_count: number
+}
+
+export type RevenueSummary = {
+  basis: RevenueBasis
+  is_estimate: boolean
+  currency: string
+  total_revenue_cents: number
+  booking_count: number
+  room_nights: number
+  avg_booking_value_cents: number | null
+  attribution_last_discovered_at: string | null
+  trend: RevenueTrendRow[]
+}
+
 export type CsatFeedbackItem = {
   provider_call_id: string
   call_record_id: string | null
@@ -582,6 +603,16 @@ export function fetchCallMetricsSummary(
 ) {
   return api<CallMetricsSummary>(
     withQuery("/api/v1/reporting/call-metrics/summary", params),
+    opts,
+  )
+}
+
+export function fetchRevenueSummary(
+  params: { hotel_id: string; start_date: string; end_date: string; basis?: RevenueBasis },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<RevenueSummary>(
+    withQuery("/api/v1/reporting/revenue/summary", params),
     opts,
   )
 }

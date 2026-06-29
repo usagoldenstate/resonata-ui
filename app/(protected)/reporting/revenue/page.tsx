@@ -1,296 +1,399 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { useEffect, useState } from "react"
+import { AlertTriangle, Loader2 } from "lucide-react"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
+
 import { Sidebar } from "@/components/sidebar"
-import { TrendingUp } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { ApiError, type RevenueSummary, fetchRevenueSummary } from "@/lib/api"
+import { useHotel } from "@/lib/hotel-context"
 
-// Monthly revenue data
-const monthlyRevenue = [
-  { month: "Jan", roomRevenue: 42500, upsellRevenue: 6200, totalCalls: 892 },
-  { month: "Feb", roomRevenue: 36100, upsellRevenue: 5100, totalCalls: 756 },
-  { month: "Mar", roomRevenue: 50200, upsellRevenue: 7400, totalCalls: 1024 },
-  { month: "Apr", roomRevenue: 63000, upsellRevenue: 9200, totalCalls: 1284 },
-  { month: "May", roomRevenue: 73200, upsellRevenue: 10800, totalCalls: 1456 },
-  { month: "Jun", roomRevenue: 91500, upsellRevenue: 13500, totalCalls: 1823 },
-  { month: "Jul", roomRevenue: 105600, upsellRevenue: 15600, totalCalls: 2105 },
-  { month: "Aug", roomRevenue: 102000, upsellRevenue: 15100, totalCalls: 2034 },
-  { month: "Sep", roomRevenue: 78700, upsellRevenue: 11600, totalCalls: 1567 },
-  { month: "Oct", roomRevenue: 60500, upsellRevenue: 8900, totalCalls: 1234 },
-  { month: "Nov", roomRevenue: 48000, upsellRevenue: 7100, totalCalls: 978 },
-  { month: "Dec", roomRevenue: 71400, upsellRevenue: 10500, totalCalls: 1456 },
-]
+type SummaryPreset = "7" | "14" | "30" | "custom"
 
-// Upsell categories
-const upsellCategories = [
-  { name: "Spa Services", revenue: 38400, percentage: 31, count: 245 },
-  { name: "Room Upgrades", revenue: 32100, percentage: 26, count: 189 },
-  { name: "Dining Packages", revenue: 24800, percentage: 20, count: 312 },
-  { name: "Late Checkout", revenue: 15200, percentage: 12, count: 456 },
-  { name: "Airport Transfers", revenue: 13500, percentage: 11, count: 178 },
-]
-
-// Revenue by room type
-const revenueByRoomType = [
-  { type: "Standard", revenue: 245000, bookings: 1456, avgRate: 168 },
-  { type: "Deluxe", revenue: 312000, bookings: 1034, avgRate: 302 },
-  { type: "Suite", revenue: 198000, bookings: 412, avgRate: 481 },
-  { type: "Penthouse", revenue: 68000, bookings: 85, avgRate: 800 },
-]
-
-const timespanOptions = [
-  { value: "7", label: "Last 7 days" },
-  { value: "14", label: "Last 14 days" },
-  { value: "30", label: "Last 30 days" },
-  { value: "90", label: "Last 90 days" },
-  { value: "year", label: "This year" },
-]
-
-const getTimespanScale = (value: string) => {
-  if (value === "year") {
-    return 1
-  }
-
-  return Number(value) / 365
+type LoadState<T> = {
+  loading: boolean
+  data: T | null
+  error: string | null
 }
 
+const emptyState = <T,>(): LoadState<T> => ({
+  loading: false,
+  data: null,
+  error: null,
+})
+
 export default function RevenueReportingPage() {
-  const [timespan, setTimespan] = useState("year")
+  const { hotelId, loading: hotelLoading, error: hotelError, accessState } = useHotel()
+  const [preset, setPreset] = useState<SummaryPreset>("30")
+  const [start, setStart] = useState(() => rangeForLastDays(30).start)
+  const [end, setEnd] = useState(() => rangeForLastDays(30).end)
+  const [summary, setSummary] = useState<LoadState<RevenueSummary>>(() => emptyState())
 
-  const timespanScale = getTimespanScale(timespan)
-  const filteredRevenueByRoomType = revenueByRoomType.map((room) => {
-    const bookings = Math.max(1, Math.round(room.bookings * timespanScale))
-    const revenue = Math.round(room.revenue * timespanScale)
-
-    return {
-      ...room,
-      revenue,
-      bookings,
-      avgRate: Math.round(revenue / bookings),
+  useEffect(() => {
+    if (!hotelId) {
+      setSummary(emptyState())
+      return
     }
-  })
 
-  const totalRoomRevenue = filteredRevenueByRoomType.reduce((acc, r) => acc + r.revenue, 0)
-  const annualUpsellRevenue = monthlyRevenue.reduce((acc, m) => acc + m.upsellRevenue, 0)
-  const totalUpsellRevenue = Math.round(annualUpsellRevenue * timespanScale)
-  const totalRevenue = totalRoomRevenue + totalUpsellRevenue
-  const maxMonthlyRevenue = Math.max(...monthlyRevenue.map(m => m.roomRevenue + m.upsellRevenue))
-  const totalBookings = filteredRevenueByRoomType.reduce((acc, r) => acc + r.bookings, 0)
-  const avgDailyRate = Math.round(totalRoomRevenue / totalBookings)
-  const maxUpsellRevenue = Math.max(...upsellCategories.map(c => c.revenue))
+    const controller = new AbortController()
+    setSummary({ loading: true, data: null, error: null })
+    fetchRevenueSummary(
+      { hotel_id: hotelId, start_date: start, end_date: end, basis: "projected" },
+      { signal: controller.signal },
+    )
+      .then((data) => setSummary({ loading: false, data, error: null }))
+      .catch((error: unknown) => {
+        if (isAbortError(error)) return
+        setSummary({ loading: false, data: null, error: describeError(error) })
+      })
+
+    return () => controller.abort()
+  }, [hotelId, start, end])
+
+  const data = summary.data
+  const currency = data?.currency ?? "USD"
+  const isEmpty = data !== null && data.booking_count === 0
+
+  const onPresetChange = (next: SummaryPreset) => {
+    setPreset(next)
+    if (next === "custom") return
+    const range = rangeForLastDays(Number(next))
+    setStart(range.start)
+    setEnd(range.end)
+  }
 
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
       <main className="flex-1 p-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold text-foreground">Revenue Reporting</h2>
-            <p className="text-sm text-muted-foreground">Booked revenue via our agent</p>
-          </div>
-        </div>
-
-        <div className="border border-border rounded-lg p-4 mb-6">
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <div>
-              <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide">
-                Selected Time Span Metrics
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Updates when the date range changes
-              </p>
-            </div>
-            <Select value={timespan} onValueChange={setTimespan}>
-              <SelectTrigger className="w-40 shrink-0 bg-card border-border">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {timespanOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Summary Cards */}
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <Card className="border-border">
-              <CardContent className="p-4">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                  Total Revenue
-                </p>
-                <p className="text-2xl font-semibold text-card-foreground">${(totalRevenue / 1000).toFixed(1)}k</p>
-                <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
-                  <TrendingUp className="w-3 h-3" /> 15% vs prior year
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-border">
-              <CardContent className="p-4">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                  Room Revenue
-                </p>
-                <p className="text-2xl font-semibold text-card-foreground">${(totalRoomRevenue / 1000).toFixed(1)}k</p>
-                <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
-                  <TrendingUp className="w-3 h-3" /> 12% vs prior year
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-border">
-              <CardContent className="p-4">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                  Avg Daily Rate (ADR)
-                </p>
-                <p className="text-2xl font-semibold text-card-foreground">${avgDailyRate}</p>
-                <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
-                  <TrendingUp className="w-3 h-3" /> 8% vs prior year
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Revenue by Room Type */}
-          <Card className="border-border">
-            <CardContent className="p-6">
-              <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-1">
-                Revenue by Room Type
-              </h3>
-              <p className="text-xs text-muted-foreground mb-6">
-                Performance by accommodation category
-              </p>
-
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left p-3 text-xs font-medium text-muted-foreground">Room Type</th>
-                      <th className="text-right p-3 text-xs font-medium text-muted-foreground">Revenue</th>
-                      <th className="text-right p-3 text-xs font-medium text-muted-foreground">Bookings</th>
-                      <th className="text-right p-3 text-xs font-medium text-muted-foreground">Avg Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRevenueByRoomType.map((room) => (
-                      <tr key={room.type} className="border-b border-border last:border-0">
-                        <td className="p-3 text-sm text-card-foreground">{room.type}</td>
-                        <td className="p-3 text-sm text-card-foreground text-right font-medium">${(room.revenue / 1000).toFixed(0)}k</td>
-                        <td className="p-3 text-sm text-muted-foreground text-right">{room.bookings.toLocaleString()}</td>
-                        <td className="p-3 text-sm text-muted-foreground text-right">${room.avgRate}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-muted/50">
-                      <td className="p-3 text-sm font-medium text-card-foreground">Total</td>
-                      <td className="p-3 text-sm font-medium text-card-foreground text-right">
-                        ${(filteredRevenueByRoomType.reduce((acc, r) => acc + r.revenue, 0) / 1000).toFixed(0)}k
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground text-right">
-                        {filteredRevenueByRoomType.reduce((acc, r) => acc + r.bookings, 0).toLocaleString()}
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground text-right">—</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Monthly Revenue Chart */}
-        <Card className="border-border mb-6">
-          <CardContent className="p-6">
-            <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-1">
-              Monthly Revenue
-            </h3>
-            <p className="text-xs text-muted-foreground mb-6">
-              Room revenue vs upsell revenue by month
+            <h1 className="text-2xl font-semibold text-foreground">Revenue</h1>
+            <p className="text-sm text-muted-foreground">
+              Projected room revenue from bookings attributed to the voice agent
             </p>
+          </div>
+        </div>
 
-            <div className="flex items-end gap-2 h-56 mb-4">
-              {monthlyRevenue.map((month) => {
-                const total = month.roomRevenue + month.upsellRevenue
-                const roomHeight = (month.roomRevenue / maxMonthlyRevenue) * 100
-                const upsellHeight = (month.upsellRevenue / maxMonthlyRevenue) * 100
-                return (
-                  <div key={month.month} className="flex-1 flex flex-col items-center gap-1">
-                    <div className="w-full flex flex-col items-center justify-end h-48">
-                      <div className="w-full max-w-10 flex flex-col relative group cursor-pointer">
-                        <div
-                          className="w-full bg-[#c4a84b] rounded-t transition-all hover:opacity-80"
-                          style={{ height: `${upsellHeight * 1.8}px` }}
-                        />
-                        <div
-                          className="w-full bg-[#6b7a4a] transition-all hover:opacity-80"
-                          style={{ height: `${roomHeight * 1.8}px` }}
-                        />
-                        <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-card-foreground text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                          ${(total / 1000).toFixed(1)}k
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-xs text-muted-foreground">{month.month}</span>
-                  </div>
-                )
-              })}
+        {hotelLoading ? (
+          <Notice tone="muted" message="Loading hotel selection..." />
+        ) : hotelError ? (
+          <Notice tone="error" message={hotelError} />
+        ) : !hotelId ? (
+          <Notice
+            tone="muted"
+            message={
+              accessState === "no-access"
+                ? "Your account isn't set up for any hotels yet. Contact Resonata to have your account configured."
+                : "Select a hotel to view revenue."
+            }
+          />
+        ) : null}
+
+        <section className="mb-8 rounded-lg border border-border p-4">
+          <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <h2 className="text-sm font-medium uppercase tracking-wide text-foreground">
+                Projected Revenue
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Pre-tax room estimate (excludes taxes, fees &amp; extras) · based on booking
+                creation date in the hotel timezone
+              </p>
             </div>
-
-            <div className="flex items-center justify-center gap-6 pt-2 border-t border-border">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded bg-[#6b7a4a]" />
-                <span className="text-xs text-muted-foreground">Room Revenue</span>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex flex-wrap gap-2">
+                {(["7", "14", "30", "custom"] as const).map((option) => (
+                  <Button
+                    key={option}
+                    type="button"
+                    size="sm"
+                    variant={preset === option ? "default" : "outline"}
+                    onClick={() => onPresetChange(option)}
+                  >
+                    {option === "custom" ? "Custom" : `${option} days`}
+                  </Button>
+                ))}
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded bg-[#c4a84b]" />
-                <span className="text-xs text-muted-foreground">Upsell Revenue</span>
-              </div>
+              {preset === "custom" ? (
+                <DateRangeInputs start={start} end={end} onStart={setStart} onEnd={setEnd} />
+              ) : null}
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Upsell Categories */}
+          {data?.attribution_last_discovered_at === null ? (
+            <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Hotel booking sync has not completed for this hotel yet. Revenue may be incomplete
+              or show as zero until the first sync finishes.
+            </div>
+          ) : null}
+
+          {summary.error ? <Notice tone="error" message={summary.error} /> : null}
+          {isEmpty ? (
+            <Notice tone="muted" message="No attributed bookings in this date range." />
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              label="Projected Room Revenue"
+              value={summary.loading ? "..." : formatMoney(data?.total_revenue_cents, currency)}
+            />
+            <MetricCard
+              label="Bookings"
+              value={summary.loading ? "..." : formatNumber(data?.booking_count)}
+            />
+            <MetricCard
+              label="Room-nights"
+              value={summary.loading ? "..." : formatNumber(data?.room_nights)}
+            />
+            <MetricCard
+              label="Avg Booking Value"
+              value={
+                summary.loading
+                  ? "..."
+                  : data?.avg_booking_value_cents == null
+                    ? "--"
+                    : formatMoney(data.avg_booking_value_cents, currency)
+              }
+            />
+          </div>
+
+          {data?.attribution_last_discovered_at ? (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Hotel booking sync last completed {formatDateTime(data.attribution_last_discovered_at)}.
+            </p>
+          ) : null}
+        </section>
+
         <Card className="border-border">
           <CardContent className="p-6">
-            <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-1">
-              Upsell Categories
-            </h3>
-            <p className="text-xs text-muted-foreground mb-6">
-              Revenue breakdown by upsell type
-            </p>
-
-            <div className="space-y-4">
-              {upsellCategories.map((category) => (
-                <div key={category.name}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-card-foreground">{category.name}</span>
-                    <span className="text-sm font-medium text-card-foreground">${(category.revenue / 1000).toFixed(1)}k</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[#c4a84b] rounded-full"
-                        style={{ width: `${(category.revenue / maxUpsellRevenue) * 100}%` }}
-                        />
-                    </div>
-                    <span className="text-xs text-muted-foreground w-12 text-right">{category.percentage}%</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">{category.count} transactions</p>
-                </div>
-              ))}
+            <div className="mb-6">
+              <h2 className="text-sm font-medium uppercase tracking-wide text-card-foreground">
+                Daily Projected Revenue
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Bookings bucketed by creation date in the hotel timezone
+              </p>
             </div>
+            <RevenueTrendChart state={summary} currency={currency} />
           </CardContent>
         </Card>
       </main>
     </div>
   )
+}
+
+function RevenueTrendChart({
+  state,
+  currency,
+}: {
+  state: LoadState<RevenueSummary>
+  currency: string
+}) {
+  if (state.loading) return <ChartState message="Loading revenue..." loading />
+  if (state.error) return <ChartState message={state.error} error />
+  if (!state.data) return <ChartState message="Revenue will load after a hotel is selected." />
+  if (state.data.booking_count === 0) {
+    return <ChartState message="No attributed bookings in this date range." />
+  }
+
+  const data = state.data.trend.map((row) => ({
+    date: row.date,
+    revenue: row.revenue_cents / 100,
+    bookings: row.booking_count,
+  }))
+
+  return (
+    <div className="h-80">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 12, right: 24, left: 0, bottom: 12 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey="date"
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={formatDateTick}
+            minTickGap={20}
+          />
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            width={76}
+            tickFormatter={(value) => formatMoney(Number(value) * 100, currency)}
+          />
+          <Tooltip
+            formatter={(value) => [formatMoney(Number(value) * 100, currency), "Projected revenue"]}
+            labelFormatter={(label) => formatDateLabel(String(label))}
+          />
+          <Bar dataKey="revenue" name="Projected revenue" fill="#6b7a4a" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <Card className="border-border">
+      <CardContent className="p-6">
+        <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+        <p className="text-2xl font-semibold text-card-foreground">{value}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function DateRangeInputs({
+  start,
+  end,
+  onStart,
+  onEnd,
+}: {
+  start: string
+  end: string
+  onStart: (value: string) => void
+  onEnd: (value: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Start
+        <Input
+          type="date"
+          value={start}
+          onChange={(event) => onStart(event.target.value)}
+          className="h-9 w-36 bg-card text-sm text-foreground"
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        End
+        <Input
+          type="date"
+          value={end}
+          onChange={(event) => onEnd(event.target.value)}
+          className="h-9 w-36 bg-card text-sm text-foreground"
+        />
+      </label>
+    </div>
+  )
+}
+
+function Notice({ tone, message }: { tone: "muted" | "error"; message: string }) {
+  const classes =
+    tone === "error"
+      ? "border-destructive/40 bg-destructive/10 text-destructive"
+      : "border-border bg-muted/40 text-muted-foreground"
+  return (
+    <div className={`mb-4 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${classes}`}>
+      {tone === "error" ? <AlertTriangle className="mt-0.5 h-4 w-4" /> : null}
+      <span>{message}</span>
+    </div>
+  )
+}
+
+function ChartState({
+  message,
+  loading = false,
+  error = false,
+}: {
+  message: string
+  loading?: boolean
+  error?: boolean
+}) {
+  return (
+    <div
+      className={`flex h-80 items-center justify-center rounded-md border px-4 text-sm ${
+        error
+          ? "border-destructive/40 bg-destructive/10 text-destructive"
+          : "border-border bg-muted/30 text-muted-foreground"
+      }`}
+    >
+      <span className="flex items-center gap-2">
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        {message}
+      </span>
+    </div>
+  )
+}
+
+function rangeForLastDays(days: number): { start: string; end: string } {
+  const end = new Date()
+  const start = new Date()
+  start.setDate(end.getDate() - days + 1)
+  return { start: toDateInput(start), end: toDateInput(end) }
+}
+
+function toDateInput(value: Date): string {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, "0")
+  const day = String(value.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function formatMoney(cents: number | undefined, currency: string): string {
+  if (cents === undefined) return "--"
+  const amount = cents / 100
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(amount)
+  } catch {
+    return `${currency} ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  }
+}
+
+function formatNumber(value: number | undefined): string {
+  return value === undefined ? "--" : value.toLocaleString()
+}
+
+function formatDateTick(value: string): string {
+  const [, month, day] = value.split("-")
+  return `${Number(month)}/${Number(day)}`
+}
+
+function formatDateLabel(value: string): string {
+  const [year, month, day] = value.split("-").map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof ApiError) {
+    const detail = (error.body as { detail?: unknown } | undefined)?.detail
+    if (typeof detail === "string") return detail
+    return error.message
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError"
 }
