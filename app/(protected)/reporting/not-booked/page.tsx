@@ -52,7 +52,12 @@ const emptyState = <T,>(): LoadState<T> => ({ loading: false, data: null, error:
 
 export default function NotBookedReportingPage() {
   const router = useRouter()
-  const { hotelId, loading: hotelLoading, error: hotelError } = useHotel()
+  const {
+    hotelId,
+    loading: hotelLoading,
+    error: hotelError,
+    accessState,
+  } = useHotel()
   const [timespan, setTimespan] = useState("30")
   const [selectedReason, setSelectedReason] = useState<string | null>(null)
 
@@ -226,7 +231,14 @@ export default function NotBookedReportingPage() {
         ) : hotelError ? (
           <Notice tone="error" message={hotelError} />
         ) : !hotelId ? (
-          <Notice tone="muted" message="Select a hotel to view not-booked reasons." />
+          <Notice
+            tone="muted"
+            message={
+              accessState === "no-access"
+                ? "Your account isn't set up for any hotels yet. Contact Resonata to have your account configured."
+                : "Select a hotel to view not-booked reasons."
+            }
+          />
         ) : null}
 
         {breakdown.error ? <Notice tone="error" message={breakdown.error} /> : null}

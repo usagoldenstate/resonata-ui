@@ -55,7 +55,12 @@ const emptyState = <T,>(): LoadState<T> => ({
 })
 
 export default function CallMetricsReportingPage() {
-  const { hotelId, loading: hotelLoading, error: hotelError } = useHotel()
+  const {
+    hotelId,
+    loading: hotelLoading,
+    error: hotelError,
+    accessState,
+  } = useHotel()
   const [summaryPreset, setSummaryPreset] = useState<SummaryPreset>("7")
   const [summaryStart, setSummaryStart] = useState(() => rangeForLastDays(7).start)
   const [summaryEnd, setSummaryEnd] = useState(() => rangeForLastDays(7).end)
@@ -205,7 +210,14 @@ export default function CallMetricsReportingPage() {
         ) : hotelError ? (
           <Notice tone="error" message={hotelError} />
         ) : !hotelId ? (
-          <Notice tone="muted" message="Select a hotel to view call metrics." />
+          <Notice
+            tone="muted"
+            message={
+              accessState === "no-access"
+                ? "Your account isn't set up for any hotels yet. Contact Resonata to have your account configured."
+                : "Select a hotel to view call metrics."
+            }
+          />
         ) : null}
 
         <section className="mb-8 rounded-lg border border-border p-4">

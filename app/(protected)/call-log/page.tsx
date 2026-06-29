@@ -217,7 +217,7 @@ export default function CallLogPage() {
 }
 
 function CallLogPageInner() {
-  const { hotelId, hotels, loading: hotelLoading } = useHotel()
+  const { hotelId, hotels, loading: hotelLoading, accessState } = useHotel()
   const hotelName = hotels.find((h) => h.hotel_id === hotelId)?.display_name
 
   // Filters can arrive via URL params (drill-through from the Not Booked
@@ -617,7 +617,9 @@ function CallLogPageInner() {
               <div className="p-8 text-center text-destructive">{error}</div>
             ) : !hotelId ? (
               <div className="p-8 text-center text-muted-foreground">
-                Select a hotel to view its calls.
+                {accessState === "no-access"
+                  ? "Your account isn't set up for any hotels yet. Contact Resonata to have your account configured."
+                  : "Select a hotel to view its calls."}
               </div>
             ) : items.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground">

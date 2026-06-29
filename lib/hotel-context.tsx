@@ -8,7 +8,7 @@
 
 import * as React from "react"
 
-import { api } from "./api"
+import { api, ApiError } from "./api"
 
 export type HotelListItem = {
   hotel_id: string
@@ -17,12 +17,22 @@ export type HotelListItem = {
   is_active: boolean
 }
 
+// Distinguishes the two states that used to both surface as a generic error:
+//   no-access — the caller is a legitimate, authenticated user who simply
+//               hasn't been granted any hotel yet (backend 403/404, or an empty
+//               list). An expected onboarding state, not a failure.
+//   error     — a genuine transient failure (backend down, network, 5xx).
+// Pages branch on this to show the right copy and the right action
+// (contact Resonata vs. retry).
+export type HotelAccessState = "loading" | "ok" | "no-access" | "error"
+
 type Ctx = {
   hotels: HotelListItem[]
   hotelId: string | null
   setHotelId: (id: string) => void
   loading: boolean
   error: string | null
+  accessState: HotelAccessState
   refresh: () => Promise<void>
 }
 
@@ -35,13 +45,19 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
   const [hotelId, setHotelIdState] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const [accessState, setAccessState] =
+    React.useState<HotelAccessState>("loading")
 
   const refresh = React.useCallback(async () => {
     setLoading(true)
     setError(null)
+    setAccessState("loading")
     try {
       const list = await api<HotelListItem[]>("/api/v1/me/hotels")
       setHotels(list)
+      // A successful response with no hotels means the account exists but
+      // hasn't been granted access to anything yet — the onboarding state.
+      setAccessState(list.length > 0 ? "ok" : "no-access")
       // Restore stored selection if it still exists in the list; otherwise
       // default to the first active hotel so pages aren't stuck in an empty
       // state on first load.
@@ -57,6 +73,12 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+      // A 403/404 means the user authenticated fine but the backend has no
+      // record granting them hotel access — treat as no-access, not a failure.
+      // Anything else (network, 5xx, missing config) is a genuine error.
+      const noAccess =
+        e instanceof ApiError && (e.status === 403 || e.status === 404)
+      setAccessState(noAccess ? "no-access" : "error")
     } finally {
       setLoading(false)
     }
@@ -73,7 +95,15 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const value: Ctx = { hotels, hotelId, setHotelId, loading, error, refresh }
+  const value: Ctx = {
+    hotels,
+    hotelId,
+    setHotelId,
+    loading,
+    error,
+    accessState,
+    refresh,
+  }
   return <HotelContext.Provider value={value}>{children}</HotelContext.Provider>
 }
 

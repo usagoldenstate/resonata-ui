@@ -68,7 +68,7 @@ function describeError(error: unknown): string {
 }
 
 export default function SettingsPage() {
-  const { hotelId, hotels } = useHotel()
+  const { hotelId, hotels, accessState } = useHotel()
   const { isPlatformAdmin } = useCurrentUser()
 
   // ── Backend-backed hotel state ────────────────────────────────────────────
@@ -274,7 +274,14 @@ export default function SettingsPage() {
         </div>
 
         {!hotelId ? (
-          <StateNotice tone="muted" message="Select a hotel to view its settings." />
+          <StateNotice
+            tone="muted"
+            message={
+              accessState === "no-access"
+                ? "Your account isn't set up for any hotels yet. Contact Resonata to have your account configured."
+                : "Select a hotel to view its settings."
+            }
+          />
         ) : loading ? (
           <StateNotice tone="muted" message="Loading hotel settings..." />
         ) : loadError ? (

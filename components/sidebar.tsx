@@ -32,7 +32,7 @@ export function Sidebar() {
   const pathname = usePathname()
   const isReportingActive = pathname.startsWith("/reporting")
   const [reportingExpanded, setReportingExpanded] = useState(isReportingActive)
-  const { hotels, hotelId, setHotelId, loading, error } = useHotel()
+  const { hotels, hotelId, setHotelId, loading, accessState } = useHotel()
   const { isPlatformAdmin } = useCurrentUser()
   const { signOut } = useClerk()
 
@@ -60,12 +60,10 @@ export function Sidebar() {
         </label>
         {loading ? (
           <div className="text-xs text-muted-foreground">Loading…</div>
-        ) : error ? (
-          <div className="text-xs text-destructive" title={error}>
-            Load failed
-          </div>
-        ) : hotels.length === 0 ? (
-          <div className="text-xs text-muted-foreground">No hotels</div>
+        ) : accessState === "error" ? (
+          <div className="text-xs text-destructive">Load failed</div>
+        ) : accessState === "no-access" || hotels.length === 0 ? (
+          <div className="text-xs text-muted-foreground">No hotels assigned</div>
         ) : (
           <select
             value={hotelId ?? ""}

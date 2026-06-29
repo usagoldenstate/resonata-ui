@@ -60,6 +60,7 @@ import {
 import { cn } from "@/lib/utils"
 import { api, ApiError } from "@/lib/api"
 import { useHotel } from "@/lib/hotel-context"
+import { HotelLoadError, NoHotelAccess } from "@/components/hotel-access-state"
 import { registerUnsavedGuard } from "@/lib/unsaved-guard"
 import {
   entriesToSections,
@@ -2777,7 +2778,8 @@ function emptyKnowledgeBase(): PropertyData {
 }
 
 export default function KnowledgeBasePage() {
-  const { hotelId, hotels, loading: hotelLoading } = useHotel()
+  const { hotelId, hotels, loading: hotelLoading, accessState, refresh } =
+    useHotel()
   const [data, setData] = useState<PropertyData>(emptyKnowledgeBase)
   const [activeTab, setActiveTab] = useState<"kb" | "rooms" | "config">("kb")
   const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle")
@@ -2991,9 +2993,11 @@ export default function KnowledgeBasePage() {
     return (
       <div className="flex min-h-screen bg-background">
         <Sidebar />
-        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-          No hotel selected. Pick one from the sidebar.
-        </div>
+        {accessState === "error" ? (
+          <HotelLoadError onRetry={refresh} />
+        ) : (
+          <NoHotelAccess />
+        )}
       </div>
     )
   }
