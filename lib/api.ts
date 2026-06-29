@@ -207,6 +207,33 @@ export type NotBookedSeasonalityRow = {
   count: number
 }
 
+export type FaqCategoryCount = {
+  category: string
+  count: number
+  percentage: number
+}
+
+export type FaqQuestion = {
+  question: string
+  category: string
+  count: number
+}
+
+export type FaqCoverageGap = {
+  label: string
+  count: number
+}
+
+export type FaqResponse = {
+  total_questions: number
+  unique_questions: number
+  calls_with_questions: number
+  prior_period_total: number
+  categories: FaqCategoryCount[]
+  questions: FaqQuestion[]
+  coverage_gaps: FaqCoverageGap[]
+}
+
 export type CallAnalyticsSummary = {
   status: string
   outcome: string | null
@@ -685,4 +712,11 @@ export function fetchNotBookedSeasonality(
     withQuery("/api/v1/reporting/not-booked/seasonality", params),
     opts,
   )
+}
+
+export function fetchFaqs(
+  params: CallMetricsBaseParams & { start_date: string; end_date: string },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<FaqResponse>(withQuery("/api/v1/reporting/faqs", params), opts)
 }
