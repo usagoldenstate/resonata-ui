@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, Fragment } from "react"
 import { useSearchParams } from "next/navigation"
-import { CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Loader2, Phone } from "lucide-react"
+import { CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Loader2, Phone, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -237,7 +237,15 @@ function CallLogPageInner() {
   )
   const [dateFrom, setDateFrom] = useState(() => searchParams.get("date_from") ?? "")
   const [dateTo, setDateTo] = useState(() => searchParams.get("date_to") ?? "")
+  const [callIdSearch, setCallIdSearch] = useState(() => searchParams.get("call_id") ?? "")
   const [offset, setOffset] = useState(0)
+
+  // Debounce the Call ID box so we query once the user pauses, not per keystroke.
+  const [debouncedCallId, setDebouncedCallId] = useState(callIdSearch)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedCallId(callIdSearch), 300)
+    return () => clearTimeout(timer)
+  }, [callIdSearch])
 
   const [page, setPage] = useState<CallListPage | null>(null)
   const [loading, setLoading] = useState(false)
@@ -272,7 +280,7 @@ function CallLogPageInner() {
   useEffect(() => {
     setOffset(0)
     setExpandedRow(null)
-  }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo])
+  }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId])
 
   useEffect(() => {
     if (!hotelId) {
@@ -295,6 +303,7 @@ function CallLogPageInner() {
           notBookedSubcategoryFilter === "all" ? undefined : notBookedSubcategoryFilter,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
+        call_id: debouncedCallId.trim() || undefined,
       },
       { signal: controller.signal },
     )
@@ -317,6 +326,7 @@ function CallLogPageInner() {
     notBookedSubcategoryFilter,
     dateFrom,
     dateTo,
+    debouncedCallId,
   ])
 
   const toggleRow = (id: string) => {
@@ -355,7 +365,8 @@ function CallLogPageInner() {
     notBookedReasonFilter !== "all" ||
     notBookedSubcategoryFilter !== "all" ||
     dateFrom !== "" ||
-    dateTo !== ""
+    dateTo !== "" ||
+    callIdSearch.trim() !== ""
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -393,6 +404,26 @@ function CallLogPageInner() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-4 mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+            <Input
+              type="search"
+              value={callIdSearch}
+              onChange={(e) => setCallIdSearch(e.target.value)}
+              placeholder="Search by Call ID"
+              className="w-64 bg-card border-border pl-9 pr-8 text-sm"
+            />
+            {callIdSearch && (
+              <button
+                type="button"
+                onClick={() => setCallIdSearch("")}
+                title="Clear Call ID search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           <Select
             value={outcomeFilter}
             onValueChange={(value) => setOutcomeFilter(value as "all" | CallOutcomeFilter)}
@@ -474,6 +505,7 @@ function CallLogPageInner() {
                 setNotBookedSubcategoryFilter("all")
                 setDateFrom("")
                 setDateTo("")
+                setCallIdSearch("")
               }}
               className="text-muted-foreground hover:text-foreground"
             >

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { AlertTriangle, Loader2 } from "lucide-react"
+import { AlertTriangle, Info, Loader2 } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -16,7 +16,18 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { ApiError, type RevenueSummary, fetchRevenueSummary } from "@/lib/api"
+import {
+  Tooltip as UiTooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
+  ApiError,
+  type CallMetricsSummary,
+  type RevenueSummary,
+  fetchCallMetricsSummary,
+  fetchRevenueSummary,
+} from "@/lib/api"
 import { useHotel } from "@/lib/hotel-context"
 
 type SummaryPreset = "7" | "14" | "30" | "custom"
@@ -33,21 +44,38 @@ const emptyState = <T,>(): LoadState<T> => ({
   error: null,
 })
 
+type FunnelStage = {
+  label: string
+  value: string
+  // Bar width as a percent of stage 1 (Calls received). Omitted for the payoff.
+  share?: number
+  // Conversion caption vs the previous stage, e.g. "33% of calls".
+  sub?: string
+  // The terminal revenue stage, styled as the funnel's payoff.
+  payoff?: boolean
+}
+
 export default function RevenueReportingPage() {
   const { hotelId, loading: hotelLoading, error: hotelError, accessState } = useHotel()
   const [preset, setPreset] = useState<SummaryPreset>("30")
   const [start, setStart] = useState(() => rangeForLastDays(30).start)
   const [end, setEnd] = useState(() => rangeForLastDays(30).end)
   const [summary, setSummary] = useState<LoadState<RevenueSummary>>(() => emptyState())
+  // Powers the top-of-page funnel (Calls -> Links sent), which the revenue
+  // summary alone can't supply. min_duration_seconds: 0 counts every call.
+  const [calls, setCalls] = useState<LoadState<CallMetricsSummary>>(() => emptyState())
 
   useEffect(() => {
     if (!hotelId) {
       setSummary(emptyState())
+      setCalls(emptyState())
       return
     }
 
     const controller = new AbortController()
     setSummary({ loading: true, data: null, error: null })
+    setCalls({ loading: true, data: null, error: null })
+
     fetchRevenueSummary(
       { hotel_id: hotelId, start_date: start, end_date: end, basis: "projected" },
       { signal: controller.signal },
@@ -56,6 +84,16 @@ export default function RevenueReportingPage() {
       .catch((error: unknown) => {
         if (isAbortError(error)) return
         setSummary({ loading: false, data: null, error: describeError(error) })
+      })
+
+    fetchCallMetricsSummary(
+      { hotel_id: hotelId, start_date: start, end_date: end, min_duration_seconds: 0 },
+      { signal: controller.signal },
+    )
+      .then((data) => setCalls({ loading: false, data, error: null }))
+      .catch((error: unknown) => {
+        if (isAbortError(error)) return
+        setCalls({ loading: false, data: null, error: describeError(error) })
       })
 
     return () => controller.abort()
@@ -80,9 +118,61 @@ export default function RevenueReportingPage() {
         <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Revenue</h1>
-            <p className="text-sm text-muted-foreground">
-              Projected room revenue from bookings attributed to the voice agent
-            </p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm text-muted-foreground">
+                Projected room revenue from bookings attributed to the voice agent
+              </p>
+              <UiTooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="About projected revenue"
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <span className="font-medium">Projected revenue only.</span> Figures are
+                  estimated from guests who completed the booking-link details the voice agent
+                  sent — not confirmed payments. They do not account for cancellations, no-shows,
+                  or modifications, and are not a substitute for actualized revenue in your
+                  property management system.
+                </TooltipContent>
+              </UiTooltip>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {(["7", "14", "30", "custom"] as const).map((option) => (
+                <Button
+                  key={option}
+                  type="button"
+                  size="sm"
+                  variant={preset === option ? "default" : "outline"}
+                  onClick={() => onPresetChange(option)}
+                >
+                  {option === "custom" ? "Custom" : `${option} days`}
+                </Button>
+              ))}
+              <UiTooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="How date ranges are bucketed"
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  Date ranges use each record&apos;s creation time in the hotel&apos;s local timezone.
+                </TooltipContent>
+              </UiTooltip>
+            </div>
+            {preset === "custom" ? (
+              <DateRangeInputs start={start} end={end} onStart={setStart} onEnd={setEnd} />
+            ) : null}
           </div>
         </div>
 
@@ -102,34 +192,25 @@ export default function RevenueReportingPage() {
         ) : null}
 
         <section className="mb-8 rounded-lg border border-border p-4">
-          <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-foreground">
-                Projected Revenue
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Pre-tax room estimate (excludes taxes, fees &amp; extras) · based on booking
-                creation date in the hotel timezone
-              </p>
-            </div>
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex flex-wrap gap-2">
-                {(["7", "14", "30", "custom"] as const).map((option) => (
-                  <Button
-                    key={option}
-                    type="button"
-                    size="sm"
-                    variant={preset === option ? "default" : "outline"}
-                    onClick={() => onPresetChange(option)}
-                  >
-                    {option === "custom" ? "Custom" : `${option} days`}
-                  </Button>
-                ))}
-              </div>
-              {preset === "custom" ? (
-                <DateRangeInputs start={start} end={end} onStart={setStart} onEnd={setEnd} />
-              ) : null}
-            </div>
+          <div className="mb-4">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-foreground">
+              Booking Funnel
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              From answered call to projected revenue · reflects the selected date range
+            </p>
+          </div>
+          <RevenueFunnel metricsState={calls} revenueState={summary} currency={currency} />
+        </section>
+
+        <section className="mb-8 rounded-lg border border-border p-4">
+          <div className="mb-4">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-foreground">
+              Booking Performance
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Conversion and per-booking value
+            </p>
           </div>
 
           {data?.attribution_last_discovered_at === null ? (
@@ -144,18 +225,26 @@ export default function RevenueReportingPage() {
             <Notice tone="muted" message="No attributed bookings in this date range." />
           ) : null}
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <MetricCard
-              label="Projected Room Revenue"
-              value={summary.loading ? "..." : formatMoney(data?.total_revenue_cents, currency)}
+              label="Conversion Rate"
+              value={calls.loading ? "..." : formatPercent(calls.data?.conversion_rate)}
+              hint={
+                calls.loading || !calls.data
+                  ? undefined
+                  : `${formatNumber(calls.data.calls_booked)} of ${formatNumber(
+                      calls.data.total_calls,
+                    )} calls booked`
+              }
             />
             <MetricCard
-              label="Bookings"
-              value={summary.loading ? "..." : formatNumber(data?.booking_count)}
-            />
-            <MetricCard
-              label="Room-nights"
-              value={summary.loading ? "..." : formatNumber(data?.room_nights)}
+              label="ADR"
+              value={summary.loading ? "..." : formatAdr(data, currency)}
+              hint={
+                summary.loading || !data
+                  ? undefined
+                  : `per night across ${formatNumber(data.room_nights)} room-nights`
+              }
             />
             <MetricCard
               label="Avg Booking Value"
@@ -243,7 +332,15 @@ function RevenueTrendChart({
   )
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function MetricCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string
+  value: string
+  hint?: string
+}) {
   return (
     <Card className="border-border">
       <CardContent className="p-6">
@@ -251,8 +348,87 @@ function MetricCard({ label, value }: { label: string; value: string }) {
           {label}
         </p>
         <p className="text-2xl font-semibold text-card-foreground">{value}</p>
+        {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
       </CardContent>
     </Card>
+  )
+}
+
+function RevenueFunnel({
+  metricsState,
+  revenueState,
+  currency,
+}: {
+  metricsState: LoadState<CallMetricsSummary>
+  revenueState: LoadState<RevenueSummary>
+  currency: string
+}) {
+  const loading = metricsState.loading || revenueState.loading
+
+  // First two stages come from the call-metrics summary; the last two from the
+  // revenue summary, so the funnel's "Bookings" and "$" match the cards below.
+  const totalCalls = metricsState.data?.total_calls
+  const linksSent = metricsState.data?.links_sent
+  const bookings = revenueState.data?.booking_count
+  const revenueCents = revenueState.data?.total_revenue_cents
+
+  const stages: FunnelStage[] = [
+    {
+      label: "Calls received",
+      value: loading ? "..." : formatNumber(totalCalls),
+      share: 100,
+    },
+    {
+      label: "Booking links sent",
+      value: loading ? "..." : formatNumber(linksSent),
+      share: sharePercent(linksSent, totalCalls),
+      sub: rateLabel(linksSent, totalCalls, "of calls"),
+    },
+    {
+      label: "Bookings",
+      value: loading ? "..." : formatNumber(bookings),
+      share: sharePercent(bookings, totalCalls),
+      sub: rateLabel(bookings, linksSent, "of links"),
+    },
+    {
+      label: "Projected revenue",
+      value: loading ? "..." : formatMoney(revenueCents, currency),
+      payoff: true,
+    },
+  ]
+
+  return (
+    <div>
+      {metricsState.error ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          Call volume is temporarily unavailable, so the first two stages may show “--”.
+        </p>
+      ) : null}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {stages.map((stage) => (
+          <div
+            key={stage.label}
+            className={`rounded-lg border p-4 ${
+              stage.payoff ? "border-[#6b7a4a]/50 bg-[#6b7a4a]/10" : "border-border bg-card"
+            }`}
+          >
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {stage.label}
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-card-foreground">{stage.value}</p>
+            <p className="mt-1 h-4 text-xs text-muted-foreground">{stage.sub ?? ""}</p>
+            {stage.payoff ? null : (
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-[#6b7a4a]"
+                  style={{ width: `${loading ? 0 : stage.share ?? 0}%` }}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -359,6 +535,34 @@ function formatMoney(cents: number | undefined, currency: string): string {
 
 function formatNumber(value: number | undefined): string {
   return value === undefined ? "--" : value.toLocaleString()
+}
+
+function formatPercent(value: number | undefined): string {
+  return value === undefined ? "--" : `${value.toFixed(1)}%`
+}
+
+// Average Daily Rate = room revenue / room-nights. Distinct from Avg Booking
+// Value (revenue / bookings): ADR is per night, ABV is per reservation.
+function formatAdr(data: RevenueSummary | null, currency: string): string {
+  if (!data || !data.room_nights) return "--"
+  return formatMoney(Math.round(data.total_revenue_cents / data.room_nights), currency)
+}
+
+function sharePercent(numerator: number | undefined, denominator: number | undefined): number {
+  if (!numerator || !denominator) return 0
+  return Math.max(0, Math.min(100, (numerator / denominator) * 100))
+}
+
+function rateLabel(
+  numerator: number | undefined,
+  denominator: number | undefined,
+  suffix: string,
+): string | undefined {
+  if (numerator === undefined || !denominator) return undefined
+  // Clamp: booking_count (revenue) and the call-based stages come from
+  // different queries, so a rare >100% shouldn't render in the funnel.
+  const rate = Math.min(100, Math.round((numerator / denominator) * 100))
+  return `${rate}% ${suffix}`
 }
 
 function formatDateTick(value: string): string {

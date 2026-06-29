@@ -61,9 +61,9 @@ export default function CallMetricsReportingPage() {
     error: hotelError,
     accessState,
   } = useHotel()
-  const [summaryPreset, setSummaryPreset] = useState<SummaryPreset>("7")
-  const [summaryStart, setSummaryStart] = useState(() => rangeForLastDays(7).start)
-  const [summaryEnd, setSummaryEnd] = useState(() => rangeForLastDays(7).end)
+  const [summaryPreset, setSummaryPreset] = useState<SummaryPreset>("30")
+  const [summaryStart, setSummaryStart] = useState(() => rangeForLastDays(30).start)
+  const [summaryEnd, setSummaryEnd] = useState(() => rangeForLastDays(30).end)
   const [chartView, setChartView] = useState<ChartView>("hourly")
   const [dailyStart, setDailyStart] = useState(() => rangeForLastDays(30).start)
   const [dailyEnd, setDailyEnd] = useState(() => rangeForLastDays(30).end)
@@ -266,16 +266,25 @@ export default function CallMetricsReportingPage() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
-              label="Conversion Rate"
-              value={summary.loading ? "..." : formatPercent(summaryData?.conversion_rate)}
-            />
-            <MetricCard
               label="Total Call Volume"
               value={summary.loading ? "..." : formatNumber(summaryData?.total_calls)}
             />
             <MetricCard
-              label="Calls Booked"
-              value={summary.loading ? "..." : formatNumber(summaryData?.calls_booked)}
+              label="Total Call Minutes"
+              value={summary.loading ? "..." : formatMinutes(summaryData?.total_call_seconds)}
+              hint={
+                summary.loading || !summaryData || summaryData.total_call_seconds === 0
+                  ? undefined
+                  : formatHoursHint(summaryData.total_call_seconds)
+              }
+            />
+            <MetricCard
+              label="Avg Call Duration"
+              value={
+                summary.loading
+                  ? "..."
+                  : formatAvgDuration(summaryData?.total_call_seconds, summaryData?.total_calls)
+              }
             />
             <MetricCard
               label="Customer Satisfaction Score"
@@ -476,7 +485,15 @@ function MonthlyChart({ state }: { state: LoadState<CallMetricsMonthlyRow[]> }) 
   )
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function MetricCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string
+  value: string
+  hint?: string
+}) {
   return (
     <Card className="border-border">
       <CardContent className="p-6">
@@ -484,6 +501,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
           {label}
         </p>
         <p className="text-2xl font-semibold text-card-foreground">{value}</p>
+        {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
       </CardContent>
     </Card>
   )
@@ -629,6 +647,27 @@ function formatNumber(value: number | undefined): string {
 
 function formatPercent(value: number | undefined): string {
   return value === undefined ? "--" : `${value.toFixed(1)}%`
+}
+
+function formatMinutes(seconds: number | undefined): string {
+  if (seconds === undefined) return "--"
+  return `${Math.round(seconds / 60).toLocaleString()} min`
+}
+
+function formatHoursHint(seconds: number): string {
+  return `≈ ${(seconds / 3600).toFixed(1)} hrs handled`
+}
+
+function formatAvgDuration(
+  totalSeconds: number | undefined,
+  totalCalls: number | undefined,
+): string {
+  if (totalSeconds === undefined || !totalCalls) return "--"
+  const avg = Math.round(totalSeconds / totalCalls)
+  if (avg < 60) return `${avg}s`
+  const minutes = Math.floor(avg / 60)
+  const remainder = avg % 60
+  return `${minutes}m ${String(remainder).padStart(2, "0")}s`
 }
 
 function formatHour(hour: number): string {

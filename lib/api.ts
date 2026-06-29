@@ -100,6 +100,12 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
 export type CallMetricsSummary = {
   total_calls: number
   calls_booked: number
+  // Funnel middle stage: calls that sent a booking link (superset of
+  // calls_booked, so total_calls >= links_sent >= calls_booked).
+  links_sent: number
+  // Sum of call durations over the window; powers the Total Call Minutes /
+  // Avg Call Duration tiles.
+  total_call_seconds: number
   conversion_rate: number
   missed_opportunities: number
   csat_score: number | null
@@ -126,6 +132,9 @@ export type RevenueSummary = {
   currency: string
   total_revenue_cents: number
   booking_count: number
+  // Bookings counted but withheld from total_revenue_cents (foreign currency or
+  // no projected price yet). booking_count - excluded_from_total feeds the money.
+  excluded_from_total: number
   room_nights: number
   avg_booking_value_cents: number | null
   attribution_last_discovered_at: string | null
@@ -587,6 +596,7 @@ export function fetchCalls(
     not_booked_subcategory?: string
     date_from?: string
     date_to?: string
+    call_id?: string
   },
   opts: Pick<Options, "signal"> = {},
 ) {
