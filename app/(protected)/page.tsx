@@ -98,6 +98,15 @@ function callVolumeValue(
   return data.calls.calls_booked + data.notBooked.total_not_booked
 }
 
+// Conversion among bookable calls: booked / (booked + not-booked), as a percent.
+// Undefined until both source endpoints have loaded.
+function bookableConversionRate(data: DashboardData | null): number | undefined {
+  const booked = data?.calls?.calls_booked
+  const bookable = callVolumeValue(data, "bookable")
+  if (booked === undefined || bookable === undefined || bookable === 0) return undefined
+  return (booked / bookable) * 100
+}
+
 async function loadDashboard(
   hotelId: string,
   start: string,
@@ -259,15 +268,15 @@ export default function Dashboard() {
       ? percentChange(callVolume, callVolumeValue(comparisonData, callVolumeType))
       : null
 
-  // Conversion tile
-  const avgRate = primaryData?.calls?.conversion_rate
-  const totalCalls = primaryData?.calls?.total_calls
+  // Conversion tile — uses the bookable-calls basis (booked / bookable), matching
+  // the Revenue page default, so booked + not-booked sum to 100%.
+  const avgRate = bookableConversionRate(primaryData)
   const booked = primaryData?.calls?.calls_booked
-  const notBookedCalls =
-    totalCalls !== undefined && booked !== undefined ? totalCalls - booked : undefined
+  const notBookedCalls = primaryData?.notBooked?.total_not_booked
+  const comparisonRate = bookableConversionRate(comparisonData)
   const rateDiff =
-    showComparison && comparisonData && avgRate !== undefined
-      ? avgRate - (comparisonData.calls?.conversion_rate ?? 0)
+    showComparison && avgRate !== undefined && comparisonRate !== undefined
+      ? avgRate - comparisonRate
       : null
 
   // Not booked tile
@@ -481,7 +490,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Conversion Rate Section */}
-          <Link href="/reporting/conversion-rate" className="block">
+          <Link href="/reporting/revenue" className="block">
             <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all cursor-pointer group h-full">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
