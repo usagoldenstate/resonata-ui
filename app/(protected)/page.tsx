@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -18,55 +18,39 @@ import {
 } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { Sidebar } from "@/components/sidebar"
-import { CalendarIcon, TrendingUp, TrendingDown, GitCompareArrows, ChevronRight, DollarSign } from "lucide-react"
-import { format, subDays } from "date-fns"
+import {
+  AlertTriangle,
+  CalendarIcon,
+  ChevronRight,
+  Clock,
+  DollarSign,
+  GitCompareArrows,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react"
+import { differenceInCalendarDays, format, subDays } from "date-fns"
 
-// Seeded random number generator for consistent server/client data
-function seededRandom(seed: number) {
-  const x = Math.sin(seed) * 10000
-  return x - Math.floor(x)
+import {
+  ApiError,
+  type CallMetricsSummary,
+  type NotBookedBreakdownResponse,
+  type RevenueSummary,
+  fetchCallMetricsSummary,
+  fetchNotBookedBreakdown,
+  fetchRevenueSummary,
+} from "@/lib/api"
+import { useHotel } from "@/lib/hotel-context"
+
+// Presentation-only color mapping, keyed on the backend taxonomy category name.
+// Mirrors the Not Booked reporting page so the dashboard tile matches the detail view.
+const COLOR_BY_CATEGORY: Record<string, string> = {
+  Price: "bg-[#6b7a4a]",
+  Availability: "bg-[#c4a84b]",
+  Amenities: "bg-[#8b5a3c]",
+  Policy: "bg-[#64748b]",
+  Other: "bg-[#9ca3af]",
 }
-
-// Generate daily data for the past 90 days
-const generateDailyData = () => {
-  const data = []
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  for (let i = 89; i >= 0; i--) {
-    const date = subDays(today, i)
-    const dayOfWeek = date.getDay()
-    const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate()
-    const baseVolume = dayOfWeek === 0 || dayOfWeek === 6 ? 55 : 38
-    const variance = Math.floor(seededRandom(seed) * 20) - 10
-    const calls = baseVolume + variance
-    const conversionBase = 38 + Math.floor(seededRandom(seed + 1) * 12)
-    const booked = Math.floor(calls * (conversionBase / 100))
-    const avgRevenue = 180 + Math.floor(seededRandom(seed + 2) * 80)
-    const upsellRate = 0.12 + seededRandom(seed + 3) * 0.08
-    data.push({
-      date: date,
-      dateStr: format(date, "MMM d"),
-      dayName: format(date, "EEE"),
-      calls,
-      booked,
-      rate: Math.round((booked / calls) * 100 * 10) / 10,
-      revenue: booked * avgRevenue,
-      upsellRevenue: Math.floor(booked * avgRevenue * upsellRate)
-    })
-  }
-  return data
-}
-
-const allDailyData = generateDailyData()
-
-// Not booked reasons data
-const notBookedReasons = [
-  { reason: "Price", count: 156, percentage: 34, color: "bg-[#6b7a4a]" },
-  { reason: "Availability", count: 112, percentage: 24, color: "bg-[#c4a84b]" },
-  { reason: "Amenities", count: 89, percentage: 19, color: "bg-[#8b5a3c]" },
-  { reason: "Policy", count: 37, percentage: 8, color: "bg-[#64748b]" },
-  { reason: "Other", count: 67, percentage: 15, color: "bg-[#9ca3af]" },
-]
+const DEFAULT_COLOR = "bg-[#9ca3af]"
 
 const timespanOptions = [
   { value: "7", label: "Last 7 days" },
@@ -85,52 +69,129 @@ type CalendarRange = {
   to?: Date
 }
 
-function getStats(dateRange: DashboardDateRange) {
-  const filteredData = allDailyData.filter(d => d.date >= dateRange.from && d.date <= dateRange.to)
-  const totalCalls = filteredData.reduce((acc, d) => acc + d.calls, 0)
-  const totalBooked = filteredData.reduce((acc, d) => acc + d.booked, 0)
-  const avgRate = totalCalls > 0 ? Math.round((totalBooked / totalCalls) * 100 * 10) / 10 : 0
-  const totalRevenue = filteredData.reduce((acc, d) => acc + d.revenue, 0)
-  const totalUpsell = filteredData.reduce((acc, d) => acc + d.upsellRevenue, 0)
-  return { totalCalls, totalBooked, avgRate, totalRevenue, totalUpsell, data: filteredData }
+// The three reporting endpoints that power the overview tiles. Each may be null
+// independently so one failing endpoint doesn't blank the whole dashboard.
+type DashboardData = {
+  calls: CallMetricsSummary | null
+  revenue: RevenueSummary | null
+  notBooked: NotBookedBreakdownResponse | null
+}
+
+type LoadState = {
+  loading: boolean
+  data: DashboardData | null
+  error: string | null
+}
+
+const emptyState = (): LoadState => ({ loading: false, data: null, error: null })
+
+// Bookable calls = calls that had booking intent, whether they ended up booked
+// or not (calls_booked + total_not_booked). Total calls includes non-bookable
+// ones. Returns undefined until both source endpoints have loaded.
+function callVolumeValue(
+  data: DashboardData | null,
+  type: "bookable" | "total",
+): number | undefined {
+  if (!data) return undefined
+  if (type === "total") return data.calls?.total_calls
+  if (data.calls == null || data.notBooked == null) return undefined
+  return data.calls.calls_booked + data.notBooked.total_not_booked
+}
+
+async function loadDashboard(
+  hotelId: string,
+  start: string,
+  end: string,
+  signal: AbortSignal,
+): Promise<{ data: DashboardData; error: string | null }> {
+  const [calls, revenue, notBooked] = await Promise.allSettled([
+    fetchCallMetricsSummary(
+      { hotel_id: hotelId, start_date: start, end_date: end, min_duration_seconds: 0 },
+      { signal },
+    ),
+    fetchRevenueSummary(
+      { hotel_id: hotelId, start_date: start, end_date: end, basis: "projected" },
+      { signal },
+    ),
+    fetchNotBookedBreakdown(
+      { hotel_id: hotelId, start_date: start, end_date: end },
+      { signal },
+    ),
+  ])
+
+  const data: DashboardData = {
+    calls: calls.status === "fulfilled" ? calls.value : null,
+    revenue: revenue.status === "fulfilled" ? revenue.value : null,
+    notBooked: notBooked.status === "fulfilled" ? notBooked.value : null,
+  }
+
+  // Surface an error banner only when every section failed; otherwise the tiles
+  // render whatever loaded and show "--" for the rest.
+  const allFailed = !data.calls && !data.revenue && !data.notBooked
+  const firstRejection = [calls, revenue, notBooked].find(
+    (r): r is PromiseRejectedResult => r.status === "rejected" && !isAbortError(r.reason),
+  )
+  const error = allFailed && firstRejection ? describeError(firstRejection.reason) : null
+
+  return { data, error }
 }
 
 export default function Dashboard() {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const { hotelId, loading: hotelLoading, error: hotelError, accessState } = useHotel()
+
+  const today = useMemo(() => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    return d
+  }, [])
 
   const [primaryTimespan, setPrimaryTimespan] = useState("30")
-  const [primaryDateRange, setPrimaryDateRange] = useState<DashboardDateRange>({
+  const [primaryDateRange, setPrimaryDateRange] = useState<DashboardDateRange>(() => ({
     from: subDays(today, 30),
-    to: today
-  })
+    to: today,
+  }))
   const [primaryCalendarOpen, setPrimaryCalendarOpen] = useState(false)
   const [primaryTempRange, setPrimaryTempRange] = useState<CalendarRange>({
     from: primaryDateRange.from,
-    to: primaryDateRange.to
+    to: primaryDateRange.to,
   })
 
   const [showComparison, setShowComparison] = useState(false)
-  const [callVolumeType, setCallVolumeType] = useState<"total" | "lead">("total")
+  const [callVolumeType, setCallVolumeType] = useState<"bookable" | "total">("bookable")
   const [comparisonTimespan, setComparisonTimespan] = useState("30")
-  const [comparisonDateRange, setComparisonDateRange] = useState<DashboardDateRange>({
+  const [comparisonDateRange, setComparisonDateRange] = useState<DashboardDateRange>(() => ({
     from: subDays(today, 60),
-    to: subDays(today, 31)
-  })
+    to: subDays(today, 31),
+  }))
   const [comparisonCalendarOpen, setComparisonCalendarOpen] = useState(false)
   const [comparisonTempRange, setComparisonTempRange] = useState<CalendarRange>({
     from: comparisonDateRange.from,
-    to: comparisonDateRange.to
+    to: comparisonDateRange.to,
   })
+
+  const [primary, setPrimary] = useState<LoadState>(() => emptyState())
+  const [comparison, setComparison] = useState<LoadState>(() => emptyState())
 
   const handlePrimaryTimespanChange = (value: string) => {
     setPrimaryTimespan(value)
     if (value !== "custom") {
       const days = parseInt(value)
-      setPrimaryDateRange({
-        from: subDays(today, days),
-        to: today
-      })
+      setPrimaryDateRange({ from: subDays(today, days), to: today })
+    }
+  }
+
+  // Default the comparison to the same-length window immediately preceding the
+  // primary range. We surface it as a "Custom range" so the exact preceding
+  // dates are shown — a preset like "Last 7 days" would point at today, not the
+  // window before the primary.
+  const handleToggleComparison = () => {
+    const next = !showComparison
+    setShowComparison(next)
+    if (next) {
+      const preceding = precedingRange(primaryDateRange)
+      setComparisonTimespan("custom")
+      setComparisonDateRange(preceding)
+      setComparisonTempRange({ from: preceding.from, to: preceding.to })
     }
   }
 
@@ -141,19 +202,82 @@ export default function Dashboard() {
       const primaryDays = parseInt(primaryTimespan) || 30
       setComparisonDateRange({
         from: subDays(today, primaryDays + days),
-        to: subDays(today, primaryDays + 1)
+        to: subDays(today, primaryDays + 1),
       })
     }
   }
 
-  const primaryStats = useMemo(() => getStats(primaryDateRange), [primaryDateRange])
-  const comparisonStats = useMemo(() => getStats(comparisonDateRange), [comparisonDateRange])
+  const primaryStart = toDateInput(primaryDateRange.from)
+  const primaryEnd = toDateInput(primaryDateRange.to)
+  const comparisonStart = toDateInput(comparisonDateRange.from)
+  const comparisonEnd = toDateInput(comparisonDateRange.to)
 
-  const callsDiff = showComparison ? ((primaryStats.totalCalls - comparisonStats.totalCalls) / comparisonStats.totalCalls * 100).toFixed(1) : null
-  const rateDiff = showComparison ? (primaryStats.avgRate - comparisonStats.avgRate).toFixed(1) : null
-  const revenueDiff = showComparison ? ((primaryStats.totalRevenue - comparisonStats.totalRevenue) / comparisonStats.totalRevenue * 100).toFixed(1) : null
+  useEffect(() => {
+    if (!hotelId) {
+      setPrimary(emptyState())
+      return
+    }
+    const controller = new AbortController()
+    setPrimary({ loading: true, data: null, error: null })
+    loadDashboard(hotelId, primaryStart, primaryEnd, controller.signal).then(
+      ({ data, error }) => {
+        if (controller.signal.aborted) return
+        setPrimary({ loading: false, data, error })
+      },
+    )
+    return () => controller.abort()
+  }, [hotelId, primaryStart, primaryEnd])
 
-  const maxCalls = Math.max(...primaryStats.data.map(d => d.calls), ...(showComparison ? comparisonStats.data.map(d => d.calls) : [0]))
+  useEffect(() => {
+    if (!hotelId || !showComparison) {
+      setComparison(emptyState())
+      return
+    }
+    const controller = new AbortController()
+    setComparison({ loading: true, data: null, error: null })
+    loadDashboard(hotelId, comparisonStart, comparisonEnd, controller.signal).then(
+      ({ data, error }) => {
+        if (controller.signal.aborted) return
+        setComparison({ loading: false, data, error })
+      },
+    )
+    return () => controller.abort()
+  }, [hotelId, showComparison, comparisonStart, comparisonEnd])
+
+  const primaryData = primary.data
+  const comparisonData = comparison.data
+  const currency = primaryData?.revenue?.currency ?? "USD"
+
+  // Call volume tile
+  const callVolume = callVolumeValue(primaryData, callVolumeType)
+  const totalSeconds = primaryData?.calls?.total_call_seconds
+  const callsDiff =
+    showComparison && comparisonData
+      ? percentChange(callVolume, callVolumeValue(comparisonData, callVolumeType))
+      : null
+
+  // Conversion tile
+  const avgRate = primaryData?.calls?.conversion_rate
+  const totalCalls = primaryData?.calls?.total_calls
+  const booked = primaryData?.calls?.calls_booked
+  const notBookedCalls =
+    totalCalls !== undefined && booked !== undefined ? totalCalls - booked : undefined
+  const rateDiff =
+    showComparison && comparisonData && avgRate !== undefined
+      ? avgRate - (comparisonData.calls?.conversion_rate ?? 0)
+      : null
+
+  // Not booked tile
+  const notBookedCategories = primaryData?.notBooked?.categories ?? []
+  const totalNotBooked = primaryData?.notBooked?.total_not_booked
+
+  // Revenue tile
+  const revenueCents = primaryData?.revenue?.total_revenue_cents
+  const adrCents = adr(primaryData?.revenue ?? null)
+  const revenueDiff =
+    showComparison && comparisonData
+      ? percentChange(revenueCents, comparisonData.revenue?.total_revenue_cents)
+      : null
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -168,7 +292,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-4">
             <Button
               variant={showComparison ? "default" : "outline"}
-              onClick={() => setShowComparison(!showComparison)}
+              onClick={handleToggleComparison}
               className={showComparison ? "bg-[#6b7a4a] hover:bg-[#5a6940]" : "border-border"}
             >
               <GitCompareArrows className="w-4 h-4 mr-2" />
@@ -262,6 +386,23 @@ export default function Dashboard() {
           )}
         </div>
 
+        {hotelLoading ? (
+          <Notice tone="muted" message="Loading hotel selection..." />
+        ) : hotelError ? (
+          <Notice tone="error" message={hotelError} />
+        ) : !hotelId ? (
+          <Notice
+            tone="muted"
+            message={
+              accessState === "no-access"
+                ? "Your account isn't set up for any hotels yet. Contact Resonata to have your account configured."
+                : "Select a hotel to view the dashboard."
+            }
+          />
+        ) : primary.error ? (
+          <Notice tone="error" message={primary.error} />
+        ) : null}
+
         {/* Main Grid - 2x2 */}
         <div className="grid grid-cols-2 gap-6">
           {/* Call Volume Section */}
@@ -275,24 +416,24 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2">
                   <div className="flex items-center bg-muted rounded-lg p-0.5 border border-border" onClick={(e) => e.preventDefault()}>
                     <button
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCallVolumeType("bookable") }}
+                      className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                        callVolumeType === "bookable"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Bookable Calls
+                    </button>
+                    <button
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCallVolumeType("total") }}
                       className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                        callVolumeType === "total" 
-                          ? "bg-background text-foreground shadow-sm" 
+                        callVolumeType === "total"
+                          ? "bg-background text-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       Total Calls
-                    </button>
-                    <button
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCallVolumeType("lead") }}
-                      className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                        callVolumeType === "lead" 
-                          ? "bg-background text-foreground shadow-sm" 
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      Lead Calls
                     </button>
                   </div>
                   <Link href="/reporting/call-volume">
@@ -300,33 +441,37 @@ export default function Dashboard() {
                   </Link>
                 </div>
               </div>
-              
+
               <Link href="/reporting/call-volume" className="block">
                 <div className="flex items-baseline gap-2 mb-4">
                   <span className="text-3xl font-semibold text-card-foreground">
-                    {callVolumeType === "total" 
-                      ? primaryStats.totalCalls.toLocaleString() 
-                      : Math.round(primaryStats.totalCalls * 0.72).toLocaleString()
-                    }
+                    {primary.loading ? "..." : formatNumber(callVolume)}
                   </span>
-                  <span className="text-sm text-muted-foreground">{callVolumeType === "total" ? "calls" : "leads"}</span>
-                  {callsDiff && (
-                    <span className={`text-sm flex items-center gap-1 ${parseFloat(callsDiff) >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
-                      {parseFloat(callsDiff) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      {Math.abs(parseFloat(callsDiff))}%
+                  <span className="text-sm text-muted-foreground">
+                    {callVolumeType === "bookable" ? "bookable calls" : "calls"}
+                  </span>
+                  {callsDiff !== null && (
+                    <span className={`text-sm flex items-center gap-1 ${callsDiff >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
+                      {callsDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                      {Math.abs(callsDiff).toFixed(1)}%
                     </span>
                   )}
                 </div>
 
-                {/* Mini Chart */}
-                <div className="flex items-end gap-1 h-16">
-                  {primaryStats.data.slice(-14).map((day, i) => (
-                    <div
-                      key={i}
-                      className="flex-1 bg-[#6b7a4a]/20 group-hover:bg-[#6b7a4a]/30 rounded-t transition-colors"
-                      style={{ height: `${((callVolumeType === "total" ? day.calls : Math.round(day.calls * 0.72)) / maxCalls) * 100}%` }}
-                    />
-                  ))}
+                {/* Total call time for the selected period */}
+                <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
+                  <div className="w-9 h-9 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
+                    <Clock className="w-4 h-4 text-[#6b7a4a]" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-semibold text-card-foreground leading-tight">
+                      {primary.loading ? "..." : formatMinutes(totalSeconds)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Total call time
+                      {!primary.loading && totalSeconds ? ` · ${formatHoursHint(totalSeconds)}` : ""}
+                    </p>
+                  </div>
                 </div>
               </Link>
             </CardContent>
@@ -343,14 +488,16 @@ export default function Dashboard() {
                   </div>
                   <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
                 </div>
-                
+
                 <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-3xl font-semibold text-card-foreground">{primaryStats.avgRate}%</span>
+                  <span className="text-3xl font-semibold text-card-foreground">
+                    {primary.loading ? "..." : formatPercent(avgRate)}
+                  </span>
                   <span className="text-sm text-muted-foreground">avg rate</span>
-                  {rateDiff && (
-                    <span className={`text-sm flex items-center gap-1 ${parseFloat(rateDiff) >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
-                      {parseFloat(rateDiff) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      {Math.abs(parseFloat(rateDiff))}pp
+                  {rateDiff !== null && (
+                    <span className={`text-sm flex items-center gap-1 ${rateDiff >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
+                      {rateDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                      {Math.abs(rateDiff).toFixed(1)}pp
                     </span>
                   )}
                 </div>
@@ -360,22 +507,22 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground w-16">Booked</span>
                     <div className="flex-1 bg-muted rounded-full h-3">
-                      <div 
+                      <div
                         className="bg-[#6b7a4a] h-3 rounded-full transition-all"
-                        style={{ width: `${primaryStats.avgRate}%` }}
+                        style={{ width: `${avgRate ?? 0}%` }}
                       />
                     </div>
-                    <span className="text-xs font-medium w-12 text-right">{primaryStats.totalBooked}</span>
+                    <span className="text-xs font-medium w-12 text-right">{formatNumber(booked)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground w-16">Not Booked</span>
                     <div className="flex-1 bg-muted rounded-full h-3">
-                      <div 
+                      <div
                         className="bg-[#8b5a3c] h-3 rounded-full transition-all"
-                        style={{ width: `${100 - primaryStats.avgRate}%` }}
+                        style={{ width: `${avgRate === undefined ? 0 : 100 - avgRate}%` }}
                       />
                     </div>
-                    <span className="text-xs font-medium w-12 text-right">{primaryStats.totalCalls - primaryStats.totalBooked}</span>
+                    <span className="text-xs font-medium w-12 text-right">{formatNumber(notBookedCalls)}</span>
                   </div>
                 </div>
               </CardContent>
@@ -393,90 +540,78 @@ export default function Dashboard() {
                   </div>
                   <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
                 </div>
-                
+
                 <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-3xl font-semibold text-card-foreground">{notBookedReasons.reduce((acc, r) => acc + r.count, 0)}</span>
+                  <span className="text-3xl font-semibold text-card-foreground">
+                    {primary.loading ? "..." : formatNumber(totalNotBooked)}
+                  </span>
                   <span className="text-sm text-muted-foreground">total not booked</span>
                 </div>
 
                 {/* Reasons breakdown */}
-                <div className="space-y-2">
-                  {notBookedReasons.map((reason) => (
-                    <div key={reason.reason} className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${reason.color}`} />
-                      <span className="text-xs text-muted-foreground flex-1">{reason.reason}</span>
-                      <div className="w-20 bg-muted rounded-full h-2">
-                        <div 
-                          className={`${reason.color} h-2 rounded-full`}
-                          style={{ width: `${reason.percentage}%` }}
-                        />
-                      </div>
-                      <span className="text-xs font-medium w-8 text-right">{reason.percentage}%</span>
-                    </div>
-                  ))}
-                </div>
+                {notBookedCategories.length > 0 ? (
+                  <div className="space-y-2">
+                    {notBookedCategories.map((reason) => {
+                      const color = COLOR_BY_CATEGORY[reason.category] ?? DEFAULT_COLOR
+                      return (
+                        <div key={reason.category} className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${color}`} />
+                          <span className="text-xs text-muted-foreground flex-1">{reason.category}</span>
+                          <div className="w-20 bg-muted rounded-full h-2">
+                            <div
+                              className={`${color} h-2 rounded-full`}
+                              style={{ width: `${reason.percentage}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-medium w-8 text-right">{formatPercent(reason.percentage)}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {primary.loading ? "Loading..." : "No not-booked calls in this date range."}
+                  </p>
+                )}
               </CardContent>
             </Card>
           </Link>
 
-          {/* Revenue Section */}
+          {/* Projected Revenue Section */}
           <Link href="/reporting/revenue" className="block">
             <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all cursor-pointer group h-full">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-semibold text-card-foreground">Revenue</h3>
-                    <p className="text-xs text-muted-foreground">Room and upsell performance</p>
+                    <h3 className="text-lg font-semibold text-card-foreground">Projected Revenue</h3>
+                    <p className="text-xs text-muted-foreground">Projected room revenue from bookings</p>
                   </div>
                   <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
                 </div>
-                
+
                 <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-3xl font-semibold text-card-foreground">${((primaryStats.totalRevenue + primaryStats.totalUpsell) / 1000).toFixed(1)}k</span>
+                  <span className="text-3xl font-semibold text-card-foreground">
+                    {primary.loading ? "..." : formatMoney(revenueCents, currency)}
+                  </span>
                   <span className="text-sm text-muted-foreground">total revenue</span>
-                  {revenueDiff && (
-                    <span className={`text-sm flex items-center gap-1 ${parseFloat(revenueDiff) >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
-                      {parseFloat(revenueDiff) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      {Math.abs(parseFloat(revenueDiff))}%
+                  {revenueDiff !== null && (
+                    <span className={`text-sm flex items-center gap-1 ${revenueDiff >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
+                      {revenueDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                      {Math.abs(revenueDiff).toFixed(1)}%
                     </span>
                   )}
                 </div>
 
-                {/* Revenue breakdown */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                      <DollarSign className="w-4 h-4 text-[#6b7a4a]" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-medium text-card-foreground">Room Revenue</p>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 bg-muted rounded-full h-2">
-                          <div 
-                            className="bg-[#6b7a4a] h-2 rounded-full"
-                            style={{ width: `${(primaryStats.totalRevenue / (primaryStats.totalRevenue + primaryStats.totalUpsell)) * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-muted-foreground">${(primaryStats.totalRevenue / 1000).toFixed(1)}k</span>
-                      </div>
-                    </div>
+                {/* ADR */}
+                <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
+                  <div className="w-9 h-9 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
+                    <DollarSign className="w-4 h-4 text-[#6b7a4a]" />
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-[#c4a84b]/10 flex items-center justify-center">
-                      <TrendingUp className="w-4 h-4 text-[#c4a84b]" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-medium text-card-foreground">Upsell Revenue</p>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 bg-muted rounded-full h-2">
-                          <div 
-                            className="bg-[#c4a84b] h-2 rounded-full"
-                            style={{ width: `${(primaryStats.totalUpsell / (primaryStats.totalRevenue + primaryStats.totalUpsell)) * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-muted-foreground">${(primaryStats.totalUpsell / 1000).toFixed(1)}k</span>
-                      </div>
-                    </div>
+                  <div>
+                    <p className="text-xl font-semibold text-card-foreground leading-tight">
+                      {primary.loading ? "..." : formatMoney(adrCents, currency)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">ADR · average daily rate</p>
                   </div>
                 </div>
               </CardContent>
@@ -486,4 +621,88 @@ export default function Dashboard() {
       </main>
     </div>
   )
+}
+
+function Notice({ tone, message }: { tone: "muted" | "error"; message: string }) {
+  const classes =
+    tone === "error"
+      ? "border-destructive/40 bg-destructive/10 text-destructive"
+      : "border-border bg-muted/40 text-muted-foreground"
+  return (
+    <div className={`mb-6 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${classes}`}>
+      {tone === "error" ? <AlertTriangle className="mt-0.5 h-4 w-4" /> : null}
+      <span>{message}</span>
+    </div>
+  )
+}
+
+// The same-length window ending the day before `range` begins, e.g. for a
+// 7-day primary range this is the 7 days immediately before it.
+function precedingRange(range: DashboardDateRange): DashboardDateRange {
+  const lengthDays = differenceInCalendarDays(range.to, range.from) + 1
+  const to = subDays(range.from, 1)
+  const from = subDays(to, lengthDays - 1)
+  return { from, to }
+}
+
+function toDateInput(value: Date): string {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, "0")
+  const day = String(value.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function percentChange(current: number | undefined, prior: number | undefined): number | null {
+  if (current === undefined || prior === undefined || prior === 0) return null
+  return ((current - prior) / prior) * 100
+}
+
+// Average Daily Rate = room revenue / room-nights. Returns cents per night.
+function adr(data: RevenueSummary | null): number | undefined {
+  if (!data || !data.room_nights) return undefined
+  return Math.round(data.total_revenue_cents / data.room_nights)
+}
+
+function formatNumber(value: number | undefined): string {
+  return value === undefined ? "--" : value.toLocaleString()
+}
+
+function formatPercent(value: number | undefined): string {
+  return value === undefined ? "--" : `${value.toFixed(1)}%`
+}
+
+function formatMoney(cents: number | undefined, currency: string): string {
+  if (cents === undefined) return "--"
+  const amount = cents / 100
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(amount)
+  } catch {
+    return `${currency} ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  }
+}
+
+function formatMinutes(seconds: number | undefined): string {
+  if (seconds === undefined) return "--"
+  return `${Math.round(seconds / 60).toLocaleString()} min`
+}
+
+function formatHoursHint(seconds: number): string {
+  return `≈ ${(seconds / 3600).toFixed(1)} hrs`
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof ApiError) {
+    const detail = (error.body as { detail?: unknown } | undefined)?.detail
+    if (typeof detail === "string") return detail
+    return error.message
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError"
 }
