@@ -24,13 +24,16 @@ import {
 import {
   ApiError,
   type CallMetricsSummary,
+  type NotBookedBreakdownResponse,
   type RevenueSummary,
   fetchCallMetricsSummary,
+  fetchNotBookedBreakdown,
   fetchRevenueSummary,
 } from "@/lib/api"
 import { useHotel } from "@/lib/hotel-context"
 
 type SummaryPreset = "7" | "14" | "30" | "custom"
+type CallBasis = "bookable" | "total"
 
 type LoadState<T> = {
   loading: boolean
@@ -58,23 +61,32 @@ type FunnelStage = {
 export default function RevenueReportingPage() {
   const { hotelId, loading: hotelLoading, error: hotelError, accessState } = useHotel()
   const [preset, setPreset] = useState<SummaryPreset>("30")
+  // Bookable calls (booking intent: booked + not-booked) vs all calls. Drives
+  // the funnel's first stage and the conversion-rate denominator.
+  const [callBasis, setCallBasis] = useState<CallBasis>("bookable")
   const [start, setStart] = useState(() => rangeForLastDays(30).start)
   const [end, setEnd] = useState(() => rangeForLastDays(30).end)
   const [summary, setSummary] = useState<LoadState<RevenueSummary>>(() => emptyState())
   // Powers the top-of-page funnel (Calls -> Links sent), which the revenue
   // summary alone can't supply. min_duration_seconds: 0 counts every call.
   const [calls, setCalls] = useState<LoadState<CallMetricsSummary>>(() => emptyState())
+  // Supplies total_not_booked so bookable calls = calls_booked + total_not_booked.
+  const [notBooked, setNotBooked] = useState<LoadState<NotBookedBreakdownResponse>>(() =>
+    emptyState(),
+  )
 
   useEffect(() => {
     if (!hotelId) {
       setSummary(emptyState())
       setCalls(emptyState())
+      setNotBooked(emptyState())
       return
     }
 
     const controller = new AbortController()
     setSummary({ loading: true, data: null, error: null })
     setCalls({ loading: true, data: null, error: null })
+    setNotBooked({ loading: true, data: null, error: null })
 
     fetchRevenueSummary(
       { hotel_id: hotelId, start_date: start, end_date: end, basis: "projected" },
@@ -96,12 +108,41 @@ export default function RevenueReportingPage() {
         setCalls({ loading: false, data: null, error: describeError(error) })
       })
 
+    fetchNotBookedBreakdown(
+      { hotel_id: hotelId, start_date: start, end_date: end },
+      { signal: controller.signal },
+    )
+      .then((data) => setNotBooked({ loading: false, data, error: null }))
+      .catch((error: unknown) => {
+        if (isAbortError(error)) return
+        setNotBooked({ loading: false, data: null, error: describeError(error) })
+      })
+
     return () => controller.abort()
   }, [hotelId, start, end])
 
   const data = summary.data
   const currency = data?.currency ?? "USD"
   const isEmpty = data !== null && data.booking_count === 0
+
+  // Calls-received basis shared by the funnel's first stage and the conversion
+  // rate. Bookable needs both the call summary and the not-booked breakdown.
+  const callsBooked = calls.data?.calls_booked
+  const bookableCalls =
+    callsBooked !== undefined && notBooked.data
+      ? callsBooked + notBooked.data.total_not_booked
+      : undefined
+  const callsReceived = callBasis === "bookable" ? bookableCalls : calls.data?.total_calls
+  const callsReceivedLabel =
+    callBasis === "bookable" ? "Bookable Calls Received" : "Total Calls Received"
+  const callsReceivedLoading =
+    calls.loading || (callBasis === "bookable" && notBooked.loading)
+  const conversionRate =
+    callBasis === "bookable"
+      ? bookableCalls
+        ? ((callsBooked ?? 0) / bookableCalls) * 100
+        : undefined
+      : calls.data?.conversion_rate
 
   const onPresetChange = (next: SummaryPreset) => {
     setPreset(next)
@@ -176,6 +217,43 @@ export default function RevenueReportingPage() {
           </div>
         </div>
 
+        <div className="mb-6 flex items-center gap-2">
+          <div className="flex items-center rounded-lg border border-border bg-muted p-0.5">
+            {(["bookable", "total"] as const).map((basis) => (
+              <button
+                key={basis}
+                type="button"
+                onClick={() => setCallBasis(basis)}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  callBasis === basis
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {basis === "bookable" ? "Bookable Calls" : "Total Calls"}
+              </button>
+            ))}
+          </div>
+          <UiTooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="What is a bookable call?"
+                className="text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Info className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              <span className="font-medium">Bookable calls</span> are your real sales
+              opportunities: every caller who wanted to book, whether or not they did. Measuring
+              conversion against bookable calls shows how well the agent closes genuine leads —
+              instead of being diluted by service questions, existing guests, and spam, which{" "}
+              <span className="font-medium">Total Calls</span> includes.
+            </TooltipContent>
+          </UiTooltip>
+        </div>
+
         {hotelLoading ? (
           <Notice tone="muted" message="Loading hotel selection..." />
         ) : hotelError ? (
@@ -200,7 +278,14 @@ export default function RevenueReportingPage() {
               From answered call to projected revenue · reflects the selected date range
             </p>
           </div>
-          <RevenueFunnel metricsState={calls} revenueState={summary} currency={currency} />
+          <RevenueFunnel
+            metricsState={calls}
+            revenueState={summary}
+            callsReceived={callsReceived}
+            callsReceivedLabel={callsReceivedLabel}
+            callsReceivedLoading={callsReceivedLoading}
+            currency={currency}
+          />
         </section>
 
         <section className="mb-8 rounded-lg border border-border p-4">
@@ -228,13 +313,13 @@ export default function RevenueReportingPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <MetricCard
               label="Conversion Rate"
-              value={calls.loading ? "..." : formatPercent(calls.data?.conversion_rate)}
+              value={callsReceivedLoading ? "..." : formatPercent(conversionRate)}
               hint={
-                calls.loading || !calls.data
+                callsReceivedLoading || callsReceived === undefined || callsBooked === undefined
                   ? undefined
-                  : `${formatNumber(calls.data.calls_booked)} of ${formatNumber(
-                      calls.data.total_calls,
-                    )} calls booked`
+                  : `${formatNumber(callsBooked)} of ${formatNumber(callsReceived)} ${
+                      callBasis === "bookable" ? "bookable calls" : "calls"
+                    } booked`
               }
             />
             <MetricCard
@@ -357,37 +442,42 @@ function MetricCard({
 function RevenueFunnel({
   metricsState,
   revenueState,
+  callsReceived,
+  callsReceivedLabel,
+  callsReceivedLoading,
   currency,
 }: {
   metricsState: LoadState<CallMetricsSummary>
   revenueState: LoadState<RevenueSummary>
+  callsReceived: number | undefined
+  callsReceivedLabel: string
+  callsReceivedLoading: boolean
   currency: string
 }) {
   const loading = metricsState.loading || revenueState.loading
 
-  // First two stages come from the call-metrics summary; the last two from the
-  // revenue summary, so the funnel's "Bookings" and "$" match the cards below.
-  const totalCalls = metricsState.data?.total_calls
+  // The first stage uses the selected calls-received basis (bookable or total);
+  // links and bookings come from their own queries so they match the cards below.
   const linksSent = metricsState.data?.links_sent
   const bookings = revenueState.data?.booking_count
   const revenueCents = revenueState.data?.total_revenue_cents
 
   const stages: FunnelStage[] = [
     {
-      label: "Calls received",
-      value: loading ? "..." : formatNumber(totalCalls),
+      label: callsReceivedLabel,
+      value: callsReceivedLoading ? "..." : formatNumber(callsReceived),
       share: 100,
     },
     {
       label: "Booking links sent",
       value: loading ? "..." : formatNumber(linksSent),
-      share: sharePercent(linksSent, totalCalls),
-      sub: rateLabel(linksSent, totalCalls, "of calls"),
+      share: sharePercent(linksSent, callsReceived),
+      sub: rateLabel(linksSent, callsReceived, "of calls"),
     },
     {
       label: "Bookings",
       value: loading ? "..." : formatNumber(bookings),
-      share: sharePercent(bookings, totalCalls),
+      share: sharePercent(bookings, callsReceived),
       sub: rateLabel(bookings, linksSent, "of links"),
     },
     {

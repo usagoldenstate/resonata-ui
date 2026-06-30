@@ -147,7 +147,7 @@ export default function Dashboard() {
 
   const [primaryTimespan, setPrimaryTimespan] = useState("30")
   const [primaryDateRange, setPrimaryDateRange] = useState<DashboardDateRange>(() => ({
-    from: subDays(today, 30),
+    from: subDays(today, 29),
     to: today,
   }))
   const [primaryCalendarOpen, setPrimaryCalendarOpen] = useState(false)
@@ -160,8 +160,8 @@ export default function Dashboard() {
   const [callVolumeType, setCallVolumeType] = useState<"bookable" | "total">("bookable")
   const [comparisonTimespan, setComparisonTimespan] = useState("30")
   const [comparisonDateRange, setComparisonDateRange] = useState<DashboardDateRange>(() => ({
-    from: subDays(today, 60),
-    to: subDays(today, 31),
+    from: subDays(today, 59),
+    to: subDays(today, 30),
   }))
   const [comparisonCalendarOpen, setComparisonCalendarOpen] = useState(false)
   const [comparisonTempRange, setComparisonTempRange] = useState<CalendarRange>({
@@ -176,7 +176,9 @@ export default function Dashboard() {
     setPrimaryTimespan(value)
     if (value !== "custom") {
       const days = parseInt(value)
-      setPrimaryDateRange({ from: subDays(today, days), to: today })
+      // Inclusive of today, so a 30-day window spans today-29 .. today. Matches
+      // rangeForLastDays() on the reporting pages so totals line up exactly.
+      setPrimaryDateRange({ from: subDays(today, days - 1), to: today })
     }
   }
 
@@ -200,9 +202,10 @@ export default function Dashboard() {
     if (value !== "custom") {
       const days = parseInt(value)
       const primaryDays = parseInt(primaryTimespan) || 30
+      // The `days`-long window ending the day before the primary window starts.
       setComparisonDateRange({
-        from: subDays(today, primaryDays + days),
-        to: subDays(today, primaryDays + 1),
+        from: subDays(today, primaryDays + days - 1),
+        to: subDays(today, primaryDays),
       })
     }
   }
