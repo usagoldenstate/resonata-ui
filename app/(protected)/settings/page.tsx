@@ -246,6 +246,13 @@ export default function SettingsPage() {
       if (timezone !== detail.timezone) opBody.timezone = timezone
       const nextMax = maxCallDuration === "unlimited" ? null : Number(maxCallDuration)
       if (nextMax !== detail.max_call_minutes) opBody.max_call_minutes = nextMax
+      // email_from is operator-editable on the backend (PUT), not a platform
+      // field. The UI still gates the inputs behind isPlatformAdmin, so only
+      // diff it when the admin can actually have changed it.
+      if (isPlatformAdmin) {
+        const nextEmailFrom = composeEmailFrom(senderName, email)
+        if (nextEmailFrom !== (detail.email_from ?? null)) opBody.email_from = nextEmailFrom
+      }
       if (Object.keys(opBody).length > 0) {
         latest = await updateHotelOperatorSettings(hotelId, opBody)
       }
@@ -253,8 +260,6 @@ export default function SettingsPage() {
       // Platform-admin-only fields (PATCH /platform-settings).
       if (isPlatformAdmin) {
         const pfBody: HotelPlatformUpdate = {}
-        const nextEmailFrom = composeEmailFrom(senderName, email)
-        if (nextEmailFrom !== (detail.email_from ?? null)) pfBody.email_from = nextEmailFrom
         const nextInbound = inboundNumber.trim() || null
         if (nextInbound !== (detail.inbound_phone_number ?? null)) {
           pfBody.inbound_phone_number = nextInbound

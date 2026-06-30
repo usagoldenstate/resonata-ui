@@ -520,13 +520,14 @@ export type HotelOperatorUpdate = {
   first_message?: string | null
   preferred_rate_code?: string | null
   max_call_minutes?: number | null
+  // Full RFC 5322 sender ("Name <addr@domain>" or bare address). The settings
+  // page composes this from the Sender Name + Email Address fields. Operator-
+  // editable on the backend (PUT), not a platform-settings field.
+  email_from?: string | null
 }
 
 // Platform-admin-only partial update (PATCH /admin/hotels/{id}/platform-settings).
 export type HotelPlatformUpdate = {
-  // Full RFC 5322 sender ("Name <addr@domain>" or bare address). The settings
-  // page composes this from the Sender Name + Email Address fields.
-  email_from?: string | null
   inbound_phone_number?: string | null
   booking_engine_provider?: string | null
   is_active?: boolean
