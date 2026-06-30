@@ -52,6 +52,37 @@ function PlatformOnlyHint() {
   )
 }
 
+// The backend stores the sender as a single RFC 5322 string ("Name <addr>" or
+// a bare address). The UI splits it into two fields on load and recomposes on
+// save so operators never see raw angle-bracket syntax.
+function splitEmailFrom(value: string | null | undefined): {
+  name: string
+  email: string
+} {
+  const v = (value ?? "").trim()
+  if (!v) return { name: "", email: "" }
+  const m = v.match(/^(.*?)<([^>]+)>\s*$/)
+  if (!m) return { name: "", email: v } // bare address, no display name
+  let name = m[1].trim()
+  // Unwrap a quoted display name, e.g. "Smith, John" <...>.
+  if (name.length >= 2 && name.startsWith('"') && name.endsWith('"')) {
+    name = name.slice(1, -1).replace(/\\(["\\])/g, "$1")
+  }
+  return { name, email: m[2].trim() }
+}
+
+function composeEmailFrom(name: string, email: string): string | null {
+  const e = email.trim()
+  if (!e) return null // no address → clear the sender entirely
+  const n = name.trim()
+  if (!n) return e
+  // RFC 5322 requires quoting display names that contain specials.
+  const display = /[(),:;<>@[\]\\"]/.test(n)
+    ? `"${n.replace(/(["\\])/g, "\\$1")}"`
+    : n
+  return `${display} <${e}>`
+}
+
 function describeError(error: unknown): string {
   if (error instanceof ApiError) {
     // Surface the backend's `detail` string when present (e.g. invalid
@@ -81,6 +112,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
 
   const [hotelName, setHotelName] = useState("")
+  const [senderName, setSenderName] = useState("")
   const [email, setEmail] = useState("")
   const [inboundNumber, setInboundNumber] = useState("")
   const [timezone, setTimezone] = useState("America/New_York")
@@ -98,7 +130,9 @@ export default function SettingsPage() {
   const applyDetail = useCallback((d: HotelDetail) => {
     setDetail(d)
     setHotelName(d.display_name)
-    setEmail(d.email_from ?? "")
+    const { name, email } = splitEmailFrom(d.email_from)
+    setSenderName(name)
+    setEmail(email)
     setInboundNumber(d.inbound_phone_number ?? "")
     setTimezone(d.timezone)
     setMaxCallDuration(d.max_call_minutes == null ? "unlimited" : String(d.max_call_minutes))
@@ -219,8 +253,8 @@ export default function SettingsPage() {
       // Platform-admin-only fields (PATCH /platform-settings).
       if (isPlatformAdmin) {
         const pfBody: HotelPlatformUpdate = {}
-        const nextEmail = email.trim() || null
-        if (nextEmail !== (detail.email_from ?? null)) pfBody.email_from = nextEmail
+        const nextEmailFrom = composeEmailFrom(senderName, email)
+        if (nextEmailFrom !== (detail.email_from ?? null)) pfBody.email_from = nextEmailFrom
         const nextInbound = inboundNumber.trim() || null
         if (nextInbound !== (detail.inbound_phone_number ?? null)) {
           pfBody.inbound_phone_number = nextInbound
@@ -326,6 +360,23 @@ export default function SettingsPage() {
                 />
                 <p className="text-[11px] text-muted-foreground">
                   E.164 number callers dial to reach this hotel. Routes inbound calls to this tenant.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="senderName" className="text-xs text-muted-foreground">
+                  Sender Name
+                  {!isPlatformAdmin && <PlatformOnlyHint />}
+                </Label>
+                <Input
+                  id="senderName"
+                  value={senderName}
+                  onChange={(e) => setSenderName(e.target.value)}
+                  disabled={!isPlatformAdmin}
+                  placeholder="Orlando International Drive"
+                  className="bg-card border-border disabled:opacity-70"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Friendly name guests see as the sender of confirmation emails.
                 </p>
               </div>
               <div className="space-y-2">
