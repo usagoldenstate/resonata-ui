@@ -1,9 +1,19 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, RefreshCw, Trash2, UserPlus, X } from "lucide-react"
+import { Loader2, RefreshCw, Shield, ShieldOff, Trash2, UserPlus, X } from "lucide-react"
 import { toast } from "sonner"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,6 +41,7 @@ import {
   fetchAdminUsers,
   grantUserHotelAccess,
   revokeUserHotelAccess,
+  updateUserRole,
   type UserAccessItem,
   type UserGrantedHotel,
 } from "@/lib/api"
@@ -61,6 +72,13 @@ export function UserAccessPanel() {
   const [revoking, setRevoking] = React.useState<string | null>(null)
   // user_id of the user currently being deleted, or null.
   const [deleting, setDeleting] = React.useState<string | null>(null)
+  // user_id of the user whose role is currently being saved, or null.
+  const [savingRole, setSavingRole] = React.useState<string | null>(null)
+  // The role change awaiting confirmation in the dialog, or null.
+  const [pendingRole, setPendingRole] = React.useState<{
+    user: UserAccessItem
+    nextRole: "operator" | "platform_admin"
+  } | null>(null)
 
   const load = React.useCallback(async (signal?: AbortSignal) => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
@@ -152,6 +170,30 @@ export function UserAccessPanel() {
       toast.error(describeError(e))
     } finally {
       setDeleting(null)
+    }
+  }
+
+  const changeRole = async (
+    user: UserAccessItem,
+    nextRole: "operator" | "platform_admin",
+  ) => {
+    setPendingRole(null)
+    setSavingRole(user.user_id)
+    try {
+      const updated = await updateUserRole(user.user_id, nextRole)
+      setState((prev) => ({
+        ...prev,
+        users: prev.users.map((u) => (u.user_id === updated.user_id ? updated : u)),
+      }))
+      toast.success(
+        nextRole === "platform_admin"
+          ? `${user.email} is now a platform admin.`
+          : `${user.email} is now an operator.`,
+      )
+    } catch (e) {
+      toast.error(describeError(e))
+    } finally {
+      setSavingRole(null)
     }
   }
 
@@ -266,9 +308,40 @@ export function UserAccessPanel() {
                     {user.auth_subject}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={user.role === "platform_admin" ? "default" : "outline"}>
-                      {user.role}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={user.role === "platform_admin" ? "default" : "outline"}>
+                        {user.role}
+                      </Badge>
+                      {currentUser?.user_id === user.user_id ? null : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1 px-2 text-xs"
+                          disabled={savingRole !== null}
+                          onClick={() =>
+                            setPendingRole({
+                              user,
+                              nextRole:
+                                user.role === "platform_admin"
+                                  ? "operator"
+                                  : "platform_admin",
+                            })
+                          }
+                        >
+                          {savingRole === user.user_id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : user.role === "platform_admin" ? (
+                            <ShieldOff className="h-3 w-3" />
+                          ) : (
+                            <Shield className="h-3 w-3" />
+                          )}
+                          {user.role === "platform_admin"
+                            ? "Make operator"
+                            : "Make platform admin"}
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {user.is_active ? (
@@ -339,6 +412,53 @@ export function UserAccessPanel() {
           </Table>
         )}
       </section>
+
+      <AlertDialog
+        open={pendingRole !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRole(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingRole?.nextRole === "platform_admin"
+                ? `Make ${pendingRole?.user.email} a platform admin?`
+                : `Make ${pendingRole?.user.email} an operator?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingRole?.nextRole === "platform_admin" ? (
+                <>
+                  Platform admins have <strong>full access to every hotel</strong>,
+                  all platform settings, and the ability to manage and delete
+                  other users — including granting admin to anyone else. Only do
+                  this for people you fully trust. Are you sure you want to
+                  continue?
+                </>
+              ) : (
+                <>
+                  This removes their platform-admin access. They will only see
+                  hotels they have been explicitly granted. Are you sure?
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingRole) {
+                  void changeRole(pendingRole.user, pendingRole.nextRole)
+                }
+              }}
+            >
+              {pendingRole?.nextRole === "platform_admin"
+                ? "Make platform admin"
+                : "Make operator"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

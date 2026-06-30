@@ -576,6 +576,13 @@ export function grantUserHotelAccess(body: {
   })
 }
 
+export function updateUserRole(userId: string, role: "operator" | "platform_admin") {
+  return api<UserAccessItem>(`/api/v1/admin/users/${userId}/role`, {
+    method: "PATCH",
+    body: { role },
+  })
+}
+
 export function revokeUserHotelAccess(userId: string, hotelId: string) {
   return api<UserAccessItem>(`/api/v1/admin/users/${userId}/grants/${hotelId}`, {
     method: "DELETE",
