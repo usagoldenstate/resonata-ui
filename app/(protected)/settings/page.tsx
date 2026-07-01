@@ -1,12 +1,22 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Building2, Phone, Globe, Save, Loader2, Lock } from "lucide-react"
+import { Building2, Globe, Save, Loader2, Lock, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Select,
   SelectContent,
@@ -26,11 +36,6 @@ import {
   updateHotelOperatorSettings,
   updateHotelPlatformSettings,
 } from "@/lib/api"
-
-// Standard durations offered in the Max Call Duration picker. The backend
-// stores any 1–120 minute value (or null = unlimited), so if a hotel's stored
-// value falls outside this set we splice it in dynamically (see below).
-const STANDARD_DURATIONS = ["15", "30", "45", "60"]
 
 function PlatformOnlyHint() {
   return (
@@ -106,7 +111,6 @@ export default function SettingsPage() {
   const [inboundNumber, setInboundNumber] = useState("")
   const [vapiPhoneNumberId, setVapiPhoneNumberId] = useState("")
   const [timezone, setTimezone] = useState("America/New_York")
-  const [maxCallDuration, setMaxCallDuration] = useState("unlimited")
   const currency = detail?.currency ?? ""
 
   const applyDetail = useCallback((d: HotelDetail) => {
@@ -118,7 +122,6 @@ export default function SettingsPage() {
     setInboundNumber(d.inbound_phone_number ?? "")
     setVapiPhoneNumberId(d.vapi_phone_number_id ?? "")
     setTimezone(d.timezone)
-    setMaxCallDuration(d.max_call_minutes == null ? "unlimited" : String(d.max_call_minutes))
   }, [])
 
   useEffect(() => {
@@ -142,6 +145,18 @@ export default function SettingsPage() {
     return () => controller.abort()
   }, [hotelId, applyDetail])
 
+  const [showVapiConfirm, setShowVapiConfirm] = useState(false)
+
+  const handleSaveClick = () => {
+    if (!detail) return
+    const nextVapiId = vapiPhoneNumberId.trim() || null
+    if (isPlatformAdmin && nextVapiId !== (detail.vapi_phone_number_id ?? null)) {
+      setShowVapiConfirm(true)
+      return
+    }
+    void handleSave()
+  }
+
   const handleSave = async () => {
     if (!hotelId || !detail) return
     setSaving(true)
@@ -153,8 +168,6 @@ export default function SettingsPage() {
       const nextName = hotelName.trim()
       if (nextName && nextName !== detail.display_name) opBody.display_name = nextName
       if (timezone !== detail.timezone) opBody.timezone = timezone
-      const nextMax = maxCallDuration === "unlimited" ? null : Number(maxCallDuration)
-      if (nextMax !== detail.max_call_minutes) opBody.max_call_minutes = nextMax
       // email_from is operator-editable on the backend (PUT), not a platform
       // field. The UI still gates the inputs behind isPlatformAdmin, so only
       // diff it when the admin can actually have changed it.
@@ -216,7 +229,7 @@ export default function SettingsPage() {
             </p>
           </div>
           <Button
-            onClick={handleSave}
+            onClick={handleSaveClick}
             disabled={saving || loading || !detail}
             className="bg-[#6b7a4a] hover:bg-[#5a6940] text-white"
           >
@@ -224,6 +237,49 @@ export default function SettingsPage() {
             {saved ? "Saved!" : saving ? "Saving..." : "Save Changes"}
           </Button>
         </div>
+
+        <AlertDialog open={showVapiConfirm} onOpenChange={setShowVapiConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <TriangleAlert className="h-5 w-5 text-destructive" />
+                Change Vapi Phone Number ID?
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2 text-left">
+                  <p>
+                    This UUID must exactly match the number in the Vapi dashboard. If it&apos;s
+                    wrong, every inbound and outbound call for this hotel will break until it&apos;s
+                    fixed.
+                  </p>
+                  <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Current: </span>
+                      <span className="font-mono">{detail?.vapi_phone_number_id || "(none)"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">New: </span>
+                      <span className="font-mono">{vapiPhoneNumberId.trim() || "(none)"}</span>
+                    </div>
+                  </div>
+                  <p>Make a test call to this hotel&apos;s number right after saving.</p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setShowVapiConfirm(false)
+                  void handleSave()
+                }}
+                className="bg-destructive text-white hover:bg-destructive/90"
+              >
+                Yes, change it
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {!hotelId ? (
           <StateNotice
@@ -265,7 +321,7 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="inboundNumber" className="text-xs text-muted-foreground">
-                  Inbound Twilio Number
+                  Guest-Facing Phone Number
                   {!isPlatformAdmin && <PlatformOnlyHint />}
                 </Label>
                 <Input
@@ -277,7 +333,7 @@ export default function SettingsPage() {
                   className="bg-card border-border disabled:opacity-70"
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  E.164 number callers dial to reach this hotel. Routes inbound calls to this tenant.
+                  Shown to guests in booking confirmation emails as the number to call back.
                 </p>
               </div>
               {isPlatformAdmin && (
@@ -289,7 +345,7 @@ export default function SettingsPage() {
                     id="vapiPhoneNumberId"
                     value={vapiPhoneNumberId}
                     onChange={(e) => setVapiPhoneNumberId(e.target.value)}
-                    placeholder="f4066313-5516-45ac-b335-4ec6a15a34b0"
+                    placeholder="00000000-0000-4000-8000-000000000000"
                     className="bg-card border-border"
                   />
                   <p className="text-[11px] text-muted-foreground">
@@ -386,43 +442,6 @@ export default function SettingsPage() {
                   className="bg-card border-border disabled:opacity-70"
                 />
                 <p className="text-[11px] text-muted-foreground">Set at onboarding.</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Call Settings */}
-          <Card className="border-border">
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                  <Phone className="w-5 h-5 text-[#6b7a4a]" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">Call Settings</CardTitle>
-                  <CardDescription className="text-xs">Configure call handling preferences</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="maxDuration" className="text-xs text-muted-foreground">Max Call Duration (minutes)</Label>
-                <Select value={maxCallDuration} onValueChange={setMaxCallDuration}>
-                  <SelectTrigger className="bg-card border-border">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="15">15 minutes</SelectItem>
-                    <SelectItem value="30">30 minutes</SelectItem>
-                    <SelectItem value="45">45 minutes</SelectItem>
-                    <SelectItem value="60">60 minutes</SelectItem>
-                    <SelectItem value="unlimited">Unlimited</SelectItem>
-                    {/* Surface a stored non-standard value (1–120) so it round-trips. */}
-                    {maxCallDuration !== "unlimited" &&
-                      !STANDARD_DURATIONS.includes(maxCallDuration) && (
-                        <SelectItem value={maxCallDuration}>{maxCallDuration} minutes</SelectItem>
-                      )}
-                  </SelectContent>
-                </Select>
               </div>
             </CardContent>
           </Card>
