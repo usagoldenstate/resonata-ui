@@ -508,6 +508,10 @@ export type HotelDetail = {
   max_call_minutes: number | null
   // E.164 inbound DID callers dial to reach this hotel. Platform-admin only.
   inbound_phone_number: string | null
+  // Vapi phoneNumberId (UUID) this hotel's calls arrive on. When set, the
+  // backend rejects Vapi webhooks whose payload carries a different id
+  // (tenant-binding guard). Platform-admin only; null disables the check.
+  vapi_phone_number_id: string | null
   pms_webhook_last_received_at: string | null
   is_active: boolean
 }
@@ -529,6 +533,7 @@ export type HotelOperatorUpdate = {
 // Platform-admin-only partial update (PATCH /admin/hotels/{id}/platform-settings).
 export type HotelPlatformUpdate = {
   inbound_phone_number?: string | null
+  vapi_phone_number_id?: string | null
   booking_engine_provider?: string | null
   is_active?: boolean
   commission_rate_basis_points?: number
