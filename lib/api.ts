@@ -596,6 +596,49 @@ export function deleteUser(userId: string) {
   })
 }
 
+// ── User invitations (Clerk-emailed sign-up flow) ───────────────────────────
+
+export type UserInvitationResult = {
+  invitation_id: string
+  email: string
+  status: string
+  role: "operator" | "platform_admin"
+  hotel_ids: string[]
+}
+
+export type PendingInvitation = {
+  invitation_id: string
+  email: string
+  status: string
+  created_at: string | null
+  role: "operator" | "platform_admin" | null
+  hotel_ids: string[]
+}
+
+// Invite a new user by email. Clerk emails them a sign-up link; the role +
+// hotel access are applied automatically when they finish signing up.
+export function inviteUser(body: {
+  email: string
+  role: "operator" | "platform_admin"
+  hotel_ids: string[]
+}) {
+  return api<UserInvitationResult>("/api/v1/admin/users/invitations", {
+    method: "POST",
+    body,
+  })
+}
+
+export function fetchPendingInvitations(opts: Pick<Options, "signal"> = {}) {
+  return api<PendingInvitation[]>("/api/v1/admin/users/invitations", opts)
+}
+
+export function revokeInvitation(invitationId: string) {
+  return api<void>(`/api/v1/admin/users/invitations/${invitationId}`, {
+    method: "DELETE",
+    parseJson: false,
+  })
+}
+
 export function fetchCalls(
   params: {
     hotel_id: string
