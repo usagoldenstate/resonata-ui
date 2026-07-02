@@ -637,10 +637,12 @@ export function UserAccessPanel() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {user.hotels.length === 0 ? (
+                    {user.role === "platform_admin" ? (
                       <span className="text-sm text-muted-foreground">
-                        {user.role === "platform_admin" ? "all hotels" : "—"}
+                        all hotels
                       </span>
+                    ) : user.hotels.length === 0 ? (
+                      <span className="text-sm text-muted-foreground">—</span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {user.hotels.map((hotel) => {
