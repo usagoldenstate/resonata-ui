@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import useSWR from "swr"
 import {
   AlertTriangle,
   ArrowUpDown,
@@ -14,6 +15,7 @@ import {
   TrendingUp,
 } from "lucide-react"
 
+import { RefreshButton } from "@/components/refresh-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
@@ -56,8 +58,6 @@ type LoadState<T> = {
   error: string | null
 }
 
-const emptyState = <T,>(): LoadState<T> => ({ loading: false, data: null, error: null })
-
 export default function FAQsPage() {
   const {
     hotelId,
@@ -75,7 +75,6 @@ export default function FAQsPage() {
   const [questionsPage, setQuestionsPage] = useState(0)
 
   const range = useMemo(() => rangeForTimespan(timespan), [timespan])
-  const [faqs, setFaqs] = useState<LoadState<FaqResponse>>(() => emptyState())
 
   // Reset the category filter when the hotel changes — its category set differs.
   useEffect(() => {
@@ -92,24 +91,30 @@ export default function FAQsPage() {
     setQuestionsPage(0)
   }, [hotelId, range.start, range.end, searchQuery, categoryFilter, sortOrder])
 
-  useEffect(() => {
-    if (!hotelId) {
-      setFaqs(emptyState())
-      return
+  const {
+    data: faqsData,
+    isLoading: faqsLoading,
+    error: faqsErrorRaw,
+    mutate: refreshFaqs,
+  } = useSWR(
+    hotelId ? (["faqs", hotelId, range.start, range.end] as const) : null,
+    ([, hid, start, end]) => fetchFaqs({ hotel_id: hid, start_date: start, end_date: end }),
+  )
+  const faqs: LoadState<FaqResponse> = {
+    loading: faqsLoading,
+    data: faqsData ?? null,
+    error: faqsErrorRaw ? describeError(faqsErrorRaw) : null,
+  }
+
+  const [refreshing, setRefreshing] = useState(false)
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await refreshFaqs()
+    } finally {
+      setRefreshing(false)
     }
-    const controller = new AbortController()
-    setFaqs({ loading: true, data: null, error: null })
-    fetchFaqs(
-      { hotel_id: hotelId, start_date: range.start, end_date: range.end },
-      { signal: controller.signal },
-    )
-      .then((data) => setFaqs({ loading: false, data, error: null }))
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return
-        setFaqs({ loading: false, data: null, error: describeError(error) })
-      })
-    return () => controller.abort()
-  }, [hotelId, range.start, range.end])
+  }
 
   const data = faqs.data
   const hotelName = hotels.find((h) => h.hotel_id === hotelId)?.display_name ?? null
@@ -168,25 +173,28 @@ export default function FAQsPage() {
 
       <main className="flex-1 p-8">
         {/* Header */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-semibold text-foreground">Frequently Asked Questions</h2>
-          <div className="flex items-center gap-1 mt-1">
-            <Select value={timespan} onValueChange={setTimespan}>
-              <SelectTrigger className="h-auto p-0 border-0 bg-transparent shadow-none text-sm text-muted-foreground hover:text-foreground focus:ring-0 w-auto gap-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {timespanOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {hotelName ? (
-              <span className="text-sm text-muted-foreground">· {hotelName}</span>
-            ) : null}
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold text-foreground">Frequently Asked Questions</h2>
+            <div className="flex items-center gap-1 mt-1">
+              <Select value={timespan} onValueChange={setTimespan}>
+                <SelectTrigger className="h-auto p-0 border-0 bg-transparent shadow-none text-sm text-muted-foreground hover:text-foreground focus:ring-0 w-auto gap-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {timespanOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {hotelName ? (
+                <span className="text-sm text-muted-foreground">· {hotelName}</span>
+              ) : null}
+            </div>
           </div>
+          <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
         </div>
 
         {hotelLoading ? (
@@ -587,8 +595,4 @@ function describeError(error: unknown): string {
     return error.message
   }
   return error instanceof Error ? error.message : String(error)
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError"
 }

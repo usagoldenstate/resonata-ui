@@ -45,9 +45,22 @@ const HotelContext = React.createContext<Ctx | null>(null)
 
 const STORAGE_KEY = "resonata.selected_hotel_id"
 
+function readStoredHotelId(): string | null {
+  if (typeof window === "undefined") return null
+  return window.localStorage.getItem(STORAGE_KEY)
+}
+
 export function HotelProvider({ children }: { children: React.ReactNode }) {
   const [hotels, setHotels] = React.useState<HotelListItem[]>([])
-  const [hotelId, setHotelIdState] = React.useState<string | null>(null)
+  // Seed the selection synchronously from localStorage so data-bound pages get
+  // a hotelId on their very first render and can start fetching in parallel
+  // with the hotels-list validation below, rather than waiting a full round
+  // trip for it. refresh() reconciles this optimistic value against the real
+  // list: it's kept if still valid, or replaced by the first active hotel /
+  // null if the stored id is stale. Safe from hydration mismatch because this
+  // provider is mounted only after Clerk reports loaded (a post-hydration
+  // client update), so it never renders during server-matched hydration.
+  const [hotelId, setHotelIdState] = React.useState<string | null>(readStoredHotelId)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [accessState, setAccessState] =
@@ -66,13 +79,18 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
       // Restore stored selection if it still exists in the list; otherwise
       // default to the first active hotel so pages aren't stuck in an empty
       // state on first load.
-      const stored =
-        typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null
+      const stored = readStoredHotelId()
       const match = stored && list.find((h) => h.hotel_id === stored)
       if (match) {
         setHotelIdState(match.hotel_id)
       } else if (list.length > 0) {
+        // Stored id was stale (revoked/renamed hotel) or absent: fall back to
+        // the first active hotel and rewrite storage so the optimistic seed
+        // doesn't keep pointing pages at a hotel the user can't load.
         setHotelIdState(list[0].hotel_id)
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(STORAGE_KEY, list[0].hotel_id)
+        }
       } else {
         setHotelIdState(null)
       }

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import useSWR from "swr"
 import { AlertTriangle, CalendarDays, Loader2 } from "lucide-react"
 import {
   Bar,
@@ -15,6 +16,7 @@ import {
   YAxis,
 } from "recharts"
 
+import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -26,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import {
   ApiError,
   type CallMetricsDailyRow,
@@ -48,15 +51,18 @@ type LoadState<T> = {
   error: string | null
 }
 
-const emptyState = <T,>(): LoadState<T> => ({
-  loading: false,
-  data: null,
-  error: null,
-})
+// Backend caps (see api/reporting.py validators). Checking them client-side
+// keeps mid-edit and out-of-range inputs from ever hitting the network.
+const DAILY_RANGE_CAP_DAYS = 183
+const MONTHLY_RANGE_CAP_MONTHS = 24
+// Date/number inputs fire onChange per keystroke; the SWR key is derived from
+// the debounced value so only the settled value triggers a fetch.
+const FETCH_DEBOUNCE_MS = 400
 
 export default function CallMetricsReportingPage() {
   const {
     hotelId,
+    hotelTimezone,
     loading: hotelLoading,
     error: hotelError,
     accessState,
@@ -76,111 +82,152 @@ export default function CallMetricsReportingPage() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
   }, [minDuration])
 
-  const [summary, setSummary] = useState<LoadState<CallMetricsSummary>>(() => emptyState())
-  const [hourly, setHourly] = useState<LoadState<CallMetricsHourlyResponse>>(() => emptyState())
-  const [daily, setDaily] = useState<LoadState<CallMetricsDailyRow[]>>(() => emptyState())
-  const [monthly, setMonthly] = useState<LoadState<CallMetricsMonthlyRow[]>>(() => emptyState())
+  // Immediate values drive input validation messages so typos are flagged
+  // right away; debounced values drive the SWR keys below so a fetch only
+  // fires once the user pauses.
+  const summaryRangeError = dailyRangeError(summaryStart, summaryEnd)
+  const dailyChartRangeError = dailyRangeError(dailyStart, dailyEnd)
+  const monthlyChartRangeError = monthRangeError(monthlyStart, monthlyEnd)
 
+  const debouncedSummaryStart = useDebouncedValue(summaryStart, FETCH_DEBOUNCE_MS)
+  const debouncedSummaryEnd = useDebouncedValue(summaryEnd, FETCH_DEBOUNCE_MS)
+  const debouncedDailyStart = useDebouncedValue(dailyStart, FETCH_DEBOUNCE_MS)
+  const debouncedDailyEnd = useDebouncedValue(dailyEnd, FETCH_DEBOUNCE_MS)
+  const debouncedMonthlyStart = useDebouncedValue(monthlyStart, FETCH_DEBOUNCE_MS)
+  const debouncedMonthlyEnd = useDebouncedValue(monthlyEnd, FETCH_DEBOUNCE_MS)
+  const debouncedMinDuration = useDebouncedValue(minDurationSeconds, FETCH_DEBOUNCE_MS)
+
+  // Presets anchor to "today" in the hotel's timezone (matching how the
+  // backend buckets calls), so recompute when the preset or hotel changes.
   useEffect(() => {
-    if (!hotelId) {
-      setSummary(emptyState())
-      return
-    }
-
-    const controller = new AbortController()
-    setSummary({ loading: true, data: null, error: null })
-    fetchCallMetricsSummary(
-      {
-        hotel_id: hotelId,
-        start_date: summaryStart,
-        end_date: summaryEnd,
-        min_duration_seconds: minDurationSeconds,
-      },
-      { signal: controller.signal },
-    )
-      .then((data) => setSummary({ loading: false, data, error: null }))
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return
-        setSummary({ loading: false, data: null, error: describeError(error) })
-      })
-
-    return () => controller.abort()
-  }, [hotelId, minDurationSeconds, summaryEnd, summaryStart])
-
-  useEffect(() => {
-    if (!hotelId || chartView !== "hourly") return
-
-    const controller = new AbortController()
-    setHourly({ loading: true, data: null, error: null })
-    fetchCallMetricsHourly(
-      { hotel_id: hotelId, min_duration_seconds: minDurationSeconds },
-      { signal: controller.signal },
-    )
-      .then((data) => setHourly({ loading: false, data, error: null }))
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return
-        setHourly({ loading: false, data: null, error: describeError(error) })
-      })
-
-    return () => controller.abort()
-  }, [chartView, hotelId, minDurationSeconds])
-
-  useEffect(() => {
-    if (!hotelId || chartView !== "daily") return
-
-    const controller = new AbortController()
-    setDaily({ loading: true, data: null, error: null })
-    fetchCallMetricsDaily(
-      {
-        hotel_id: hotelId,
-        start_date: dailyStart,
-        end_date: dailyEnd,
-        min_duration_seconds: minDurationSeconds,
-      },
-      { signal: controller.signal },
-    )
-      .then((data) => setDaily({ loading: false, data, error: null }))
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return
-        setDaily({ loading: false, data: null, error: describeError(error) })
-      })
-
-    return () => controller.abort()
-  }, [chartView, dailyEnd, dailyStart, hotelId, minDurationSeconds])
-
-  useEffect(() => {
-    if (!hotelId || chartView !== "monthly") return
-
-    const controller = new AbortController()
-    setMonthly({ loading: true, data: null, error: null })
-    fetchCallMetricsMonthly(
-      {
-        hotel_id: hotelId,
-        start_month: monthlyStart,
-        end_month: monthlyEnd,
-        min_duration_seconds: minDurationSeconds,
-      },
-      { signal: controller.signal },
-    )
-      .then((data) => setMonthly({ loading: false, data, error: null }))
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return
-        setMonthly({ loading: false, data: null, error: describeError(error) })
-      })
-
-    return () => controller.abort()
-  }, [chartView, hotelId, minDurationSeconds, monthlyEnd, monthlyStart])
-
-  const summaryData = summary.data
-  const summaryEmpty = summaryData !== null && summaryData.total_calls === 0
-
-  const onPresetChange = (preset: SummaryPreset) => {
-    setSummaryPreset(preset)
-    if (preset === "custom") return
-    const range = rangeForLastDays(Number(preset))
+    if (summaryPreset === "custom") return
+    const range = rangeForLastDays(Number(summaryPreset), hotelTimezone)
     setSummaryStart(range.start)
     setSummaryEnd(range.end)
+  }, [hotelTimezone, summaryPreset])
+
+  const summaryKey =
+    hotelId && !dailyRangeError(debouncedSummaryStart, debouncedSummaryEnd)
+      ? ([
+          "call-metrics-summary",
+          hotelId,
+          debouncedSummaryStart,
+          debouncedSummaryEnd,
+          debouncedMinDuration,
+        ] as const)
+      : null
+  const {
+    data: summaryData,
+    isLoading: summaryLoading,
+    error: summaryErrorRaw,
+    mutate: refreshSummary,
+  } = useSWR(summaryKey, ([, hid, start, end, minDur]) =>
+    fetchCallMetricsSummary({
+      hotel_id: hid,
+      start_date: start,
+      end_date: end,
+      min_duration_seconds: minDur,
+    }),
+  )
+  const summary: LoadState<CallMetricsSummary> = {
+    loading: summaryLoading,
+    data: summaryData ?? null,
+    error: summaryErrorRaw ? describeError(summaryErrorRaw) : null,
   }
+
+  const hourlyKey =
+    hotelId && chartView === "hourly"
+      ? (["call-metrics-hourly", hotelId, debouncedMinDuration] as const)
+      : null
+  const {
+    data: hourlyData,
+    isLoading: hourlyLoading,
+    error: hourlyErrorRaw,
+    mutate: refreshHourly,
+  } = useSWR(hourlyKey, ([, hid, minDur]) =>
+    fetchCallMetricsHourly({ hotel_id: hid, min_duration_seconds: minDur }),
+  )
+  const hourly: LoadState<CallMetricsHourlyResponse> = {
+    loading: hourlyLoading,
+    data: hourlyData ?? null,
+    error: hourlyErrorRaw ? describeError(hourlyErrorRaw) : null,
+  }
+
+  const dailyKey =
+    hotelId &&
+    chartView === "daily" &&
+    !dailyRangeError(debouncedDailyStart, debouncedDailyEnd)
+      ? ([
+          "call-metrics-daily",
+          hotelId,
+          debouncedDailyStart,
+          debouncedDailyEnd,
+          debouncedMinDuration,
+        ] as const)
+      : null
+  const {
+    data: dailyData,
+    isLoading: dailyLoading,
+    error: dailyErrorRaw,
+    mutate: refreshDaily,
+  } = useSWR(dailyKey, ([, hid, start, end, minDur]) =>
+    fetchCallMetricsDaily({
+      hotel_id: hid,
+      start_date: start,
+      end_date: end,
+      min_duration_seconds: minDur,
+    }),
+  )
+  const daily: LoadState<CallMetricsDailyRow[]> = {
+    loading: dailyLoading,
+    data: dailyData ?? null,
+    error: dailyErrorRaw ? describeError(dailyErrorRaw) : null,
+  }
+
+  const monthlyKey =
+    hotelId &&
+    chartView === "monthly" &&
+    !monthRangeError(debouncedMonthlyStart, debouncedMonthlyEnd)
+      ? ([
+          "call-metrics-monthly",
+          hotelId,
+          debouncedMonthlyStart,
+          debouncedMonthlyEnd,
+          debouncedMinDuration,
+        ] as const)
+      : null
+  const {
+    data: monthlyData,
+    isLoading: monthlyLoading,
+    error: monthlyErrorRaw,
+    mutate: refreshMonthly,
+  } = useSWR(monthlyKey, ([, hid, start, end, minDur]) =>
+    fetchCallMetricsMonthly({
+      hotel_id: hid,
+      start_month: start,
+      end_month: end,
+      min_duration_seconds: minDur,
+    }),
+  )
+  const monthly: LoadState<CallMetricsMonthlyRow[]> = {
+    loading: monthlyLoading,
+    data: monthlyData ?? null,
+    error: monthlyErrorRaw ? describeError(monthlyErrorRaw) : null,
+  }
+
+  const [refreshing, setRefreshing] = useState(false)
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    const chartRefresh =
+      chartView === "hourly" ? refreshHourly : chartView === "daily" ? refreshDaily : refreshMonthly
+    try {
+      await Promise.all([refreshSummary(), chartRefresh()])
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const summaryEmpty = summaryData !== null && summaryData !== undefined && summaryData.total_calls === 0
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -193,16 +240,19 @@ export default function CallMetricsReportingPage() {
               Track booking conversion and call patterns from live voice-agent records
             </p>
           </div>
-          <label className="flex w-48 flex-col gap-1 text-xs text-muted-foreground">
-            Min duration
-            <Input
-              type="number"
-              min={0}
-              value={minDuration}
-              onChange={(event) => setMinDuration(event.target.value)}
-              className="h-9 bg-card text-sm text-foreground"
-            />
-          </label>
+          <div className="flex items-end gap-3">
+            <label className="flex w-48 flex-col gap-1 text-xs text-muted-foreground">
+              Min duration
+              <Input
+                type="number"
+                min={0}
+                value={minDuration}
+                onChange={(event) => setMinDuration(event.target.value)}
+                className="h-9 bg-card text-sm text-foreground"
+              />
+            </label>
+            <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
+          </div>
         </div>
 
         {hotelLoading ? (
@@ -238,7 +288,7 @@ export default function CallMetricsReportingPage() {
                     type="button"
                     size="sm"
                     variant={summaryPreset === preset ? "default" : "outline"}
-                    onClick={() => onPresetChange(preset)}
+                    onClick={() => setSummaryPreset(preset)}
                   >
                     {preset === "custom" ? "Custom" : `${preset} days`}
                   </Button>
@@ -250,6 +300,7 @@ export default function CallMetricsReportingPage() {
                   end={summaryEnd}
                   onStart={setSummaryStart}
                   onEnd={setSummaryEnd}
+                  error={summaryRangeError}
                 />
               ) : null}
             </div>
@@ -337,6 +388,7 @@ export default function CallMetricsReportingPage() {
                     end={dailyEnd}
                     onStart={setDailyStart}
                     onEnd={setDailyEnd}
+                    error={dailyChartRangeError}
                   />
                 ) : null}
                 {chartView === "monthly" ? (
@@ -345,6 +397,7 @@ export default function CallMetricsReportingPage() {
                     end={monthlyEnd}
                     onStart={setMonthlyStart}
                     onEnd={setMonthlyEnd}
+                    error={monthlyChartRangeError}
                   />
                 ) : null}
               </div>
@@ -512,32 +565,37 @@ function DateRangeInputs({
   end,
   onStart,
   onEnd,
+  error,
 }: {
   start: string
   end: string
   onStart: (value: string) => void
   onEnd: (value: string) => void
+  error?: string | null
 }) {
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        Start
-        <Input
-          type="date"
-          value={start}
-          onChange={(event) => onStart(event.target.value)}
-          className="h-9 w-36 bg-card text-sm text-foreground"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        End
-        <Input
-          type="date"
-          value={end}
-          onChange={(event) => onEnd(event.target.value)}
-          className="h-9 w-36 bg-card text-sm text-foreground"
-        />
-      </label>
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Start
+          <Input
+            type="date"
+            value={start}
+            onChange={(event) => onStart(event.target.value)}
+            className="h-9 w-36 bg-card text-sm text-foreground"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          End
+          <Input
+            type="date"
+            value={end}
+            onChange={(event) => onEnd(event.target.value)}
+            className="h-9 w-36 bg-card text-sm text-foreground"
+          />
+        </label>
+      </div>
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   )
 }
@@ -547,32 +605,37 @@ function MonthRangeInputs({
   end,
   onStart,
   onEnd,
+  error,
 }: {
   start: string
   end: string
   onStart: (value: string) => void
   onEnd: (value: string) => void
+  error?: string | null
 }) {
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        Start
-        <Input
-          type="month"
-          value={start}
-          onChange={(event) => onStart(event.target.value)}
-          className="h-9 w-36 bg-card text-sm text-foreground"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        End
-        <Input
-          type="month"
-          value={end}
-          onChange={(event) => onEnd(event.target.value)}
-          className="h-9 w-36 bg-card text-sm text-foreground"
-        />
-      </label>
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Start
+          <Input
+            type="month"
+            value={start}
+            onChange={(event) => onStart(event.target.value)}
+            className="h-9 w-36 bg-card text-sm text-foreground"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          End
+          <Input
+            type="month"
+            value={end}
+            onChange={(event) => onEnd(event.target.value)}
+            className="h-9 w-36 bg-card text-sm text-foreground"
+          />
+        </label>
+      </div>
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   )
 }
@@ -615,30 +678,88 @@ function ChartState({
   )
 }
 
-function rangeForLastDays(days: number): { start: string; end: string } {
-  const end = new Date()
-  const start = new Date()
-  start.setDate(end.getDate() - days + 1)
+// "Today" as a UTC-anchored Date for the given IANA zone (falls back to the
+// browser zone when the hotel list hasn't loaded yet or the zone is unknown
+// to Intl). The backend buckets by hotel-local dates, so presets must anchor
+// to the hotel's calendar, not the viewer's.
+function todayInTimeZone(timeZone: string | null): Date {
+  let formatted: string
+  try {
+    // en-CA formats as YYYY-MM-DD.
+    formatted = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timeZone ?? undefined,
+    }).format(new Date())
+  } catch {
+    formatted = new Intl.DateTimeFormat("en-CA").format(new Date())
+  }
+  const [year, month, day] = formatted.split("-").map(Number)
+  return new Date(Date.UTC(year, month - 1, day))
+}
+
+function rangeForLastDays(
+  days: number,
+  timeZone: string | null = null,
+): { start: string; end: string } {
+  const end = todayInTimeZone(timeZone)
+  const start = new Date(end)
+  start.setUTCDate(end.getUTCDate() - days + 1)
   return { start: toDateInput(start), end: toDateInput(end) }
 }
 
-function rangeForLastMonths(months: number): { start: string; end: string } {
-  const end = new Date()
-  const start = new Date(end.getFullYear(), end.getMonth() - months + 1, 1)
+function rangeForLastMonths(
+  months: number,
+  timeZone: string | null = null,
+): { start: string; end: string } {
+  const end = todayInTimeZone(timeZone)
+  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - months + 1, 1))
   return { start: toMonthInput(start), end: toMonthInput(end) }
 }
 
 function toDateInput(value: Date): string {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  const day = String(value.getDate()).padStart(2, "0")
+  const year = value.getUTCFullYear()
+  const month = String(value.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(value.getUTCDate()).padStart(2, "0")
   return `${year}-${month}-${day}`
 }
 
 function toMonthInput(value: Date): string {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, "0")
+  const year = value.getUTCFullYear()
+  const month = String(value.getUTCMonth() + 1).padStart(2, "0")
   return `${year}-${month}`
+}
+
+// Millisecond timestamp for a YYYY-MM-DD input value; UTC so day arithmetic
+// is immune to browser DST transitions. Null for empty/partial input.
+function parseDateInputMs(value: string): number | null {
+  const [year, month, day] = value.split("-").map(Number)
+  if (!year || !month || !day) return null
+  return Date.UTC(year, month - 1, day)
+}
+
+function dailyRangeError(start: string, end: string): string | null {
+  if (!start || !end) return "Select both a start and an end date."
+  const startMs = parseDateInputMs(start)
+  const endMs = parseDateInputMs(end)
+  if (startMs === null || endMs === null) return "Enter valid dates."
+  if (endMs < startMs) return "End date must be on or after the start date."
+  const days = (endMs - startMs) / 86_400_000 + 1
+  if (days > DAILY_RANGE_CAP_DAYS) {
+    return `Date range is limited to ${DAILY_RANGE_CAP_DAYS} days.`
+  }
+  return null
+}
+
+function monthRangeError(start: string, end: string): string | null {
+  if (!start || !end) return "Select both a start and an end month."
+  const [startYear, startMonth] = start.split("-").map(Number)
+  const [endYear, endMonth] = end.split("-").map(Number)
+  if (!startYear || !startMonth || !endYear || !endMonth) return "Enter valid months."
+  const months = (endYear - startYear) * 12 + (endMonth - startMonth) + 1
+  if (months < 1) return "End month must be on or after the start month."
+  if (months > MONTHLY_RANGE_CAP_MONTHS) {
+    return `Month range is limited to ${MONTHLY_RANGE_CAP_MONTHS} months.`
+  }
+  return null
 }
 
 function formatNumber(value: number | undefined): string {
@@ -721,11 +842,18 @@ function describeError(error: unknown): string {
   if (error instanceof ApiError) {
     const detail = (error.body as { detail?: unknown } | undefined)?.detail
     if (typeof detail === "string") return detail
+    // FastAPI validation errors carry detail as [{loc, msg, type}, ...].
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) =>
+          typeof (item as { msg?: unknown } | null)?.msg === "string"
+            ? (item as { msg: string }).msg
+            : null,
+        )
+        .filter((msg): msg is string => msg !== null)
+      if (messages.length > 0) return messages.join("; ")
+    }
     return error.message
   }
   return error instanceof Error ? error.message : String(error)
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError"
 }

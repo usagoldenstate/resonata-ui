@@ -1,7 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
+import useSWR from "swr"
+import { RefreshButton } from "@/components/refresh-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -83,8 +85,6 @@ type LoadState = {
   error: string | null
 }
 
-const emptyState = (): LoadState => ({ loading: false, data: null, error: null })
-
 // Bookable calls = calls that had booking intent, whether they ended up booked
 // or not (links_sent + total_not_booked). links_sent already covers every
 // booked call (a booking requires a link send first), so adding calls_booked
@@ -114,21 +114,11 @@ async function loadDashboard(
   hotelId: string,
   start: string,
   end: string,
-  signal: AbortSignal,
 ): Promise<{ data: DashboardData; error: string | null }> {
   const [calls, revenue, notBooked] = await Promise.allSettled([
-    fetchCallMetricsSummary(
-      { hotel_id: hotelId, start_date: start, end_date: end, min_duration_seconds: 0 },
-      { signal },
-    ),
-    fetchRevenueSummary(
-      { hotel_id: hotelId, start_date: start, end_date: end, basis: "projected" },
-      { signal },
-    ),
-    fetchNotBookedBreakdown(
-      { hotel_id: hotelId, start_date: start, end_date: end },
-      { signal },
-    ),
+    fetchCallMetricsSummary({ hotel_id: hotelId, start_date: start, end_date: end, min_duration_seconds: 0 }),
+    fetchRevenueSummary({ hotel_id: hotelId, start_date: start, end_date: end, basis: "projected" }),
+    fetchNotBookedBreakdown({ hotel_id: hotelId, start_date: start, end_date: end }),
   ])
 
   const data: DashboardData = {
@@ -141,7 +131,7 @@ async function loadDashboard(
   // render whatever loaded and show "--" for the rest.
   const allFailed = !data.calls && !data.revenue && !data.notBooked
   const firstRejection = [calls, revenue, notBooked].find(
-    (r): r is PromiseRejectedResult => r.status === "rejected" && !isAbortError(r.reason),
+    (r): r is PromiseRejectedResult => r.status === "rejected",
   )
   const error = allFailed && firstRejection ? describeError(firstRejection.reason) : null
 
@@ -180,9 +170,6 @@ export default function Dashboard() {
     from: comparisonDateRange.from,
     to: comparisonDateRange.to,
   })
-
-  const [primary, setPrimary] = useState<LoadState>(() => emptyState())
-  const [comparison, setComparison] = useState<LoadState>(() => emptyState())
 
   const handlePrimaryTimespanChange = (value: string) => {
     setPrimaryTimespan(value)
@@ -227,37 +214,45 @@ export default function Dashboard() {
   const comparisonStart = toDateInput(comparisonDateRange.from)
   const comparisonEnd = toDateInput(comparisonDateRange.to)
 
-  useEffect(() => {
-    if (!hotelId) {
-      setPrimary(emptyState())
-      return
-    }
-    const controller = new AbortController()
-    setPrimary({ loading: true, data: null, error: null })
-    loadDashboard(hotelId, primaryStart, primaryEnd, controller.signal).then(
-      ({ data, error }) => {
-        if (controller.signal.aborted) return
-        setPrimary({ loading: false, data, error })
-      },
-    )
-    return () => controller.abort()
-  }, [hotelId, primaryStart, primaryEnd])
+  const {
+    data: primaryResult,
+    isLoading: primaryLoadingRaw,
+    mutate: refreshPrimary,
+  } = useSWR(
+    hotelId ? (["dashboard", hotelId, primaryStart, primaryEnd] as const) : null,
+    ([, hid, start, end]) => loadDashboard(hid, start, end),
+  )
+  const primary: LoadState = {
+    loading: primaryLoadingRaw,
+    data: primaryResult?.data ?? null,
+    error: primaryResult?.error ?? null,
+  }
 
-  useEffect(() => {
-    if (!hotelId || !showComparison) {
-      setComparison(emptyState())
-      return
+  const {
+    data: comparisonResult,
+    isLoading: comparisonLoadingRaw,
+    mutate: refreshComparison,
+  } = useSWR(
+    hotelId && showComparison
+      ? (["dashboard", hotelId, comparisonStart, comparisonEnd] as const)
+      : null,
+    ([, hid, start, end]) => loadDashboard(hid, start, end),
+  )
+  const comparison: LoadState = {
+    loading: comparisonLoadingRaw,
+    data: comparisonResult?.data ?? null,
+    error: comparisonResult?.error ?? null,
+  }
+
+  const [refreshing, setRefreshing] = useState(false)
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await Promise.all([refreshPrimary(), showComparison ? refreshComparison() : Promise.resolve()])
+    } finally {
+      setRefreshing(false)
     }
-    const controller = new AbortController()
-    setComparison({ loading: true, data: null, error: null })
-    loadDashboard(hotelId, comparisonStart, comparisonEnd, controller.signal).then(
-      ({ data, error }) => {
-        if (controller.signal.aborted) return
-        setComparison({ loading: false, data, error })
-      },
-    )
-    return () => controller.abort()
-  }, [hotelId, showComparison, comparisonStart, comparisonEnd])
+  }
 
   const primaryData = primary.data
   const comparisonData = comparison.data
@@ -304,7 +299,7 @@ export default function Dashboard() {
             <h2 className="text-2xl font-semibold text-foreground">Dashboard</h2>
             <p className="text-sm text-muted-foreground">Click any section to view detailed analytics</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Button
               variant={showComparison ? "default" : "outline"}
               onClick={handleToggleComparison}
@@ -313,6 +308,7 @@ export default function Dashboard() {
               <GitCompareArrows className="w-4 h-4 mr-2" />
               Compare Periods
             </Button>
+            <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
           </div>
         </div>
 
@@ -717,8 +713,4 @@ function describeError(error: unknown): string {
     return error.message
   }
   return error instanceof Error ? error.message : String(error)
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError"
 }

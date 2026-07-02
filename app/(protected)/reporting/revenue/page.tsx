@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
+import useSWR from "swr"
 import { AlertTriangle, Info, Loader2 } from "lucide-react"
 import {
   Bar,
@@ -12,6 +13,7 @@ import {
   YAxis,
 } from "recharts"
 
+import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -46,12 +48,6 @@ type LoadState<T> = {
   error: string | null
 }
 
-const emptyState = <T,>(): LoadState<T> => ({
-  loading: false,
-  data: null,
-  error: null,
-})
-
 type FunnelStage = {
   label: string
   value: string
@@ -82,68 +78,68 @@ export default function RevenueReportingPage() {
   const [customRange, setCustomRange] = useState(() => rangeForLastDays(30, null))
   const { start, end } =
     preset === "custom" ? customRange : rangeForLastDays(Number(preset), hotelTimezone)
-  const [summary, setSummary] = useState<LoadState<RevenueSummary>>(() => emptyState())
-  // Powers the top-of-page funnel (Calls -> Links sent), which the revenue
-  // summary alone can't supply. min_duration_seconds: 0 counts every call.
-  const [calls, setCalls] = useState<LoadState<CallMetricsSummary>>(() => emptyState())
-  // Supplies total_not_booked so bookable calls = links_sent + total_not_booked.
-  const [notBooked, setNotBooked] = useState<LoadState<NotBookedBreakdownResponse>>(() =>
-    emptyState(),
-  )
   const dateRangeError = validateDateRange(start, end)
 
-  useEffect(() => {
-    if (!hotelId) {
-      setSummary(emptyState())
-      setCalls(emptyState())
-      setNotBooked(emptyState())
-      return
+  const sharedKey = hotelId && !dateRangeError ? ([hotelId, start, end] as const) : null
+
+  const {
+    data: summaryData,
+    isLoading: summaryLoading,
+    error: summaryErrorRaw,
+    mutate: refreshSummaryData,
+  } = useSWR(
+    sharedKey ? (["revenue-summary", ...sharedKey] as const) : null,
+    ([, hid, s, e]) => fetchRevenueSummary({ hotel_id: hid, start_date: s, end_date: e, basis: "projected" }),
+  )
+  const summary: LoadState<RevenueSummary> = {
+    loading: summaryLoading,
+    data: summaryData ?? null,
+    error: summaryErrorRaw ? describeError(summaryErrorRaw) : null,
+  }
+
+  // Powers the top-of-page funnel (Calls -> Links sent), which the revenue
+  // summary alone can't supply. min_duration_seconds: 0 counts every call.
+  const {
+    data: callsData,
+    isLoading: callsLoading,
+    error: callsErrorRaw,
+    mutate: refreshCallsData,
+  } = useSWR(
+    sharedKey ? (["revenue-calls", ...sharedKey] as const) : null,
+    ([, hid, s, e]) =>
+      fetchCallMetricsSummary({ hotel_id: hid, start_date: s, end_date: e, min_duration_seconds: 0 }),
+  )
+  const calls: LoadState<CallMetricsSummary> = {
+    loading: callsLoading,
+    data: callsData ?? null,
+    error: callsErrorRaw ? describeError(callsErrorRaw) : null,
+  }
+
+  // Supplies total_not_booked so bookable calls = links_sent + total_not_booked.
+  const {
+    data: notBookedData,
+    isLoading: notBookedLoading,
+    error: notBookedErrorRaw,
+    mutate: refreshNotBookedData,
+  } = useSWR(
+    sharedKey ? (["revenue-not-booked", ...sharedKey] as const) : null,
+    ([, hid, s, e]) => fetchNotBookedBreakdown({ hotel_id: hid, start_date: s, end_date: e }),
+  )
+  const notBooked: LoadState<NotBookedBreakdownResponse> = {
+    loading: notBookedLoading,
+    data: notBookedData ?? null,
+    error: notBookedErrorRaw ? describeError(notBookedErrorRaw) : null,
+  }
+
+  const [refreshing, setRefreshing] = useState(false)
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await Promise.all([refreshSummaryData(), refreshCallsData(), refreshNotBookedData()])
+    } finally {
+      setRefreshing(false)
     }
-
-    if (dateRangeError) {
-      setSummary(emptyState())
-      setCalls(emptyState())
-      setNotBooked(emptyState())
-      return
-    }
-
-    const controller = new AbortController()
-    setSummary({ loading: true, data: null, error: null })
-    setCalls({ loading: true, data: null, error: null })
-    setNotBooked({ loading: true, data: null, error: null })
-
-    fetchRevenueSummary(
-      { hotel_id: hotelId, start_date: start, end_date: end, basis: "projected" },
-      { signal: controller.signal },
-    )
-      .then((data) => setSummary({ loading: false, data, error: null }))
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return
-        setSummary({ loading: false, data: null, error: describeError(error) })
-      })
-
-    fetchCallMetricsSummary(
-      { hotel_id: hotelId, start_date: start, end_date: end, min_duration_seconds: 0 },
-      { signal: controller.signal },
-    )
-      .then((data) => setCalls({ loading: false, data, error: null }))
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return
-        setCalls({ loading: false, data: null, error: describeError(error) })
-      })
-
-    fetchNotBookedBreakdown(
-      { hotel_id: hotelId, start_date: start, end_date: end },
-      { signal: controller.signal },
-    )
-      .then((data) => setNotBooked({ loading: false, data, error: null }))
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return
-        setNotBooked({ loading: false, data: null, error: describeError(error) })
-      })
-
-    return () => controller.abort()
-  }, [hotelId, start, end, dateRangeError])
+  }
 
   const data = summary.data
   const currency = data?.currency ?? "USD"
@@ -247,6 +243,7 @@ export default function RevenueReportingPage() {
                 onEnd={(value) => setCustomRange((prev) => ({ ...prev, end: value }))}
               />
             ) : null}
+            <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
           </div>
         </div>
 
@@ -771,8 +768,4 @@ function describeError(error: unknown): string {
     return error.message
   }
   return error instanceof Error ? error.message : String(error)
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError"
 }

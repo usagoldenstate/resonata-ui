@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState, Fragment } from "react"
 import { useSearchParams } from "next/navigation"
+import useSWR from "swr"
 import { CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Loader2, Phone, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
@@ -14,13 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
+import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import {
   ApiError,
   type CallListItem,
-  type CallListPage,
   type CallOutcomeFilter,
-  type NotBookedTaxonomyCategory,
   fetchCallDetail,
   fetchCallRecording,
   fetchCalls,
@@ -148,37 +149,30 @@ type TranscriptState = {
 }
 
 // Self-contained recording player: fetches the audio blob through the authed
-// proxy, plays it with the native <audio> controls, and revokes the object URL on
-// unmount. The expanded row is conditionally rendered, so collapsing it unmounts
-// this and frees the blob.
+// proxy (cached by SWR, so re-expanding a row plays instantly without
+// refetching) and plays it with the native <audio> controls. The object URL
+// is local — created whenever the cached blob changes and revoked on cleanup,
+// so it's freed both when the blob changes and when the row collapses and
+// this unmounts.
 function CallRecordingPlayer({ callId }: { callId: string }) {
-  const [state, setState] = useState<{ url: string | null; loading: boolean; error: string | null }>({
-    url: null,
-    loading: true,
-    error: null,
-  })
+  const {
+    data: blob,
+    isLoading,
+    error,
+  } = useSWR(["call-recording", callId] as const, ([, id]) => fetchCallRecording(id))
+  const [url, setUrl] = useState<string | null>(null)
 
   useEffect(() => {
-    let objectUrl: string | null = null
-    let cancelled = false
-    setState({ url: null, loading: true, error: null })
-    fetchCallRecording(callId)
-      .then((blob) => {
-        if (cancelled) return
-        objectUrl = URL.createObjectURL(blob)
-        setState({ url: objectUrl, loading: false, error: null })
-      })
-      .catch((err: unknown) => {
-        if (cancelled || isAbortError(err)) return
-        setState({ url: null, loading: false, error: describeError(err) })
-      })
-    return () => {
-      cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    if (!blob) {
+      setUrl(null)
+      return
     }
-  }, [callId])
+    const objectUrl = URL.createObjectURL(blob)
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [blob])
 
-  if (state.loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="w-4 h-4 animate-spin" />
@@ -186,11 +180,11 @@ function CallRecordingPlayer({ callId }: { callId: string }) {
       </div>
     )
   }
-  if (state.error) {
-    return <p className="text-sm text-destructive">{state.error}</p>
+  if (error) {
+    return <p className="text-sm text-destructive">{describeError(error)}</p>
   }
-  if (!state.url) return null
-  return <audio controls src={state.url} className="w-full" />
+  if (!url) return null
+  return <audio controls src={url} className="w-full" />
 }
 
 function describeError(error: unknown): string {
@@ -200,10 +194,6 @@ function describeError(error: unknown): string {
     return error.message
   }
   return error instanceof Error ? error.message : String(error)
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError"
 }
 
 // useSearchParams requires a Suspense boundary during prerender, so the page
@@ -241,40 +231,19 @@ function CallLogPageInner() {
   const [offset, setOffset] = useState(0)
 
   // Debounce the Call ID box so we query once the user pauses, not per keystroke.
-  const [debouncedCallId, setDebouncedCallId] = useState(callIdSearch)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedCallId(callIdSearch), 300)
-    return () => clearTimeout(timer)
-  }, [callIdSearch])
-
-  const [page, setPage] = useState<CallListPage | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const debouncedCallId = useDebouncedValue(callIdSearch, 300)
 
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
-  const [transcripts, setTranscripts] = useState<Record<string, TranscriptState>>({})
 
   // Subcategory options come from the backend taxonomy (same source the
-  // reporting pages use), scoped to the selected category.
-  const [taxonomy, setTaxonomy] = useState<NotBookedTaxonomyCategory[]>([])
-  useEffect(() => {
-    if (!hotelId) {
-      setTaxonomy([])
-      return
-    }
-    const controller = new AbortController()
-    fetchNotBookedTaxonomy({ hotel_id: hotelId }, { signal: controller.signal })
-      .then((data) => setTaxonomy(data.categories))
-      .catch((err: unknown) => {
-        if (isAbortError(err)) return
-        // Non-fatal: the subcategory dropdown just stays empty.
-        setTaxonomy([])
-      })
-    return () => controller.abort()
-  }, [hotelId])
-
+  // reporting pages use), scoped to the selected category. Non-fatal on
+  // failure — the dropdown just stays empty, so the error is ignored.
+  const { data: taxonomy } = useSWR(
+    hotelId ? (["call-log-taxonomy", hotelId] as const) : null,
+    ([, hid]) => fetchNotBookedTaxonomy({ hotel_id: hid }).then((response) => response.categories),
+  )
   const subcategoryOptions =
-    taxonomy.find((c) => c.name === notBookedReasonFilter)?.subcategories ?? []
+    (taxonomy ?? []).find((c) => c.name === notBookedReasonFilter)?.subcategories ?? []
 
   // Any filter or hotel change restarts pagination from the first page.
   useEffect(() => {
@@ -282,80 +251,69 @@ function CallLogPageInner() {
     setExpandedRow(null)
   }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId])
 
-  useEffect(() => {
-    if (!hotelId) {
-      setPage(null)
-      return
-    }
-
-    const controller = new AbortController()
-    setLoading(true)
-    setError(null)
-    fetchCalls(
-      {
-        hotel_id: hotelId,
-        limit: PAGE_SIZE,
+  const listKey = hotelId
+    ? ([
+        "call-log",
+        hotelId,
         offset,
-        outcome: outcomeFilter === "all" ? undefined : outcomeFilter,
-        not_booked_reason:
-          notBookedReasonFilter === "all" ? undefined : notBookedReasonFilter,
-        not_booked_subcategory:
-          notBookedSubcategoryFilter === "all" ? undefined : notBookedSubcategoryFilter,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        call_id: debouncedCallId.trim() || undefined,
-      },
-      { signal: controller.signal },
-    )
-      .then((data) => {
-        setPage(data)
-        setLoading(false)
-      })
-      .catch((err: unknown) => {
-        if (isAbortError(err)) return
-        setError(describeError(err))
-        setLoading(false)
-      })
+        outcomeFilter,
+        notBookedReasonFilter,
+        notBookedSubcategoryFilter,
+        dateFrom,
+        dateTo,
+        debouncedCallId,
+      ] as const)
+    : null
+  const {
+    data: page,
+    isValidating: loading,
+    error: errorRaw,
+    mutate: refreshCalls,
+  } = useSWR(listKey, ([, hid, off, outcome, reason, subcategory, from, to, callId]) =>
+    fetchCalls({
+      hotel_id: hid,
+      limit: PAGE_SIZE,
+      offset: off,
+      outcome: outcome === "all" ? undefined : outcome,
+      not_booked_reason: reason === "all" ? undefined : reason,
+      not_booked_subcategory: subcategory === "all" ? undefined : subcategory,
+      date_from: from || undefined,
+      date_to: to || undefined,
+      call_id: callId.trim() || undefined,
+    }),
+  )
+  const error = errorRaw ? describeError(errorRaw) : null
 
-    return () => controller.abort()
-  }, [
-    hotelId,
-    offset,
-    outcomeFilter,
-    notBookedReasonFilter,
-    notBookedSubcategoryFilter,
-    dateFrom,
-    dateTo,
-    debouncedCallId,
-  ])
+  const [refreshing, setRefreshing] = useState(false)
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await refreshCalls()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  // Cached per call id, so re-expanding a previously viewed row (even after
+  // navigating away and back) shows the transcript instantly.
+  const {
+    data: transcriptDetail,
+    isLoading: transcriptLoading,
+    error: transcriptErrorRaw,
+  } = useSWR(expandedRow ? (["call-transcript", expandedRow] as const) : null, ([, id]) =>
+    fetchCallDetail(id),
+  )
+  const transcriptForExpandedRow: TranscriptState | null = expandedRow
+    ? {
+        loading: transcriptLoading,
+        turns: transcriptDetail ? parseTranscript(transcriptDetail.transcript) : null,
+        error: transcriptErrorRaw ? describeError(transcriptErrorRaw) : null,
+        hasRecording: transcriptDetail?.has_recording ?? false,
+      }
+    : null
 
   const toggleRow = (id: string) => {
-    const next = expandedRow === id ? null : id
-    setExpandedRow(next)
-    if (next && !transcripts[next]) {
-      setTranscripts((prev) => ({
-        ...prev,
-        [next]: { loading: true, turns: null, error: null, hasRecording: false },
-      }))
-      fetchCallDetail(next)
-        .then((detail) =>
-          setTranscripts((prev) => ({
-            ...prev,
-            [next]: {
-              loading: false,
-              turns: parseTranscript(detail.transcript),
-              error: null,
-              hasRecording: detail.has_recording,
-            },
-          })),
-        )
-        .catch((err: unknown) =>
-          setTranscripts((prev) => ({
-            ...prev,
-            [next]: { loading: false, turns: null, error: describeError(err), hasRecording: false },
-          })),
-        )
-    }
+    setExpandedRow((prev) => (prev === id ? null : id))
   }
 
   const items = page?.items ?? []
@@ -381,6 +339,7 @@ function CallLogPageInner() {
               <p className="text-sm text-muted-foreground mt-1">{hotelName}</p>
             )}
           </div>
+          <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
         </div>
 
         {/* Stats Summary */}
@@ -533,7 +492,7 @@ function CallLogPageInner() {
                 {items.map((call) => {
                   const startedAt = parseUtc(call.created_at)
                   const outcome = deriveOutcome(call)
-                  const transcript = transcripts[call.id]
+                  const transcript = expandedRow === call.id ? transcriptForExpandedRow : null
                   return (
                     <Fragment key={call.id}>
                       <tr

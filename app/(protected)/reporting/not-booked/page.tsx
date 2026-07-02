@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import useSWR from "swr"
 import { AlertTriangle, ChevronLeft, Loader2, TrendingDown, TrendingUp } from "lucide-react"
 
+import { RefreshButton } from "@/components/refresh-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -48,8 +50,6 @@ type LoadState<T> = {
   error: string | null
 }
 
-const emptyState = <T,>(): LoadState<T> => ({ loading: false, data: null, error: null })
-
 export default function NotBookedReportingPage() {
   const router = useRouter()
   const {
@@ -62,67 +62,58 @@ export default function NotBookedReportingPage() {
   const [selectedReason, setSelectedReason] = useState<string | null>(null)
 
   const range = useMemo(() => rangeForTimespan(timespan), [timespan])
-
-  const [breakdown, setBreakdown] = useState<LoadState<NotBookedBreakdownResponse>>(() =>
-    emptyState(),
-  )
-  const [seasonality, setSeasonality] = useState<LoadState<NotBookedSeasonalityRow[]>>(() =>
-    emptyState(),
-  )
+  // One response covers all categories × 12 months; the page filters
+  // client-side, so this is fetched once per hotel instead of on every
+  // category click.
+  const months = useMemo(() => rangeForLastMonths(12), [])
 
   useEffect(() => {
     setSelectedReason(null)
   }, [hotelId])
 
-  useEffect(() => {
-    if (!hotelId) {
-      setBreakdown(emptyState())
-      return
+  const {
+    data: breakdownData,
+    isLoading: breakdownLoading,
+    error: breakdownErrorRaw,
+    mutate: refreshBreakdown,
+  } = useSWR(
+    hotelId ? (["not-booked-breakdown", hotelId, range.start, range.end] as const) : null,
+    ([, hid, start, end]) => fetchNotBookedBreakdown({ hotel_id: hid, start_date: start, end_date: end }),
+  )
+  const breakdown: LoadState<NotBookedBreakdownResponse> = {
+    loading: breakdownLoading,
+    data: breakdownData ?? null,
+    error: breakdownErrorRaw ? describeError(breakdownErrorRaw) : null,
+  }
+
+  const {
+    data: seasonalityData,
+    isLoading: seasonalityLoading,
+    error: seasonalityErrorRaw,
+    mutate: refreshSeasonality,
+  } = useSWR(
+    hotelId ? (["not-booked-seasonality", hotelId, months.start, months.end] as const) : null,
+    ([, hid, start, end]) =>
+      fetchNotBookedSeasonality({ hotel_id: hid, start_month: start, end_month: end }),
+  )
+  const seasonality: LoadState<NotBookedSeasonalityRow[]> = {
+    loading: seasonalityLoading,
+    data: seasonalityData ?? null,
+    error: seasonalityErrorRaw ? describeError(seasonalityErrorRaw) : null,
+  }
+
+  const [refreshing, setRefreshing] = useState(false)
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await Promise.all([refreshBreakdown(), refreshSeasonality()])
+    } finally {
+      setRefreshing(false)
     }
-
-    const controller = new AbortController()
-    setBreakdown({ loading: true, data: null, error: null })
-    fetchNotBookedBreakdown(
-      { hotel_id: hotelId, start_date: range.start, end_date: range.end },
-      { signal: controller.signal },
-    )
-      .then((data) => setBreakdown({ loading: false, data, error: null }))
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return
-        setBreakdown({ loading: false, data: null, error: describeError(error) })
-      })
-
-    return () => controller.abort()
-  }, [hotelId, range.start, range.end])
-
-  // One response covers all categories × 12 months; the page filters
-  // client-side, so fetch once per hotel instead of on every category click.
-  useEffect(() => {
-    if (!hotelId) {
-      setSeasonality(emptyState())
-      return
-    }
-
-    const controller = new AbortController()
-    const months = rangeForLastMonths(12)
-    setSeasonality({ loading: true, data: null, error: null })
-    fetchNotBookedSeasonality(
-      { hotel_id: hotelId, start_month: months.start, end_month: months.end },
-      { signal: controller.signal },
-    )
-      .then((data) => setSeasonality({ loading: false, data, error: null }))
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return
-        setSeasonality({ loading: false, data: null, error: describeError(error) })
-      })
-
-    return () => controller.abort()
-  }, [hotelId])
-
-  const breakdownData = breakdown.data
+  }
   const categories = useMemo(() => breakdownData?.categories ?? [], [breakdownData])
   const totalNotBooked = breakdownData?.total_not_booked ?? 0
-  const isEmpty = breakdownData !== null && totalNotBooked === 0
+  const isEmpty = breakdownData !== undefined && totalNotBooked === 0
 
   const topReason = useMemo(() => {
     if (categories.length === 0) return null
@@ -212,18 +203,21 @@ export default function NotBookedReportingPage() {
                 : "Analyze why guests with booking intent didn't complete bookings"}
             </p>
           </div>
-          <Select value={timespan} onValueChange={setTimespan}>
-            <SelectTrigger className="w-40 bg-card border-border">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {timespanOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Select value={timespan} onValueChange={setTimespan}>
+              <SelectTrigger className="w-40 bg-card border-border">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {timespanOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
+          </div>
         </div>
 
         {hotelLoading ? (
@@ -597,8 +591,4 @@ function describeError(error: unknown): string {
     return error.message
   }
   return error instanceof Error ? error.message : String(error)
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError"
 }
