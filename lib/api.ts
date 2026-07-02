@@ -137,6 +137,10 @@ export type RevenueSummary = {
   excluded_from_total: number
   room_nights: number
   avg_booking_value_cents: number | null
+  // ADR computed server-side over night-bearing bookings only; null when
+  // room_nights is 0. Don't derive ADR as total_revenue_cents / room_nights —
+  // rows with revenue but no stay dates would overstate it.
+  adr_cents: number | null
   attribution_last_discovered_at: string | null
   trend: RevenueTrendRow[]
 }

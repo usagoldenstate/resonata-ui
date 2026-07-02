@@ -35,6 +35,11 @@ import { useHotel } from "@/lib/hotel-context"
 type SummaryPreset = "7" | "14" | "30" | "custom"
 type CallBasis = "bookable" | "total"
 
+// Revenue summary and call-metrics summary both cap at 183 inclusive days
+// server-side; not-booked breakdown allows more, so the tighter cap governs
+// since all three are fetched together.
+const MAX_DAILY_RANGE_DAYS = 183
+
 type LoadState<T> = {
   loading: boolean
   data: T | null
@@ -59,24 +64,43 @@ type FunnelStage = {
 }
 
 export default function RevenueReportingPage() {
-  const { hotelId, loading: hotelLoading, error: hotelError, accessState } = useHotel()
+  const {
+    hotelId,
+    hotelTimezone,
+    loading: hotelLoading,
+    error: hotelError,
+    accessState,
+  } = useHotel()
   const [preset, setPreset] = useState<SummaryPreset>("30")
   // Bookable calls (booking intent: booked + not-booked) vs all calls. Drives
   // the funnel's first stage and the conversion-rate denominator.
   const [callBasis, setCallBasis] = useState<CallBasis>("bookable")
-  const [start, setStart] = useState(() => rangeForLastDays(30).start)
-  const [end, setEnd] = useState(() => rangeForLastDays(30).end)
+  // Only the custom range is stored; preset ranges are derived per render so
+  // "today" tracks the hotel's timezone once the hotel list has loaded (the
+  // backend buckets records in hotel-local time, so browser-local presets can
+  // be a day off for hotels ahead of the viewer).
+  const [customRange, setCustomRange] = useState(() => rangeForLastDays(30, null))
+  const { start, end } =
+    preset === "custom" ? customRange : rangeForLastDays(Number(preset), hotelTimezone)
   const [summary, setSummary] = useState<LoadState<RevenueSummary>>(() => emptyState())
   // Powers the top-of-page funnel (Calls -> Links sent), which the revenue
   // summary alone can't supply. min_duration_seconds: 0 counts every call.
   const [calls, setCalls] = useState<LoadState<CallMetricsSummary>>(() => emptyState())
-  // Supplies total_not_booked so bookable calls = calls_booked + total_not_booked.
+  // Supplies total_not_booked so bookable calls = links_sent + total_not_booked.
   const [notBooked, setNotBooked] = useState<LoadState<NotBookedBreakdownResponse>>(() =>
     emptyState(),
   )
+  const dateRangeError = validateDateRange(start, end)
 
   useEffect(() => {
     if (!hotelId) {
+      setSummary(emptyState())
+      setCalls(emptyState())
+      setNotBooked(emptyState())
+      return
+    }
+
+    if (dateRangeError) {
       setSummary(emptyState())
       setCalls(emptyState())
       setNotBooked(emptyState())
@@ -119,7 +143,7 @@ export default function RevenueReportingPage() {
       })
 
     return () => controller.abort()
-  }, [hotelId, start, end])
+  }, [hotelId, start, end, dateRangeError])
 
   const data = summary.data
   const currency = data?.currency ?? "USD"
@@ -127,10 +151,14 @@ export default function RevenueReportingPage() {
 
   // Calls-received basis shared by the funnel's first stage and the conversion
   // rate. Bookable needs both the call summary and the not-booked breakdown.
+  // links_sent already covers every booked call (a booking requires a link
+  // send first), so adding calls_booked on top would double count; total_not_booked
+  // separately covers intent calls that never got a link.
   const callsBooked = calls.data?.calls_booked
+  const linksSentForBasis = calls.data?.links_sent
   const bookableCalls =
-    callsBooked !== undefined && notBooked.data
-      ? callsBooked + notBooked.data.total_not_booked
+    linksSentForBasis !== undefined && notBooked.data
+      ? linksSentForBasis + notBooked.data.total_not_booked
       : undefined
   const callsReceived = callBasis === "bookable" ? bookableCalls : calls.data?.total_calls
   const callsReceivedLabel =
@@ -145,11 +173,11 @@ export default function RevenueReportingPage() {
       : calls.data?.conversion_rate
 
   const onPresetChange = (next: SummaryPreset) => {
+    if (next === "custom") {
+      // Seed the inputs with the range currently on screen.
+      setCustomRange({ start, end })
+    }
     setPreset(next)
-    if (next === "custom") return
-    const range = rangeForLastDays(Number(next))
-    setStart(range.start)
-    setEnd(range.end)
   }
 
   return (
@@ -212,7 +240,12 @@ export default function RevenueReportingPage() {
               </UiTooltip>
             </div>
             {preset === "custom" ? (
-              <DateRangeInputs start={start} end={end} onStart={setStart} onEnd={setEnd} />
+              <DateRangeInputs
+                start={start}
+                end={end}
+                onStart={(value) => setCustomRange((prev) => ({ ...prev, start: value }))}
+                onEnd={(value) => setCustomRange((prev) => ({ ...prev, end: value }))}
+              />
             ) : null}
           </div>
         </div>
@@ -267,6 +300,8 @@ export default function RevenueReportingPage() {
                 : "Select a hotel to view revenue."
             }
           />
+        ) : dateRangeError ? (
+          <Notice tone="error" message={dateRangeError} />
         ) : null}
 
         <section className="mb-8 rounded-lg border border-border p-4">
@@ -284,6 +319,7 @@ export default function RevenueReportingPage() {
             callsReceived={callsReceived}
             callsReceivedLabel={callsReceivedLabel}
             callsReceivedLoading={callsReceivedLoading}
+            callsReceivedError={callBasis === "bookable" ? notBooked.error : null}
             currency={currency}
           />
         </section>
@@ -342,6 +378,14 @@ export default function RevenueReportingPage() {
               }
             />
           </div>
+
+          {data && data.excluded_from_total > 0 ? (
+            <p className="mt-3 text-xs text-muted-foreground">
+              {formatNumber(data.excluded_from_total)} of {formatNumber(data.booking_count)}{" "}
+              bookings are excluded from revenue, ADR, and Avg Booking Value (foreign currency or
+              no projected price yet).
+            </p>
+          ) : null}
 
           {data?.attribution_last_discovered_at ? (
             <p className="mt-3 text-xs text-muted-foreground">
@@ -445,6 +489,7 @@ function RevenueFunnel({
   callsReceived,
   callsReceivedLabel,
   callsReceivedLoading,
+  callsReceivedError,
   currency,
 }: {
   metricsState: LoadState<CallMetricsSummary>
@@ -452,6 +497,7 @@ function RevenueFunnel({
   callsReceived: number | undefined
   callsReceivedLabel: string
   callsReceivedLoading: boolean
+  callsReceivedError?: string | null
   currency: string
 }) {
   const loading = metricsState.loading || revenueState.loading
@@ -492,6 +538,11 @@ function RevenueFunnel({
       {metricsState.error ? (
         <p className="mb-3 text-xs text-muted-foreground">
           Call volume is temporarily unavailable, so the first two stages may show “--”.
+        </p>
+      ) : callsReceivedError ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          Not-booked call data is temporarily unavailable, so the first stage and conversion rate
+          may show “--”.
         </p>
       ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -595,11 +646,44 @@ function ChartState({
   )
 }
 
-function rangeForLastDays(days: number): { start: string; end: string } {
-  const end = new Date()
-  const start = new Date()
+function rangeForLastDays(
+  days: number,
+  timeZone: string | null,
+): { start: string; end: string } {
+  const end = todayIn(timeZone)
+  const start = new Date(end)
   start.setDate(end.getDate() - days + 1)
   return { start: toDateInput(start), end: toDateInput(end) }
+}
+
+// A Date whose local Y/M/D equal today's date in the given zone, so the plain
+// calendar math above works unchanged. Falls back to the browser's clock when
+// the zone is unknown (hotel list still loading) or invalid.
+function todayIn(timeZone: string | null): Date {
+  if (timeZone) {
+    try {
+      // en-CA formats as YYYY-MM-DD.
+      const formatted = new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date())
+      const [year, month, day] = formatted.split("-").map(Number)
+      return new Date(year, month - 1, day)
+    } catch {
+      // invalid zone name — use the browser's date
+    }
+  }
+  return new Date()
+}
+
+function validateDateRange(start: string, end: string): string | null {
+  if (!start || !end) return "Choose a start and end date."
+  const startMs = Date.parse(`${start}T00:00:00Z`)
+  const endMs = Date.parse(`${end}T00:00:00Z`)
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return "Choose valid dates."
+  if (startMs > endMs) return "Start date must be on or before the end date."
+  const days = Math.round((endMs - startMs) / 86_400_000) + 1
+  if (days > MAX_DAILY_RANGE_DAYS) {
+    return `Date range cannot exceed ${MAX_DAILY_RANGE_DAYS} days. Choose a shorter range.`
+  }
+  return null
 }
 
 function toDateInput(value: Date): string {
@@ -631,11 +715,12 @@ function formatPercent(value: number | undefined): string {
   return value === undefined ? "--" : `${value.toFixed(1)}%`
 }
 
-// Average Daily Rate = room revenue / room-nights. Distinct from Avg Booking
-// Value (revenue / bookings): ADR is per night, ABV is per reservation.
+// Average Daily Rate, computed server-side over night-bearing bookings only
+// (rows with revenue but no stay dates would overstate a client-side quotient).
+// Distinct from Avg Booking Value: ADR is per night, ABV is per reservation.
 function formatAdr(data: RevenueSummary | null, currency: string): string {
-  if (!data || !data.room_nights) return "--"
-  return formatMoney(Math.round(data.total_revenue_cents / data.room_nights), currency)
+  if (!data || data.adr_cents == null) return "--"
+  return formatMoney(data.adr_cents, currency)
 }
 
 function sharePercent(numerator: number | undefined, denominator: number | undefined): number {

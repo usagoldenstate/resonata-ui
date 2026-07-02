@@ -86,8 +86,11 @@ type LoadState = {
 const emptyState = (): LoadState => ({ loading: false, data: null, error: null })
 
 // Bookable calls = calls that had booking intent, whether they ended up booked
-// or not (calls_booked + total_not_booked). Total calls includes non-bookable
-// ones. Returns undefined until both source endpoints have loaded.
+// or not (links_sent + total_not_booked). links_sent already covers every
+// booked call (a booking requires a link send first), so adding calls_booked
+// on top would double count; total_not_booked separately covers intent calls
+// that never got a link. Total calls includes non-bookable ones. Returns
+// undefined until both source endpoints have loaded.
 function callVolumeValue(
   data: DashboardData | null,
   type: "bookable" | "total",
@@ -95,7 +98,7 @@ function callVolumeValue(
   if (!data) return undefined
   if (type === "total") return data.calls?.total_calls
   if (data.calls == null || data.notBooked == null) return undefined
-  return data.calls.calls_booked + data.notBooked.total_not_booked
+  return data.calls.links_sent + data.notBooked.total_not_booked
 }
 
 // Conversion among bookable calls: booked / (booked + not-booked), as a percent.
@@ -669,10 +672,11 @@ function percentChange(current: number | undefined, prior: number | undefined): 
   return ((current - prior) / prior) * 100
 }
 
-// Average Daily Rate = room revenue / room-nights. Returns cents per night.
+// Average Daily Rate in cents per night, computed server-side over
+// night-bearing bookings only (rows with revenue but no stay dates would
+// overstate a client-side total/room_nights quotient).
 function adr(data: RevenueSummary | null): number | undefined {
-  if (!data || !data.room_nights) return undefined
-  return Math.round(data.total_revenue_cents / data.room_nights)
+  return data?.adr_cents ?? undefined
 }
 
 function formatNumber(value: number | undefined): string {

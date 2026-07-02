@@ -15,6 +15,9 @@ export type HotelListItem = {
   display_name: string
   pms_provider: string
   is_active: boolean
+  // IANA zone name; reporting pages compute preset date ranges in hotel-local
+  // time so they line up with how the backend buckets records.
+  timezone: string
 }
 
 // Distinguishes the two states that used to both surface as a generic error:
@@ -29,6 +32,8 @@ export type HotelAccessState = "loading" | "ok" | "no-access" | "error"
 type Ctx = {
   hotels: HotelListItem[]
   hotelId: string | null
+  // Timezone of the selected hotel; null until the hotel list has loaded.
+  hotelTimezone: string | null
   setHotelId: (id: string) => void
   loading: boolean
   error: string | null
@@ -98,6 +103,8 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
   const value: Ctx = {
     hotels,
     hotelId,
+    hotelTimezone:
+      hotels.find((h) => h.hotel_id === hotelId)?.timezone ?? null,
     setHotelId,
     loading,
     error,
