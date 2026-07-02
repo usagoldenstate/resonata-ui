@@ -551,7 +551,7 @@ function AutoFillCard({
         onInteractOutside={(e) => e.preventDefault()}
         showCloseButton={false}
       >
-        <DialogHeader>
+        <DialogHeader className="min-w-0">
           <DialogTitle className="flex items-center gap-3 min-w-0">
             <span className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
               <Sparkles className="w-4 h-4 text-primary" />
@@ -732,8 +732,14 @@ function AutoFillCard({
 // names pass through unchanged.
 function shortenQuery(q: string): string {
   const trimmed = q.trim()
+  // The research query can be a URL followed by a free-text address
+  // ("https://site.com/x  42 Main St, City 12345"). Only the URL token is
+  // useful in the title — parsing the whole string would cram the address
+  // into the pathname as a long %20-encoded blob.
+  const first = trimmed.split(/\s+/)[0] ?? trimmed
+  const candidate = /[./]/.test(first) ? first : trimmed
   try {
-    const u = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`)
+    const u = new URL(candidate.includes("://") ? candidate : `https://${candidate}`)
     const path = u.pathname === "/" ? "" : u.pathname
     return u.hostname + path
   } catch {
