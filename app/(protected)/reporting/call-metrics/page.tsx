@@ -16,9 +16,14 @@ import {
   YAxis,
 } from "recharts"
 
+import {
+  DateRangeFilter,
+  DateRangeInputs,
+  MonthRangeInputs,
+  makePresets,
+} from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
@@ -40,16 +45,23 @@ import {
   fetchCallMetricsMonthly,
   fetchCallMetricsSummary,
 } from "@/lib/api"
+import {
+  dateRangeError,
+  monthRangeError,
+  rangeForLastDays,
+  rangeForLastMonths,
+} from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
 
 type ChartView = "hourly" | "daily" | "monthly"
-type SummaryPreset = "7" | "14" | "30" | "custom"
 
 type LoadState<T> = {
   loading: boolean
   data: T | null
   error: string | null
 }
+
+const summaryPresets = makePresets(["7", "14", "30"])
 
 // Backend caps (see api/reporting.py validators). Checking them client-side
 // keeps mid-edit and out-of-range inputs from ever hitting the network.
@@ -67,7 +79,7 @@ export default function CallMetricsReportingPage() {
     error: hotelError,
     accessState,
   } = useHotel()
-  const [summaryPreset, setSummaryPreset] = useState<SummaryPreset>("30")
+  const [summaryPreset, setSummaryPreset] = useState("30")
   const [summaryStart, setSummaryStart] = useState(() => rangeForLastDays(30).start)
   const [summaryEnd, setSummaryEnd] = useState(() => rangeForLastDays(30).end)
   const [chartView, setChartView] = useState<ChartView>("hourly")
@@ -85,9 +97,9 @@ export default function CallMetricsReportingPage() {
   // Immediate values drive input validation messages so typos are flagged
   // right away; debounced values drive the SWR keys below so a fetch only
   // fires once the user pauses.
-  const summaryRangeError = dailyRangeError(summaryStart, summaryEnd)
-  const dailyChartRangeError = dailyRangeError(dailyStart, dailyEnd)
-  const monthlyChartRangeError = monthRangeError(monthlyStart, monthlyEnd)
+  const summaryRangeError = dateRangeError(summaryStart, summaryEnd, DAILY_RANGE_CAP_DAYS)
+  const dailyChartRangeError = dateRangeError(dailyStart, dailyEnd, DAILY_RANGE_CAP_DAYS)
+  const monthlyChartRangeError = monthRangeError(monthlyStart, monthlyEnd, MONTHLY_RANGE_CAP_MONTHS)
 
   const debouncedSummaryStart = useDebouncedValue(summaryStart, FETCH_DEBOUNCE_MS)
   const debouncedSummaryEnd = useDebouncedValue(summaryEnd, FETCH_DEBOUNCE_MS)
@@ -107,7 +119,7 @@ export default function CallMetricsReportingPage() {
   }, [hotelTimezone, summaryPreset])
 
   const summaryKey =
-    hotelId && !dailyRangeError(debouncedSummaryStart, debouncedSummaryEnd)
+    hotelId && !dateRangeError(debouncedSummaryStart, debouncedSummaryEnd, DAILY_RANGE_CAP_DAYS)
       ? ([
           "call-metrics-summary",
           hotelId,
@@ -156,7 +168,7 @@ export default function CallMetricsReportingPage() {
   const dailyKey =
     hotelId &&
     chartView === "daily" &&
-    !dailyRangeError(debouncedDailyStart, debouncedDailyEnd)
+    !dateRangeError(debouncedDailyStart, debouncedDailyEnd, DAILY_RANGE_CAP_DAYS)
       ? ([
           "call-metrics-daily",
           hotelId,
@@ -187,7 +199,7 @@ export default function CallMetricsReportingPage() {
   const monthlyKey =
     hotelId &&
     chartView === "monthly" &&
-    !monthRangeError(debouncedMonthlyStart, debouncedMonthlyEnd)
+    !monthRangeError(debouncedMonthlyStart, debouncedMonthlyEnd, MONTHLY_RANGE_CAP_MONTHS)
       ? ([
           "call-metrics-monthly",
           hotelId,
@@ -280,30 +292,18 @@ export default function CallMetricsReportingPage() {
                 Based on call creation date in the hotel timezone
               </p>
             </div>
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex flex-wrap gap-2">
-                {(["7", "14", "30", "custom"] as const).map((preset) => (
-                  <Button
-                    key={preset}
-                    type="button"
-                    size="sm"
-                    variant={summaryPreset === preset ? "default" : "outline"}
-                    onClick={() => setSummaryPreset(preset)}
-                  >
-                    {preset === "custom" ? "Custom" : `${preset} days`}
-                  </Button>
-                ))}
-              </div>
-              {summaryPreset === "custom" ? (
-                <DateRangeInputs
-                  start={summaryStart}
-                  end={summaryEnd}
-                  onStart={setSummaryStart}
-                  onEnd={setSummaryEnd}
-                  error={summaryRangeError}
-                />
-              ) : null}
-            </div>
+            <DateRangeFilter
+              variant="toolbar"
+              presets={summaryPresets}
+              timespan={summaryPreset}
+              range={{ start: summaryStart, end: summaryEnd }}
+              customStart={summaryStart}
+              customEnd={summaryEnd}
+              rangeError={summaryPreset === "custom" ? summaryRangeError : null}
+              onSelectTimespan={setSummaryPreset}
+              onCustomStart={setSummaryStart}
+              onCustomEnd={setSummaryEnd}
+            />
           </div>
 
           {summary.data?.attribution_last_discovered_at === null ? (
@@ -560,86 +560,6 @@ function MetricCard({
   )
 }
 
-function DateRangeInputs({
-  start,
-  end,
-  onStart,
-  onEnd,
-  error,
-}: {
-  start: string
-  end: string
-  onStart: (value: string) => void
-  onEnd: (value: string) => void
-  error?: string | null
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Start
-          <Input
-            type="date"
-            value={start}
-            onChange={(event) => onStart(event.target.value)}
-            className="h-9 w-36 bg-card text-sm text-foreground"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          End
-          <Input
-            type="date"
-            value={end}
-            onChange={(event) => onEnd(event.target.value)}
-            className="h-9 w-36 bg-card text-sm text-foreground"
-          />
-        </label>
-      </div>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
-  )
-}
-
-function MonthRangeInputs({
-  start,
-  end,
-  onStart,
-  onEnd,
-  error,
-}: {
-  start: string
-  end: string
-  onStart: (value: string) => void
-  onEnd: (value: string) => void
-  error?: string | null
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Start
-          <Input
-            type="month"
-            value={start}
-            onChange={(event) => onStart(event.target.value)}
-            className="h-9 w-36 bg-card text-sm text-foreground"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          End
-          <Input
-            type="month"
-            value={end}
-            onChange={(event) => onEnd(event.target.value)}
-            className="h-9 w-36 bg-card text-sm text-foreground"
-          />
-        </label>
-      </div>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
-  )
-}
-
 function Notice({ tone, message }: { tone: "muted" | "error"; message: string }) {
   const classes =
     tone === "error"
@@ -676,90 +596,6 @@ function ChartState({
       </span>
     </div>
   )
-}
-
-// "Today" as a UTC-anchored Date for the given IANA zone (falls back to the
-// browser zone when the hotel list hasn't loaded yet or the zone is unknown
-// to Intl). The backend buckets by hotel-local dates, so presets must anchor
-// to the hotel's calendar, not the viewer's.
-function todayInTimeZone(timeZone: string | null): Date {
-  let formatted: string
-  try {
-    // en-CA formats as YYYY-MM-DD.
-    formatted = new Intl.DateTimeFormat("en-CA", {
-      timeZone: timeZone ?? undefined,
-    }).format(new Date())
-  } catch {
-    formatted = new Intl.DateTimeFormat("en-CA").format(new Date())
-  }
-  const [year, month, day] = formatted.split("-").map(Number)
-  return new Date(Date.UTC(year, month - 1, day))
-}
-
-function rangeForLastDays(
-  days: number,
-  timeZone: string | null = null,
-): { start: string; end: string } {
-  const end = todayInTimeZone(timeZone)
-  const start = new Date(end)
-  start.setUTCDate(end.getUTCDate() - days + 1)
-  return { start: toDateInput(start), end: toDateInput(end) }
-}
-
-function rangeForLastMonths(
-  months: number,
-  timeZone: string | null = null,
-): { start: string; end: string } {
-  const end = todayInTimeZone(timeZone)
-  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - months + 1, 1))
-  return { start: toMonthInput(start), end: toMonthInput(end) }
-}
-
-function toDateInput(value: Date): string {
-  const year = value.getUTCFullYear()
-  const month = String(value.getUTCMonth() + 1).padStart(2, "0")
-  const day = String(value.getUTCDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
-
-function toMonthInput(value: Date): string {
-  const year = value.getUTCFullYear()
-  const month = String(value.getUTCMonth() + 1).padStart(2, "0")
-  return `${year}-${month}`
-}
-
-// Millisecond timestamp for a YYYY-MM-DD input value; UTC so day arithmetic
-// is immune to browser DST transitions. Null for empty/partial input.
-function parseDateInputMs(value: string): number | null {
-  const [year, month, day] = value.split("-").map(Number)
-  if (!year || !month || !day) return null
-  return Date.UTC(year, month - 1, day)
-}
-
-function dailyRangeError(start: string, end: string): string | null {
-  if (!start || !end) return "Select both a start and an end date."
-  const startMs = parseDateInputMs(start)
-  const endMs = parseDateInputMs(end)
-  if (startMs === null || endMs === null) return "Enter valid dates."
-  if (endMs < startMs) return "End date must be on or after the start date."
-  const days = (endMs - startMs) / 86_400_000 + 1
-  if (days > DAILY_RANGE_CAP_DAYS) {
-    return `Date range is limited to ${DAILY_RANGE_CAP_DAYS} days.`
-  }
-  return null
-}
-
-function monthRangeError(start: string, end: string): string | null {
-  if (!start || !end) return "Select both a start and an end month."
-  const [startYear, startMonth] = start.split("-").map(Number)
-  const [endYear, endMonth] = end.split("-").map(Number)
-  if (!startYear || !startMonth || !endYear || !endMonth) return "Enter valid months."
-  const months = (endYear - startYear) * 12 + (endMonth - startMonth) + 1
-  if (months < 1) return "End month must be on or after the start month."
-  if (months > MONTHLY_RANGE_CAP_MONTHS) {
-    return `Month range is limited to ${MONTHLY_RANGE_CAP_MONTHS} months.`
-  }
-  return null
 }
 
 function formatNumber(value: number | undefined): string {

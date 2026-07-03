@@ -1,15 +1,10 @@
 "use client"
 
 import { useState } from "react"
+import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { rangeForTimespan } from "@/lib/date-range"
 import {
   BarChart,
   Bar,
@@ -58,6 +53,8 @@ const statsData: Record<string, { avgLeadTime: number; avgChange: number; median
   "90": { avgLeadTime: 20, avgChange: 4, medianLeadTime: 14, medianChange: 3, sameWeek: 27, sameWeekCount: 486, sameWeekTotal: 1800, sixtyPlus: 16, sixtyPlusCount: 288, sixtyPlusTotal: 1800 },
 }
 
+const timespanOptions = makePresets(["7", "14", "30", "90"])
+
 export default function LeadTimeReportPage() {
   const [timespan, setTimespan] = useState("30")
   const stats = statsData[timespan] || statsData["30"]
@@ -73,18 +70,18 @@ export default function LeadTimeReportPage() {
             <p className="text-sm text-muted-foreground mt-1">
               How far in advance guests inquire before their stay date
             </p>
+            <div className="mt-1">
+              {/* No custom range: this page's stats are keyed by preset windows. */}
+              <DateRangeFilter
+                variant="header"
+                presets={timespanOptions}
+                timespan={timespan}
+                range={rangeForTimespan(timespan)}
+                onSelectTimespan={setTimespan}
+                allowCustom={false}
+              />
+            </div>
           </div>
-          <Select value={timespan} onValueChange={setTimespan}>
-            <SelectTrigger className="w-36 bg-card border-border">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7">Last 7 days</SelectItem>
-              <SelectItem value="14">Last 14 days</SelectItem>
-              <SelectItem value="30">Last 30 days</SelectItem>
-              <SelectItem value="90">Last 90 days</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
 
         {/* Stats Cards */}

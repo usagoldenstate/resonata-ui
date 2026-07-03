@@ -226,10 +226,19 @@ export type FaqCategoryCount = {
   percentage: number
 }
 
+export type FaqVariant = {
+  question: string | null // verbatim phrasing; null when redacted for privacy
+  count: number
+}
+
 export type FaqQuestion = {
   question: string
   category: string
   count: number
+  // Semantic grouping: null group_id means the row came from the lexical
+  // fallback path (call not yet processed by the FAQ grouper).
+  group_id: string | null
+  variants: FaqVariant[]
 }
 
 export type FaqCoverageGap = {
@@ -245,6 +254,18 @@ export type FaqResponse = {
   categories: FaqCategoryCount[]
   questions: FaqQuestion[]
   coverage_gaps: FaqCoverageGap[]
+}
+
+export type FaqOccurrence = {
+  question: string | null // verbatim phrasing; null when redacted for privacy
+  asked_at: string // ISO datetime (UTC)
+  provider_call_id: string | null // the id the Call Log page filters on
+}
+
+// One page of individual mentions behind a FAQ phrasing, newest first.
+export type FaqOccurrencesResponse = {
+  total: number // matching occurrences across all pages
+  occurrences: FaqOccurrence[]
 }
 
 export type CallAnalyticsSummary = {
@@ -791,4 +812,21 @@ export function fetchFaqs(
   opts: Pick<Options, "signal"> = {},
 ) {
   return api<FaqResponse>(withQuery("/api/v1/reporting/faqs", params), opts)
+}
+
+export function fetchFaqOccurrences(
+  params: CallMetricsBaseParams & {
+    start_date: string
+    end_date: string
+    group_id: string
+    variant?: string
+    limit?: number
+    offset?: number
+  },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<FaqOccurrencesResponse>(
+    withQuery("/api/v1/reporting/faqs/occurrences", params),
+    opts,
+  )
 }

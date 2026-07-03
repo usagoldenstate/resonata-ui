@@ -1,10 +1,12 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import useSWR from "swr"
 import {
   AlertTriangle,
   ArrowUpDown,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Crown,
@@ -15,6 +17,7 @@ import {
   TrendingUp,
 } from "lucide-react"
 
+import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -26,16 +29,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Sidebar } from "@/components/sidebar"
-import { ApiError, type FaqResponse, fetchFaqs } from "@/lib/api"
+import { ApiError, type FaqResponse, fetchFaqOccurrences, fetchFaqs } from "@/lib/api"
+import { dateRangeError, rangeForTimespan } from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
+import { useDebouncedValue } from "@/hooks/use-debounced-value"
 
-const timespanOptions = [
-  { value: "7", label: "Last 7 days" },
-  { value: "14", label: "Last 14 days" },
-  { value: "30", label: "Last 30 days" },
-  { value: "90", label: "Last 90 days" },
-  { value: "year", label: "This year" },
-]
+const timespanOptions = makePresets(["7", "14", "30", "90", "year"])
+
+// Matches the backend's `_validate_breakdown_range` cap (api/reporting.py) so a
+// too-wide custom range is rejected client-side before it ever hits the network.
+const FAQ_RANGE_CAP_DAYS = 366
+// Date inputs fire onChange per keystroke; the SWR key reads the debounced value
+// so only a settled range triggers a fetch.
+const FETCH_DEBOUNCE_MS = 400
 
 // Presentation-only: stable color per category name (matches the backend's
 // FAQ_CATEGORIES closed set). Unknown names fall back to a neutral tone.
@@ -51,6 +57,7 @@ const DEFAULT_BADGE = "bg-muted text-muted-foreground"
 
 const GAPS_PER_PAGE = 5
 const QUESTIONS_PER_PAGE = 20
+const OCCURRENCES_PER_PAGE = 10
 
 type LoadState<T> = {
   loading: boolean
@@ -62,19 +69,60 @@ export default function FAQsPage() {
   const {
     hotelId,
     hotels,
+    hotelTimezone,
     loading: hotelLoading,
     error: hotelError,
     accessState,
   } = useHotel()
 
   const [timespan, setTimespan] = useState("30")
+  // Custom-range inputs (YYYY-MM-DD), seeded from the last-30-days window.
+  const [customStart, setCustomStart] = useState(() => rangeForTimespan("30").start)
+  const [customEnd, setCustomEnd] = useState(() => rangeForTimespan("30").end)
+  const debouncedCustomStart = useDebouncedValue(customStart, FETCH_DEBOUNCE_MS)
+  const debouncedCustomEnd = useDebouncedValue(customEnd, FETCH_DEBOUNCE_MS)
   const [searchQuery, setSearchQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("All")
   const [sortOrder, setSortOrder] = useState<"most" | "least">("most")
   const [gapsPage, setGapsPage] = useState(0)
   const [questionsPage, setQuestionsPage] = useState(0)
+  // Rows expanded to show their verbatim phrasing variants, keyed by
+  // group_id (semantic rows) or question text (lexical fallback rows).
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  // Phrasings expanded to show their individual mentions (dates + call
+  // links), keyed by `${rowKey}::${variant question}`. Occurrences are
+  // fetched lazily per phrasing, so opening one is O(page), not O(mentions).
+  const [expandedVariants, setExpandedVariants] = useState<Set<string>>(new Set())
 
-  const range = useMemo(() => rangeForTimespan(timespan), [timespan])
+  // Custom mode reads the debounced inputs so mid-edit values don't re-fetch;
+  // preset mode derives the window from the relative preset, anchored to the
+  // hotel's timezone (matching how the backend buckets records).
+  const range = useMemo(() => {
+    if (timespan === "custom") {
+      return { start: debouncedCustomStart, end: debouncedCustomEnd }
+    }
+    return rangeForTimespan(timespan, hotelTimezone)
+  }, [timespan, debouncedCustomStart, debouncedCustomEnd, hotelTimezone])
+
+  // Immediate (un-debounced) validation flags a bad range as the user types;
+  // the debounced variant gates the fetch below.
+  const customRangeError =
+    timespan === "custom" ? dateRangeError(customStart, customEnd, FAQ_RANGE_CAP_DAYS) : null
+  const debouncedRangeError =
+    timespan === "custom"
+      ? dateRangeError(debouncedCustomStart, debouncedCustomEnd, FAQ_RANGE_CAP_DAYS)
+      : null
+
+  const selectTimespan = (value: string) => {
+    // Seed the custom inputs from the window the user was already viewing, so the
+    // date pickers open where they left off instead of snapping to a default.
+    if (value === "custom" && timespan !== "custom") {
+      const current = rangeForTimespan(timespan, hotelTimezone)
+      setCustomStart(current.start)
+      setCustomEnd(current.end)
+    }
+    setTimespan(value)
+  }
 
   // Reset the category filter when the hotel changes — its category set differs.
   useEffect(() => {
@@ -91,13 +139,21 @@ export default function FAQsPage() {
     setQuestionsPage(0)
   }, [hotelId, range.start, range.end, searchQuery, categoryFilter, sortOrder])
 
+  // Collapse any open variant/occurrence expansions when the data window changes.
+  useEffect(() => {
+    setExpandedRows(new Set())
+    setExpandedVariants(new Set())
+  }, [hotelId, range.start, range.end])
+
   const {
     data: faqsData,
     isLoading: faqsLoading,
     error: faqsErrorRaw,
     mutate: refreshFaqs,
   } = useSWR(
-    hotelId ? (["faqs", hotelId, range.start, range.end] as const) : null,
+    hotelId && !debouncedRangeError
+      ? (["faqs", hotelId, range.start, range.end] as const)
+      : null,
     ([, hid, start, end]) => fetchFaqs({ hotel_id: hid, start_date: start, end_date: end }),
   )
   const faqs: LoadState<FaqResponse> = {
@@ -133,7 +189,10 @@ export default function FAQsPage() {
     const all = data?.questions ?? []
     const q = searchQuery.trim().toLowerCase()
     const filtered = all.filter((item) => {
-      const matchesSearch = q === "" || item.question.toLowerCase().includes(q)
+      const matchesSearch =
+        q === "" ||
+        item.question.toLowerCase().includes(q) ||
+        (item.variants ?? []).some((v) => v.question?.toLowerCase().includes(q))
       const matchesCategory = categoryFilter === "All" || item.category === categoryFilter
       return matchesSearch && matchesCategory
     })
@@ -176,19 +235,19 @@ export default function FAQsPage() {
         <div className="mb-8 flex items-start justify-between">
           <div>
             <h2 className="text-2xl font-semibold text-foreground">Frequently Asked Questions</h2>
-            <div className="flex items-center gap-1 mt-1">
-              <Select value={timespan} onValueChange={setTimespan}>
-                <SelectTrigger className="h-auto p-0 border-0 bg-transparent shadow-none text-sm text-muted-foreground hover:text-foreground focus:ring-0 w-auto gap-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {timespanOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex items-center gap-1.5 mt-1">
+              <DateRangeFilter
+                variant="header"
+                presets={timespanOptions}
+                timespan={timespan}
+                range={range}
+                customStart={customStart}
+                customEnd={customEnd}
+                rangeError={customRangeError}
+                onSelectTimespan={selectTimespan}
+                onCustomStart={setCustomStart}
+                onCustomEnd={setCustomEnd}
+              />
               {hotelName ? (
                 <span className="text-sm text-muted-foreground">· {hotelName}</span>
               ) : null}
@@ -212,6 +271,7 @@ export default function FAQsPage() {
           />
         ) : null}
 
+        {customRangeError ? <Notice tone="error" message={customRangeError} /> : null}
         {faqs.error ? <Notice tone="error" message={faqs.error} /> : null}
         {faqs.loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
@@ -415,7 +475,19 @@ export default function FAQsPage() {
             ) : null}
 
             {/* Filters */}
-            <div className="flex gap-4 mb-6">
+            <div className="flex flex-wrap items-center gap-4 mb-6">
+              <DateRangeFilter
+                variant="toolbar"
+                presets={timespanOptions}
+                timespan={timespan}
+                range={range}
+                customStart={customStart}
+                customEnd={customEnd}
+                rangeError={customRangeError}
+                onSelectTimespan={selectTimespan}
+                onCustomStart={setCustomStart}
+                onCustomEnd={setCustomEnd}
+              />
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -468,9 +540,13 @@ export default function FAQsPage() {
                         sortOrder === "most"
                           ? globalIndex + 1
                           : visibleQuestions.length - globalIndex
+                      const rowKey = item.group_id ?? item.question
+                      const variants = item.variants ?? []
+                      const expandable = variants.length > 1
+                      const expanded = expandable && expandedRows.has(rowKey)
                       return (
                         <div
-                          key={`${item.question}-${globalIndex}`}
+                          key={`${rowKey}-${globalIndex}`}
                           className="p-5 hover:bg-muted/30 transition-colors"
                         >
                           <div className="flex items-start gap-4">
@@ -497,7 +573,95 @@ export default function FAQsPage() {
                                   </span>{" "}
                                   {item.count === 1 ? "mention" : "mentions"}
                                 </span>
+                                {expandable ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedRows((prev) => {
+                                        const next = new Set(prev)
+                                        if (next.has(rowKey)) next.delete(rowKey)
+                                        else next.add(rowKey)
+                                        return next
+                                      })
+                                    }
+                                    aria-expanded={expanded}
+                                    className="inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
+                                  >
+                                    <ChevronDown
+                                      className={`h-3.5 w-3.5 transition-transform ${
+                                        expanded ? "rotate-180" : ""
+                                      }`}
+                                    />
+                                    {variants.length} phrasings
+                                  </button>
+                                ) : null}
                               </div>
+                              {expanded ? (
+                                <div className="mt-3 space-y-1.5 border-l-2 border-border pl-4">
+                                  {variants.map((variant, vIndex) => {
+                                    // Occurrence detail exists only for semantic
+                                    // rows (lexical fallback rows have no
+                                    // occurrence rows) and non-redacted text.
+                                    const drillable =
+                                      item.group_id !== null && variant.question !== null
+                                    const variantKey = `${rowKey}::${variant.question ?? vIndex}`
+                                    const variantExpanded =
+                                      drillable && expandedVariants.has(variantKey)
+                                    return (
+                                      <div key={`${variant.question ?? "redacted"}-${vIndex}`}>
+                                        <div className="flex items-center justify-between gap-4 text-sm">
+                                          {drillable ? (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setExpandedVariants((prev) => {
+                                                  const next = new Set(prev)
+                                                  if (next.has(variantKey)) next.delete(variantKey)
+                                                  else next.add(variantKey)
+                                                  return next
+                                                })
+                                              }
+                                              aria-expanded={variantExpanded}
+                                              className="inline-flex items-center gap-1.5 text-left text-card-foreground/90 transition-colors hover:text-foreground"
+                                            >
+                                              <ChevronDown
+                                                className={`h-3 w-3 flex-shrink-0 text-muted-foreground transition-transform ${
+                                                  variantExpanded ? "rotate-180" : ""
+                                                }`}
+                                              />
+                                              {variant.question}
+                                            </button>
+                                          ) : (
+                                            <span
+                                              className={
+                                                variant.question
+                                                  ? "text-card-foreground/90"
+                                                  : "italic text-muted-foreground"
+                                              }
+                                            >
+                                              {variant.question ?? "(redacted for privacy)"}
+                                            </span>
+                                          )}
+                                          <span className="flex-shrink-0 text-xs text-muted-foreground">
+                                            ×{variant.count.toLocaleString()}
+                                          </span>
+                                        </div>
+                                        {variantExpanded &&
+                                        hotelId &&
+                                        item.group_id &&
+                                        variant.question ? (
+                                          <VariantOccurrences
+                                            hotelId={hotelId}
+                                            groupId={item.group_id}
+                                            variant={variant.question}
+                                            range={range}
+                                          />
+                                        ) : null}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </div>
@@ -563,24 +727,120 @@ function Notice({ tone, message }: { tone: "muted" | "error"; message: string })
   )
 }
 
-function rangeForTimespan(timespan: string): { start: string; end: string } {
-  if (timespan === "year") {
-    const now = new Date()
-    return { start: toDateInput(new Date(now.getFullYear(), 0, 1)), end: toDateInput(now) }
+// Lazy, paginated list of the individual times one phrasing was asked.
+// Mounted only while its phrasing is expanded, so nothing is fetched until
+// the user drills in, and each page is a bounded request.
+function VariantOccurrences({
+  hotelId,
+  groupId,
+  variant,
+  range,
+}: {
+  hotelId: string
+  groupId: string
+  variant: string
+  range: { start: string; end: string }
+}) {
+  const [page, setPage] = useState(0)
+  const { data, isLoading, error } = useSWR(
+    ["faq-occurrences", hotelId, groupId, variant, range.start, range.end, page] as const,
+    ([, hid, gid, v, start, end, p]) =>
+      fetchFaqOccurrences({
+        hotel_id: hid,
+        group_id: gid,
+        variant: v,
+        start_date: start,
+        end_date: end,
+        limit: OCCURRENCES_PER_PAGE,
+        offset: p * OCCURRENCES_PER_PAGE,
+      }),
+    { keepPreviousData: true },
+  )
+
+  if (error) {
+    return <p className="mt-2 pl-4 text-xs text-destructive">{describeError(error)}</p>
   }
-  const days = Number(timespan)
-  const safeDays = Number.isFinite(days) && days > 0 ? days : 30
-  const end = new Date()
-  const start = new Date()
-  start.setDate(end.getDate() - safeDays + 1)
-  return { start: toDateInput(start), end: toDateInput(end) }
+  if (!data) {
+    return (
+      <p className="mt-2 flex items-center gap-1.5 pl-4 text-xs text-muted-foreground">
+        {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+        Loading mentions...
+      </p>
+    )
+  }
+  if (data.total === 0) {
+    return (
+      <p className="mt-2 pl-4 text-xs text-muted-foreground">
+        No individual mentions found in this date range.
+      </p>
+    )
+  }
+
+  const totalPages = Math.max(1, Math.ceil(data.total / OCCURRENCES_PER_PAGE))
+  const safePage = Math.min(page, totalPages - 1)
+  return (
+    <div className="mt-2 mb-1 space-y-1 pl-4">
+      {data.occurrences.map((occ, index) => (
+        <div
+          key={`${occ.provider_call_id ?? "call"}-${occ.asked_at}-${index}`}
+          className="flex items-center justify-between gap-4 text-xs text-muted-foreground"
+        >
+          <span>{formatOccurrenceDate(occ.asked_at)}</span>
+          {occ.provider_call_id ? (
+            <Link
+              href={`/call-log?call_id=${encodeURIComponent(occ.provider_call_id)}`}
+              className="flex-shrink-0 underline-offset-2 hover:text-foreground hover:underline"
+            >
+              View call
+            </Link>
+          ) : null}
+        </div>
+      ))}
+      {data.total > OCCURRENCES_PER_PAGE ? (
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-xs text-muted-foreground">
+            {safePage * OCCURRENCES_PER_PAGE + 1}–
+            {Math.min((safePage + 1) * OCCURRENCES_PER_PAGE, data.total)} of {data.total}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={safePage === 0}
+              aria-label="Previous mentions"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <span className="px-1 text-xs text-muted-foreground">
+              {safePage + 1} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={safePage >= totalPages - 1}
+              aria-label="Next mentions"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
-function toDateInput(value: Date): string {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  const day = String(value.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
+function formatOccurrenceDate(iso: string): string {
+  const parsed = new Date(iso)
+  if (Number.isNaN(parsed.getTime())) return iso
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
 }
 
 function formatPercent(value: number | undefined | null): string {

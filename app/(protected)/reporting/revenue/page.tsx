@@ -13,11 +13,10 @@ import {
   YAxis,
 } from "recharts"
 
+import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import {
   Tooltip as UiTooltip,
   TooltipContent,
@@ -32,10 +31,12 @@ import {
   fetchNotBookedBreakdown,
   fetchRevenueSummary,
 } from "@/lib/api"
+import { dateRangeError, rangeForLastDays } from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
 
-type SummaryPreset = "7" | "14" | "30" | "custom"
 type CallBasis = "bookable" | "total"
+
+const summaryPresets = makePresets(["7", "14", "30"])
 
 // Revenue summary and call-metrics summary both cap at 183 inclusive days
 // server-side; not-booked breakdown allows more, so the tighter cap governs
@@ -67,7 +68,7 @@ export default function RevenueReportingPage() {
     error: hotelError,
     accessState,
   } = useHotel()
-  const [preset, setPreset] = useState<SummaryPreset>("30")
+  const [preset, setPreset] = useState("30")
   // Bookable calls (booking intent: booked + not-booked) vs all calls. Drives
   // the funnel's first stage and the conversion-rate denominator.
   const [callBasis, setCallBasis] = useState<CallBasis>("bookable")
@@ -75,12 +76,13 @@ export default function RevenueReportingPage() {
   // "today" tracks the hotel's timezone once the hotel list has loaded (the
   // backend buckets records in hotel-local time, so browser-local presets can
   // be a day off for hotels ahead of the viewer).
-  const [customRange, setCustomRange] = useState(() => rangeForLastDays(30, null))
-  const { start, end } =
+  const [customRange, setCustomRange] = useState(() => rangeForLastDays(30))
+  const range =
     preset === "custom" ? customRange : rangeForLastDays(Number(preset), hotelTimezone)
-  const dateRangeError = validateDateRange(start, end)
+  const { start, end } = range
+  const rangeError = dateRangeError(start, end, MAX_DAILY_RANGE_DAYS)
 
-  const sharedKey = hotelId && !dateRangeError ? ([hotelId, start, end] as const) : null
+  const sharedKey = hotelId && !rangeError ? ([hotelId, start, end] as const) : null
 
   const {
     data: summaryData,
@@ -168,8 +170,8 @@ export default function RevenueReportingPage() {
         : undefined
       : calls.data?.conversion_rate
 
-  const onPresetChange = (next: SummaryPreset) => {
-    if (next === "custom") {
+  const onPresetChange = (next: string) => {
+    if (next === "custom" && preset !== "custom") {
       // Seed the inputs with the range currently on screen.
       setCustomRange({ start, end })
     }
@@ -206,20 +208,19 @@ export default function RevenueReportingPage() {
                 </TooltipContent>
               </UiTooltip>
             </div>
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {(["7", "14", "30", "custom"] as const).map((option) => (
-                <Button
-                  key={option}
-                  type="button"
-                  size="sm"
-                  variant={preset === option ? "default" : "outline"}
-                  onClick={() => onPresetChange(option)}
-                >
-                  {option === "custom" ? "Custom" : `${option} days`}
-                </Button>
-              ))}
+            <div className="mt-1 flex items-center gap-1.5">
+              <DateRangeFilter
+                variant="header"
+                presets={summaryPresets}
+                timespan={preset}
+                range={range}
+                customStart={customRange.start}
+                customEnd={customRange.end}
+                rangeError={preset === "custom" ? rangeError : null}
+                onSelectTimespan={onPresetChange}
+                onCustomStart={(value) => setCustomRange((prev) => ({ ...prev, start: value }))}
+                onCustomEnd={(value) => setCustomRange((prev) => ({ ...prev, end: value }))}
+              />
               <UiTooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -235,16 +236,8 @@ export default function RevenueReportingPage() {
                 </TooltipContent>
               </UiTooltip>
             </div>
-            {preset === "custom" ? (
-              <DateRangeInputs
-                start={start}
-                end={end}
-                onStart={(value) => setCustomRange((prev) => ({ ...prev, start: value }))}
-                onEnd={(value) => setCustomRange((prev) => ({ ...prev, end: value }))}
-              />
-            ) : null}
-            <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
           </div>
+          <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
         </div>
 
         <div className="mb-6 flex items-center gap-2">
@@ -297,8 +290,8 @@ export default function RevenueReportingPage() {
                 : "Select a hotel to view revenue."
             }
           />
-        ) : dateRangeError ? (
-          <Notice tone="error" message={dateRangeError} />
+        ) : rangeError ? (
+          <Notice tone="error" message={rangeError} />
         ) : null}
 
         <section className="mb-8 rounded-lg border border-border p-4">
@@ -570,41 +563,6 @@ function RevenueFunnel({
   )
 }
 
-function DateRangeInputs({
-  start,
-  end,
-  onStart,
-  onEnd,
-}: {
-  start: string
-  end: string
-  onStart: (value: string) => void
-  onEnd: (value: string) => void
-}) {
-  return (
-    <div className="flex flex-wrap items-end gap-2">
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        Start
-        <Input
-          type="date"
-          value={start}
-          onChange={(event) => onStart(event.target.value)}
-          className="h-9 w-36 bg-card text-sm text-foreground"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        End
-        <Input
-          type="date"
-          value={end}
-          onChange={(event) => onEnd(event.target.value)}
-          className="h-9 w-36 bg-card text-sm text-foreground"
-        />
-      </label>
-    </div>
-  )
-}
-
 function Notice({ tone, message }: { tone: "muted" | "error"; message: string }) {
   const classes =
     tone === "error"
@@ -641,53 +599,6 @@ function ChartState({
       </span>
     </div>
   )
-}
-
-function rangeForLastDays(
-  days: number,
-  timeZone: string | null,
-): { start: string; end: string } {
-  const end = todayIn(timeZone)
-  const start = new Date(end)
-  start.setDate(end.getDate() - days + 1)
-  return { start: toDateInput(start), end: toDateInput(end) }
-}
-
-// A Date whose local Y/M/D equal today's date in the given zone, so the plain
-// calendar math above works unchanged. Falls back to the browser's clock when
-// the zone is unknown (hotel list still loading) or invalid.
-function todayIn(timeZone: string | null): Date {
-  if (timeZone) {
-    try {
-      // en-CA formats as YYYY-MM-DD.
-      const formatted = new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date())
-      const [year, month, day] = formatted.split("-").map(Number)
-      return new Date(year, month - 1, day)
-    } catch {
-      // invalid zone name — use the browser's date
-    }
-  }
-  return new Date()
-}
-
-function validateDateRange(start: string, end: string): string | null {
-  if (!start || !end) return "Choose a start and end date."
-  const startMs = Date.parse(`${start}T00:00:00Z`)
-  const endMs = Date.parse(`${end}T00:00:00Z`)
-  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return "Choose valid dates."
-  if (startMs > endMs) return "Start date must be on or before the end date."
-  const days = Math.round((endMs - startMs) / 86_400_000) + 1
-  if (days > MAX_DAILY_RANGE_DAYS) {
-    return `Date range cannot exceed ${MAX_DAILY_RANGE_DAYS} days. Choose a shorter range.`
-  }
-  return null
-}
-
-function toDateInput(value: Date): string {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  const day = String(value.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
 }
 
 function formatMoney(cents: number | undefined, currency: string): string {

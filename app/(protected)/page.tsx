@@ -3,26 +3,13 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import useSWR from "swr"
+import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
 import { Sidebar } from "@/components/sidebar"
 import {
   AlertTriangle,
-  CalendarIcon,
   ChevronRight,
   Clock,
   DollarSign,
@@ -30,7 +17,6 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react"
-import { differenceInCalendarDays, format, subDays } from "date-fns"
 
 import {
   ApiError,
@@ -41,7 +27,15 @@ import {
   fetchNotBookedBreakdown,
   fetchRevenueSummary,
 } from "@/lib/api"
+import {
+  type DateRange,
+  dateRangeError,
+  precedingRange,
+  rangeForLastDays,
+  shiftDateInput,
+} from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
+import { useDebouncedValue } from "@/hooks/use-debounced-value"
 
 // Presentation-only color mapping, keyed on the backend taxonomy category name.
 // Mirrors the Not Booked reporting page so the dashboard tile matches the detail view.
@@ -54,22 +48,19 @@ const COLOR_BY_CATEGORY: Record<string, string> = {
 }
 const DEFAULT_COLOR = "bg-[#9ca3af]"
 
-const timespanOptions = [
-  { value: "7", label: "Last 7 days" },
-  { value: "14", label: "Last 2 weeks" },
-  { value: "30", label: "Last 30 days" },
-  { value: "custom", label: "Custom range" },
+const primaryPresets = makePresets(["7", "14", "30"])
+// Comparison presets are windows immediately preceding the primary range, not
+// windows ending today, so their labels say so.
+const comparisonPresets = [
+  { value: "7", label: "7 days prior", pill: "7 days prior" },
+  { value: "14", label: "14 days prior", pill: "14 days prior" },
+  { value: "30", label: "30 days prior", pill: "30 days prior" },
 ]
 
-interface DashboardDateRange {
-  from: Date
-  to: Date
-}
-
-type CalendarRange = {
-  from: Date | undefined
-  to?: Date
-}
+// Revenue and call-metrics summaries cap at 183 inclusive days server-side,
+// so the tighter cap governs the dashboard's custom ranges too.
+const MAX_RANGE_DAYS = 183
+const FETCH_DEBOUNCE_MS = 400
 
 // The three reporting endpoints that power the overview tiles. Each may be null
 // independently so one failing endpoint doesn't blank the whole dashboard.
@@ -139,87 +130,104 @@ async function loadDashboard(
 }
 
 export default function Dashboard() {
-  const { hotelId, loading: hotelLoading, error: hotelError, accessState } = useHotel()
-
-  const today = useMemo(() => {
-    const d = new Date()
-    d.setHours(0, 0, 0, 0)
-    return d
-  }, [])
+  const {
+    hotelId,
+    hotelTimezone,
+    loading: hotelLoading,
+    error: hotelError,
+    accessState,
+  } = useHotel()
 
   const [primaryTimespan, setPrimaryTimespan] = useState("30")
-  const [primaryDateRange, setPrimaryDateRange] = useState<DashboardDateRange>(() => ({
-    from: subDays(today, 29),
-    to: today,
-  }))
-  const [primaryCalendarOpen, setPrimaryCalendarOpen] = useState(false)
-  const [primaryTempRange, setPrimaryTempRange] = useState<CalendarRange>({
-    from: primaryDateRange.from,
-    to: primaryDateRange.to,
-  })
+  // Only the custom range is stored; preset ranges are derived per render so
+  // "today" tracks the hotel's timezone once the hotel list has loaded.
+  const [primaryCustom, setPrimaryCustom] = useState<DateRange>(() => rangeForLastDays(30))
+  const debouncedPrimaryStart = useDebouncedValue(primaryCustom.start, FETCH_DEBOUNCE_MS)
+  const debouncedPrimaryEnd = useDebouncedValue(primaryCustom.end, FETCH_DEBOUNCE_MS)
 
   const [showComparison, setShowComparison] = useState(false)
   const [callVolumeType, setCallVolumeType] = useState<"bookable" | "total">("bookable")
-  const [comparisonTimespan, setComparisonTimespan] = useState("30")
-  const [comparisonDateRange, setComparisonDateRange] = useState<DashboardDateRange>(() => ({
-    from: subDays(today, 59),
-    to: subDays(today, 30),
-  }))
-  const [comparisonCalendarOpen, setComparisonCalendarOpen] = useState(false)
-  const [comparisonTempRange, setComparisonTempRange] = useState<CalendarRange>({
-    from: comparisonDateRange.from,
-    to: comparisonDateRange.to,
-  })
+  const [comparisonTimespan, setComparisonTimespan] = useState("custom")
+  const [comparisonCustom, setComparisonCustom] = useState<DateRange>(() =>
+    precedingRange(rangeForLastDays(30)),
+  )
+  const debouncedComparisonStart = useDebouncedValue(comparisonCustom.start, FETCH_DEBOUNCE_MS)
+  const debouncedComparisonEnd = useDebouncedValue(comparisonCustom.end, FETCH_DEBOUNCE_MS)
 
-  const handlePrimaryTimespanChange = (value: string) => {
-    setPrimaryTimespan(value)
-    if (value !== "custom") {
-      const days = parseInt(value)
-      // Inclusive of today, so a 30-day window spans today-29 .. today. Matches
-      // rangeForLastDays() on the reporting pages so totals line up exactly.
-      setPrimaryDateRange({ from: subDays(today, days - 1), to: today })
+  // Custom mode reads the debounced inputs so mid-edit values don't re-fetch.
+  const primaryRange = useMemo<DateRange>(
+    () =>
+      primaryTimespan === "custom"
+        ? { start: debouncedPrimaryStart, end: debouncedPrimaryEnd }
+        : rangeForLastDays(Number(primaryTimespan), hotelTimezone),
+    [primaryTimespan, debouncedPrimaryStart, debouncedPrimaryEnd, hotelTimezone],
+  )
+
+  // Comparison presets are the `days`-long window ending the day before the
+  // primary window starts, derived per render so they track the primary range.
+  const comparisonRange = useMemo<DateRange>(() => {
+    if (comparisonTimespan === "custom") {
+      return { start: debouncedComparisonStart, end: debouncedComparisonEnd }
     }
+    const days = Number(comparisonTimespan)
+    const end = shiftDateInput(primaryRange.start, -1)
+    return { start: shiftDateInput(end, -(days - 1)), end }
+  }, [comparisonTimespan, debouncedComparisonStart, debouncedComparisonEnd, primaryRange.start])
+
+  // Immediate (un-debounced) validation flags a bad range as the user types;
+  // the debounced variant gates the fetches below.
+  const primaryRangeError =
+    primaryTimespan === "custom"
+      ? dateRangeError(primaryCustom.start, primaryCustom.end, MAX_RANGE_DAYS)
+      : null
+  const debouncedPrimaryRangeError =
+    primaryTimespan === "custom"
+      ? dateRangeError(debouncedPrimaryStart, debouncedPrimaryEnd, MAX_RANGE_DAYS)
+      : null
+  const comparisonRangeError =
+    comparisonTimespan === "custom"
+      ? dateRangeError(comparisonCustom.start, comparisonCustom.end, MAX_RANGE_DAYS)
+      : null
+  const debouncedComparisonRangeError =
+    comparisonTimespan === "custom"
+      ? dateRangeError(debouncedComparisonStart, debouncedComparisonEnd, MAX_RANGE_DAYS)
+      : null
+
+  const selectPrimaryTimespan = (value: string) => {
+    // Seed the custom inputs from the window the user was already viewing.
+    if (value === "custom" && primaryTimespan !== "custom") {
+      setPrimaryCustom(primaryRange)
+    }
+    setPrimaryTimespan(value)
+  }
+
+  const selectComparisonTimespan = (value: string) => {
+    if (value === "custom" && comparisonTimespan !== "custom") {
+      setComparisonCustom(comparisonRange)
+    }
+    setComparisonTimespan(value)
   }
 
   // Default the comparison to the same-length window immediately preceding the
-  // primary range. We surface it as a "Custom range" so the exact preceding
-  // dates are shown — a preset like "Last 7 days" would point at today, not the
-  // window before the primary.
+  // primary range. We surface it as a custom range so the exact preceding
+  // dates are shown on the trigger.
   const handleToggleComparison = () => {
     const next = !showComparison
     setShowComparison(next)
     if (next) {
-      const preceding = precedingRange(primaryDateRange)
       setComparisonTimespan("custom")
-      setComparisonDateRange(preceding)
-      setComparisonTempRange({ from: preceding.from, to: preceding.to })
+      setComparisonCustom(precedingRange(primaryRange))
     }
   }
-
-  const handleComparisonTimespanChange = (value: string) => {
-    setComparisonTimespan(value)
-    if (value !== "custom") {
-      const days = parseInt(value)
-      const primaryDays = parseInt(primaryTimespan) || 30
-      // The `days`-long window ending the day before the primary window starts.
-      setComparisonDateRange({
-        from: subDays(today, primaryDays + days - 1),
-        to: subDays(today, primaryDays),
-      })
-    }
-  }
-
-  const primaryStart = toDateInput(primaryDateRange.from)
-  const primaryEnd = toDateInput(primaryDateRange.to)
-  const comparisonStart = toDateInput(comparisonDateRange.from)
-  const comparisonEnd = toDateInput(comparisonDateRange.to)
 
   const {
     data: primaryResult,
     isLoading: primaryLoadingRaw,
     mutate: refreshPrimary,
   } = useSWR(
-    hotelId ? (["dashboard", hotelId, primaryStart, primaryEnd] as const) : null,
+    hotelId && !debouncedPrimaryRangeError
+      ? (["dashboard", hotelId, primaryRange.start, primaryRange.end] as const)
+      : null,
     ([, hid, start, end]) => loadDashboard(hid, start, end),
   )
   const primary: LoadState = {
@@ -233,8 +241,8 @@ export default function Dashboard() {
     isLoading: comparisonLoadingRaw,
     mutate: refreshComparison,
   } = useSWR(
-    hotelId && showComparison
-      ? (["dashboard", hotelId, comparisonStart, comparisonEnd] as const)
+    hotelId && showComparison && !debouncedComparisonRangeError
+      ? (["dashboard", hotelId, comparisonRange.start, comparisonRange.end] as const)
       : null,
     ([, hid, start, end]) => loadDashboard(hid, start, end),
   )
@@ -294,10 +302,45 @@ export default function Dashboard() {
       <Sidebar />
       <main className="flex-1 p-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-start justify-between mb-6">
           <div>
             <h2 className="text-2xl font-semibold text-foreground">Dashboard</h2>
             <p className="text-sm text-muted-foreground">Click any section to view detailed analytics</p>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <DateRangeFilter
+                variant="header"
+                presets={primaryPresets}
+                timespan={primaryTimespan}
+                range={primaryRange}
+                customStart={primaryCustom.start}
+                customEnd={primaryCustom.end}
+                rangeError={primaryRangeError}
+                onSelectTimespan={selectPrimaryTimespan}
+                onCustomStart={(value) => setPrimaryCustom((prev) => ({ ...prev, start: value }))}
+                onCustomEnd={(value) => setPrimaryCustom((prev) => ({ ...prev, end: value }))}
+              />
+              {showComparison ? (
+                <>
+                  <span className="text-sm text-muted-foreground">vs</span>
+                  <DateRangeFilter
+                    variant="header"
+                    presets={comparisonPresets}
+                    timespan={comparisonTimespan}
+                    range={comparisonRange}
+                    customStart={comparisonCustom.start}
+                    customEnd={comparisonCustom.end}
+                    rangeError={comparisonRangeError}
+                    onSelectTimespan={selectComparisonTimespan}
+                    onCustomStart={(value) =>
+                      setComparisonCustom((prev) => ({ ...prev, start: value }))
+                    }
+                    onCustomEnd={(value) =>
+                      setComparisonCustom((prev) => ({ ...prev, end: value }))
+                    }
+                  />
+                </>
+              ) : null}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <Button
@@ -310,91 +353,6 @@ export default function Dashboard() {
             </Button>
             <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
           </div>
-        </div>
-
-        {/* Date Range Selectors */}
-        <div className="flex flex-wrap items-center gap-4 mb-6">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Primary:</span>
-            <Select value={primaryTimespan} onValueChange={handlePrimaryTimespanChange}>
-              <SelectTrigger className="w-40 bg-card border-border">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {timespanOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {primaryTimespan === "custom" && (
-              <Popover open={primaryCalendarOpen} onOpenChange={setPrimaryCalendarOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="border-border">
-                    <CalendarIcon className="w-4 h-4 mr-2" />
-                    {format(primaryDateRange.from, "MMM d")} - {format(primaryDateRange.to, "MMM d")}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="range"
-                    selected={primaryTempRange}
-                    onSelect={(range) => {
-                      setPrimaryTempRange(range || { from: undefined })
-                      if (range?.from && range?.to) {
-                        setPrimaryDateRange({ from: range.from, to: range.to })
-                        setPrimaryCalendarOpen(false)
-                      }
-                    }}
-                    numberOfMonths={2}
-                  />
-                </PopoverContent>
-              </Popover>
-            )}
-          </div>
-
-          {showComparison && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Compare to:</span>
-              <Select value={comparisonTimespan} onValueChange={handleComparisonTimespanChange}>
-                <SelectTrigger className="w-40 bg-card border-border">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {timespanOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {comparisonTimespan === "custom" && (
-                <Popover open={comparisonCalendarOpen} onOpenChange={setComparisonCalendarOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="border-border">
-                      <CalendarIcon className="w-4 h-4 mr-2" />
-                      {format(comparisonDateRange.from, "MMM d")} - {format(comparisonDateRange.to, "MMM d")}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="range"
-                      selected={comparisonTempRange}
-                      onSelect={(range) => {
-                        setComparisonTempRange(range || { from: undefined })
-                        if (range?.from && range?.to) {
-                          setComparisonDateRange({ from: range.from, to: range.to })
-                          setComparisonCalendarOpen(false)
-                        }
-                      }}
-                      numberOfMonths={2}
-                    />
-                  </PopoverContent>
-                </Popover>
-              )}
-            </div>
-          )}
         </div>
 
         {hotelLoading ? (
@@ -645,22 +603,6 @@ function Notice({ tone, message }: { tone: "muted" | "error"; message: string })
       <span>{message}</span>
     </div>
   )
-}
-
-// The same-length window ending the day before `range` begins, e.g. for a
-// 7-day primary range this is the 7 days immediately before it.
-function precedingRange(range: DashboardDateRange): DashboardDateRange {
-  const lengthDays = differenceInCalendarDays(range.to, range.from) + 1
-  const to = subDays(range.from, 1)
-  const from = subDays(to, lengthDays - 1)
-  return { from, to }
-}
-
-function toDateInput(value: Date): string {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  const day = String(value.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
 }
 
 function percentChange(current: number | undefined, prior: number | undefined): number | null {

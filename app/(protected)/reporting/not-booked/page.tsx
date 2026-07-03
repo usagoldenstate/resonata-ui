@@ -5,16 +5,10 @@ import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import { AlertTriangle, ChevronLeft, Loader2, TrendingDown, TrendingUp } from "lucide-react"
 
+import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Sidebar } from "@/components/sidebar"
 import {
   ApiError,
@@ -23,7 +17,9 @@ import {
   fetchNotBookedBreakdown,
   fetchNotBookedSeasonality,
 } from "@/lib/api"
+import { dateRangeError, rangeForLastMonths, rangeForTimespan } from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
+import { useDebouncedValue } from "@/hooks/use-debounced-value"
 
 // Presentation-only: the category names + counts come from the backend taxonomy;
 // the UI keeps just the color mapping keyed on the stable category name.
@@ -36,13 +32,14 @@ const COLOR_BY_CATEGORY: Record<string, string> = {
 }
 const DEFAULT_COLOR = "bg-[#9ca3af]"
 
-const timespanOptions = [
-  { value: "7", label: "Last 7 days" },
-  { value: "14", label: "Last 14 days" },
-  { value: "30", label: "Last 30 days" },
-  { value: "90", label: "Last 90 days" },
-  { value: "year", label: "This year" },
-]
+const timespanOptions = makePresets(["7", "14", "30", "90", "year"])
+
+// Matches the backend's breakdown range cap so a too-wide custom range is
+// rejected client-side before it ever hits the network.
+const RANGE_CAP_DAYS = 366
+// Date inputs fire onChange per keystroke; the SWR key reads the debounced
+// value so only a settled range triggers a fetch.
+const FETCH_DEBOUNCE_MS = 400
 
 type LoadState<T> = {
   loading: boolean
@@ -54,14 +51,45 @@ export default function NotBookedReportingPage() {
   const router = useRouter()
   const {
     hotelId,
+    hotelTimezone,
     loading: hotelLoading,
     error: hotelError,
     accessState,
   } = useHotel()
   const [timespan, setTimespan] = useState("30")
+  // Custom-range inputs (YYYY-MM-DD), seeded from the last-30-days window.
+  const [customRange, setCustomRange] = useState(() => rangeForTimespan("30"))
+  const debouncedCustomStart = useDebouncedValue(customRange.start, FETCH_DEBOUNCE_MS)
+  const debouncedCustomEnd = useDebouncedValue(customRange.end, FETCH_DEBOUNCE_MS)
   const [selectedReason, setSelectedReason] = useState<string | null>(null)
 
-  const range = useMemo(() => rangeForTimespan(timespan), [timespan])
+  // Custom mode reads the debounced inputs so mid-edit values don't re-fetch;
+  // preset mode derives the window from the relative preset, anchored to the
+  // hotel's timezone (matching how the backend buckets records).
+  const range = useMemo(() => {
+    if (timespan === "custom") {
+      return { start: debouncedCustomStart, end: debouncedCustomEnd }
+    }
+    return rangeForTimespan(timespan, hotelTimezone)
+  }, [timespan, debouncedCustomStart, debouncedCustomEnd, hotelTimezone])
+
+  const customRangeError =
+    timespan === "custom"
+      ? dateRangeError(customRange.start, customRange.end, RANGE_CAP_DAYS)
+      : null
+  const debouncedRangeError =
+    timespan === "custom"
+      ? dateRangeError(debouncedCustomStart, debouncedCustomEnd, RANGE_CAP_DAYS)
+      : null
+
+  const selectTimespan = (value: string) => {
+    // Seed the custom inputs from the window the user was already viewing.
+    if (value === "custom" && timespan !== "custom") {
+      setCustomRange(rangeForTimespan(timespan, hotelTimezone))
+    }
+    setTimespan(value)
+  }
+
   // One response covers all categories × 12 months; the page filters
   // client-side, so this is fetched once per hotel instead of on every
   // category click.
@@ -77,7 +105,9 @@ export default function NotBookedReportingPage() {
     error: breakdownErrorRaw,
     mutate: refreshBreakdown,
   } = useSWR(
-    hotelId ? (["not-booked-breakdown", hotelId, range.start, range.end] as const) : null,
+    hotelId && !debouncedRangeError
+      ? (["not-booked-breakdown", hotelId, range.start, range.end] as const)
+      : null,
     ([, hid, start, end]) => fetchNotBookedBreakdown({ hotel_id: hid, start_date: start, end_date: end }),
   )
   const breakdown: LoadState<NotBookedBreakdownResponse> = {
@@ -202,22 +232,22 @@ export default function NotBookedReportingPage() {
                 ? `Detailed breakdown of ${selectedReason.toLowerCase()}-related issues`
                 : "Analyze why guests with booking intent didn't complete bookings"}
             </p>
+            <div className="mt-1">
+              <DateRangeFilter
+                variant="header"
+                presets={timespanOptions}
+                timespan={timespan}
+                range={range}
+                customStart={customRange.start}
+                customEnd={customRange.end}
+                rangeError={customRangeError}
+                onSelectTimespan={selectTimespan}
+                onCustomStart={(value) => setCustomRange((prev) => ({ ...prev, start: value }))}
+                onCustomEnd={(value) => setCustomRange((prev) => ({ ...prev, end: value }))}
+              />
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Select value={timespan} onValueChange={setTimespan}>
-              <SelectTrigger className="w-40 bg-card border-border">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {timespanOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
-          </div>
+          <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
         </div>
 
         {hotelLoading ? (
@@ -235,6 +265,7 @@ export default function NotBookedReportingPage() {
           />
         ) : null}
 
+        {customRangeError ? <Notice tone="error" message={customRangeError} /> : null}
         {breakdown.error ? <Notice tone="error" message={breakdown.error} /> : null}
         {isEmpty && !selectedReason ? (
           <Notice tone="muted" message="No not-booked calls found in this date range." />
@@ -537,41 +568,6 @@ function ChartState({
       </span>
     </div>
   )
-}
-
-function rangeForTimespan(timespan: string): { start: string; end: string } {
-  if (timespan === "year") {
-    const now = new Date()
-    return { start: toDateInput(new Date(now.getFullYear(), 0, 1)), end: toDateInput(now) }
-  }
-  const days = Number(timespan)
-  return rangeForLastDays(Number.isFinite(days) && days > 0 ? days : 30)
-}
-
-function rangeForLastDays(days: number): { start: string; end: string } {
-  const end = new Date()
-  const start = new Date()
-  start.setDate(end.getDate() - days + 1)
-  return { start: toDateInput(start), end: toDateInput(end) }
-}
-
-function rangeForLastMonths(months: number): { start: string; end: string } {
-  const end = new Date()
-  const start = new Date(end.getFullYear(), end.getMonth() - months + 1, 1)
-  return { start: toMonthInput(start), end: toMonthInput(end) }
-}
-
-function toDateInput(value: Date): string {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  const day = String(value.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
-
-function toMonthInput(value: Date): string {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  return `${year}-${month}`
 }
 
 function shortMonth(value: string): string {

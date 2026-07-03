@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, Fragment } from "react"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
-import { CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Loader2, Phone, Search, X } from "lucide-react"
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Loader2, Phone, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
@@ -27,9 +28,14 @@ import {
   fetchCalls,
   fetchNotBookedTaxonomy,
 } from "@/lib/api"
+import { dateRangeError, formatShortDate, rangeForLastDays } from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
 
 const PAGE_SIZE = 50
+
+// "All time" is the default: the call log lists every call unless a window is
+// chosen, unlike the reporting pages' rolling 30-day default.
+const datePresets = makePresets(["all", "7", "30", "90"])
 
 const outcomeFilterOptions: Array<{ value: "all" | CallOutcomeFilter; label: string }> = [
   { value: "all", label: "All outcomes" },
@@ -207,7 +213,7 @@ export default function CallLogPage() {
 }
 
 function CallLogPageInner() {
-  const { hotelId, hotels, loading: hotelLoading, accessState } = useHotel()
+  const { hotelId, hotels, hotelTimezone, loading: hotelLoading, accessState } = useHotel()
   const hotelName = hotels.find((h) => h.hotel_id === hotelId)?.display_name
 
   // Filters can arrive via URL params (drill-through from the Not Booked
@@ -227,11 +233,41 @@ function CallLogPageInner() {
   )
   const [dateFrom, setDateFrom] = useState(() => searchParams.get("date_from") ?? "")
   const [dateTo, setDateTo] = useState(() => searchParams.get("date_to") ?? "")
+  // Drill-through URLs carry explicit dates, so they land in custom mode;
+  // otherwise the log starts unfiltered ("All time").
+  const [dateTimespan, setDateTimespan] = useState(() =>
+    searchParams.get("date_from") || searchParams.get("date_to") ? "custom" : "all",
+  )
   const [callIdSearch, setCallIdSearch] = useState(() => searchParams.get("call_id") ?? "")
   const [offset, setOffset] = useState(0)
 
   // Debounce the Call ID box so we query once the user pauses, not per keystroke.
   const debouncedCallId = useDebouncedValue(callIdSearch, 300)
+
+  const selectDateTimespan = (value: string) => {
+    if (value === "all") {
+      setDateFrom("")
+      setDateTo("")
+    } else if (value !== "custom") {
+      const range = rangeForLastDays(Number(value), hotelTimezone)
+      setDateFrom(range.start)
+      setDateTo(range.end)
+    }
+    setDateTimespan(value)
+  }
+
+  // Custom ranges may be open-ended (only a from or only a to date), so
+  // validate only when both ends are set and derive a label for the partials.
+  const dateFilterError =
+    dateTimespan === "custom" && dateFrom && dateTo ? dateRangeError(dateFrom, dateTo) : null
+  const dateFilterLabel =
+    dateTimespan === "custom" && !(dateFrom && dateTo)
+      ? dateFrom
+        ? `From ${formatShortDate(dateFrom)}`
+        : dateTo
+          ? `Until ${formatShortDate(dateTo)}`
+          : "Custom range"
+      : undefined
 
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
 
@@ -437,22 +473,19 @@ function CallLogPageInner() {
           )}
 
           {/* Call-date range */}
-          <div className="flex items-center gap-2">
-            <CalendarIcon className="w-4 h-4 text-muted-foreground" />
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-36 bg-card border-border text-sm"
-            />
-            <span className="text-muted-foreground text-sm">to</span>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-36 bg-card border-border text-sm"
-            />
-          </div>
+          <DateRangeFilter
+            variant="toolbar"
+            presets={datePresets}
+            timespan={dateTimespan}
+            range={{ start: dateFrom, end: dateTo }}
+            customStart={dateFrom}
+            customEnd={dateTo}
+            rangeError={dateFilterError}
+            label={dateFilterLabel}
+            onSelectTimespan={selectDateTimespan}
+            onCustomStart={setDateFrom}
+            onCustomEnd={setDateTo}
+          />
 
           {hasFilters && (
             <Button
@@ -464,6 +497,7 @@ function CallLogPageInner() {
                 setNotBookedSubcategoryFilter("all")
                 setDateFrom("")
                 setDateTo("")
+                setDateTimespan("all")
                 setCallIdSearch("")
               }}
               className="text-muted-foreground hover:text-foreground"
