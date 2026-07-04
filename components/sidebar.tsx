@@ -16,6 +16,7 @@ import {
   Mic,
   Settings,
   Wrench,
+  FlaskConical,
   LogOut,
 } from "lucide-react"
 
@@ -205,6 +206,21 @@ export function Sidebar() {
           <Settings className="w-4 h-4 shrink-0" />
           Settings
         </Link>
+        {isPlatformAdmin ? (
+          <Link
+            href="/demo-hotels"
+            onClick={guardedNav}
+            className={cn(
+              "w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm transition-colors",
+              pathname === "/demo-hotels"
+                ? "bg-muted/60 text-sidebar-foreground font-medium"
+                : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
+            )}
+          >
+            <FlaskConical className="w-4 h-4 shrink-0" />
+            Demo Hotels
+          </Link>
+        ) : null}
         {isPlatformAdmin ? (
           <Link
             href="/dev-pages"

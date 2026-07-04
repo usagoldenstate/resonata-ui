@@ -830,3 +830,134 @@ export function fetchFaqOccurrences(
     opts,
   )
 }
+
+// ── Demo hotel builder (Demo Hotels page) ───────────────────────────────────
+//
+// Lets a platform admin spin up (or refresh) a mock-PMS demo hotel from a
+// single JSON spec, either hand-filled from a downloadable template or
+// drafted by a one-shot LLM web-search auto-fill. See DemoHotelSpec below —
+// the backend validates with `extra: "forbid"`, so the UI must never send
+// fields outside this shape.
+
+export type DemoHotelBasics = {
+  hotel_id: string
+  display_name: string
+  timezone: string
+  currency: string
+  agent_name?: string | null
+  first_message?: string | null
+  email_from?: string | null
+}
+
+export type DemoDepartmentInput = {
+  name: string
+  phone_number: string
+  routing_rules: string
+  is_default: boolean
+}
+
+export type DemoKnowledgeField = {
+  // A canonical KB field key (e.g. "cin", "petFee") when the value fits a
+  // built-in field, or any other key for overflow data. `label` is only set
+  // for overflow fields; canonical keys derive their label from the KB
+  // section template (see defaultSections() in the knowledge-base editor).
+  key: string
+  label?: string | null
+  value: string
+}
+
+export type DemoKnowledgeSection = {
+  // One of the fixed KB section ids (e.g. "overview", "checkin"). The display
+  // title comes from the section template, not the spec.
+  section_id: string
+  fields: DemoKnowledgeField[]
+}
+
+export type DemoRoomInput = {
+  room_type_id: string
+  room_name: string
+  description?: string | null
+  max_occupancy?: number
+  nightly_rate: string
+  rate_id?: string
+  rate_name?: string
+  available_count?: number
+  image_url?: string | null
+  metadata?: Record<string, string>
+}
+
+export type DemoHotelSpec = {
+  spec_version: 1
+  hotel: DemoHotelBasics
+  departments: DemoDepartmentInput[]
+  knowledge: DemoKnowledgeSection[]
+  rooms: DemoRoomInput[]
+}
+
+export type DemoHotelResult = {
+  hotel_id: string
+  // "validated" only appears when dry_run=true and the spec targets a
+  // hotel_id that doesn't already exist; a dry run against an *existing*
+  // demo hotel's id still reports "updated" so the review screen can warn
+  // before the real (non-dry-run) call overwrites it.
+  action: "created" | "updated" | "validated"
+  rooms_written: number
+  knowledge_entries_written: number
+  departments_written: number
+  room_mapping_refreshed: boolean
+  webhook_url: string
+}
+
+export type DemoSpecTemplate = {
+  spec_version: 1
+  json_schema: object
+  example: DemoHotelSpec
+  llm_prompt: string
+}
+
+export type DemoSpecDraft = {
+  spec: DemoHotelSpec
+  warnings: string[]
+}
+
+export function fetchDemoSpecTemplate(opts: Pick<Options, "signal"> = {}) {
+  return api<DemoSpecTemplate>("/api/v1/admin/demo-hotels/template", opts)
+}
+
+export function createDemoHotel(
+  spec: DemoHotelSpec,
+  opts: { dryRun?: boolean; signal?: AbortSignal } = {},
+) {
+  return api<DemoHotelResult>(
+    withQuery("/api/v1/admin/demo-hotels", { dry_run: opts.dryRun ?? false }),
+    { method: "POST", body: spec, signal: opts.signal },
+  )
+}
+
+// Single-pass LLM web-search draft. Slow (roughly 10-90s) — callers should
+// show progress and support cancellation via `signal`.
+export function autoFillDemoSpec(query: string, signal?: AbortSignal) {
+  return api<DemoSpecDraft>("/api/v1/admin/demo-hotels/auto-fill", {
+    method: "POST",
+    body: { query },
+    signal,
+  })
+}
+
+// Client-side filter — demo hotels are just hotels on the mock PMS adapter;
+// there's no separate backend flag for it.
+export function filterMockHotels(
+  hotels: AdminHotelListItem[],
+): AdminHotelListItem[] {
+  return hotels.filter((h) => h.pms_provider === "mock")
+}
+
+// Shared with the Room Mapping tab's "Refresh from PMS" action
+// (components/knowledge-base/room-mapping-tab.tsx calls the same route
+// inline) — exported here too so the Demo Hotels wizard's "retry room
+// mapping refresh" button doesn't have to duplicate the raw api() call.
+export function refreshHotelRoomTypes(hotelId: string) {
+  return api<unknown>(`/api/v1/admin/hotels/${hotelId}/room-types/refresh`, {
+    method: "POST",
+  })
+}
