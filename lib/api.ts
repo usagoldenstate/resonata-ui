@@ -97,6 +97,60 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
   return (await res.json()) as T
 }
 
+// Streaming variant of api(): POSTs and returns the raw Response so callers
+// can read an SSE body incrementally via res.body.getReader(). Same base URL,
+// auth, ngrok header, and non-2xx -> ApiError semantics as api(). Used by the
+// reporting insights chat (lib/reporting-chat.ts) — EventSource can't POST or
+// send an Authorization header, hence fetch + reader.
+export async function apiStream(
+  path: string,
+  opts: { body: unknown; signal?: AbortSignal },
+): Promise<Response> {
+  if (!env.apiUrl) {
+    throw new ApiError(
+      0,
+      path,
+      "NEXT_PUBLIC_API_URL is not set — UI cannot reach the backend.",
+    )
+  }
+  const url = `${env.apiUrl.replace(/\/$/, "")}${path}`
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true",
+  }
+  const token = await clerkTokenGetter?.()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(opts.body),
+    signal: opts.signal,
+  })
+
+  if (!res.ok) {
+    if (res.status === 401 && unauthorizedHandler) {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("resonata.selected_hotel_id")
+      }
+      await unauthorizedHandler()
+    }
+    let body: unknown = undefined
+    try {
+      body = await res.json()
+    } catch {
+      // non-JSON error body — keep going
+    }
+    throw new ApiError(res.status, url, `API ${res.status} for ${path}`, body)
+  }
+  if (!res.body) {
+    throw new ApiError(0, url, "Response body is not streamable in this browser.")
+  }
+  return res
+}
+
 export type CallMetricsSummary = {
   total_calls: number
   calls_booked: number

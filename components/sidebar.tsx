@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { useClerk } from "@clerk/nextjs"
 import {
   LayoutDashboard,
+  MessageSquareText,
   PhoneCall,
   BarChart3,
   CircleSlash,
@@ -41,6 +42,7 @@ const sections: NavSection[] = [
     accent: "insights",
     items: [
       { label: "Dashboard", href: "/", icon: <LayoutDashboard className="w-4 h-4" />, visible: featureFlags.showDashboard },
+      { label: "Ask Insights", href: "/reporting/chat", icon: <MessageSquareText className="w-4 h-4" />, visible: featureFlags.showReporting },
       { label: "Call Log", href: "/call-log", icon: <PhoneCall className="w-4 h-4" />, visible: true },
       { label: "Call Metrics", href: "/reporting/call-metrics", icon: <BarChart3 className="w-4 h-4" />, visible: featureFlags.showReporting },
       { label: "Not Booked Reasons", href: "/reporting/not-booked", icon: <CircleSlash className="w-4 h-4" />, visible: featureFlags.showReporting },
