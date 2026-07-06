@@ -15,6 +15,7 @@ function flag(raw: string | undefined): boolean {
 export const featureFlags = {
   showDashboard: flag(process.env.NEXT_PUBLIC_SHOW_DASHBOARD),
   showReporting: flag(process.env.NEXT_PUBLIC_SHOW_REPORTING),
+  showReportingChat: flag(process.env.NEXT_PUBLIC_SHOW_REPORTING_CHAT),
   showCallLog: true,
   showFaqs: true,
 } as const
@@ -22,6 +23,7 @@ export const featureFlags = {
 // Hidden-page routes that the proxy should redirect. Keep in one
 // place so sidebar + proxy stay in sync.
 export const pageFlagByPrefix: Array<{ prefix: string; visible: boolean }> = [
+  { prefix: "/reporting/chat", visible: featureFlags.showReporting && featureFlags.showReportingChat },
   { prefix: "/reporting", visible: featureFlags.showReporting },
 ]
 
