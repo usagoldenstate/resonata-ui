@@ -13,7 +13,11 @@ No test suite is configured.
 
 ## Architecture
 
-This is a Next.js 16 App Router + React 19 admin UI for the Resonata voice-agent backend. It is UI-only: there are no server routes under `app/api/`; every page talks directly to a FastAPI backend from the browser.
+This is a Next.js 16 App Router + React 19 admin UI for the Resonata voice-agent backend. It is UI-only: every page talks directly to a FastAPI backend from the browser; the only server route is `app/csp-report/route.ts`, a sink for browser CSP violation reports.
+
+### Security headers + CSP (`lib/csp.ts`, `proxy.ts`, `next.config.mjs`)
+
+A nonce-based Content-Security-Policy is built per-request in `proxy.ts` and enforced. Anything that loads from or connects to a **new external domain** must be allowlisted in `lib/csp.ts` or the browser blocks it (violations POST to `/csp-report` and appear in the devtools console / Vercel logs). Clerk's domains are derived from the publishable key. The per-request nonce is why all pages render dynamically (`headers()` in `app/layout.tsx` feeds it to `ClerkProvider`). Static fallback headers (`frame-ancestors`, `nosniff`, etc.) live in `next.config.mjs`.
 
 ### Backend boundary (`lib/api.ts`, `lib/env.ts`)
 

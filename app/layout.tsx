@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { headers } from 'next/headers'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ClerkProvider } from '@clerk/nextjs'
@@ -31,13 +32,18 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  // Set per-request by proxy.ts. ClerkProvider stamps it onto the clerk-js
+  // <script> tag so the CSP's script-src nonce covers it. Reading headers()
+  // here intentionally makes all pages dynamic — a per-request nonce can't
+  // live in prerendered static HTML.
+  const nonce = (await headers()).get('x-nonce') ?? undefined
   return (
-    <ClerkProvider>
+    <ClerkProvider nonce={nonce}>
       <html lang="en">
         <body className="font-sans antialiased">
           {children}
