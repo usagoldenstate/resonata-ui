@@ -692,7 +692,7 @@ function AutoFillCard({
                   className="pl-9"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="e.g. The Lake House on Canandaigua or lakehousecanandaigua.com"
+                  placeholder="The Grand Ashmont Hotel at thegrandashmonthotel.com"
                   onKeyDown={(e) => e.key === "Enter" && onAnalyze()}
                   maxLength={2000}
                   autoFocus

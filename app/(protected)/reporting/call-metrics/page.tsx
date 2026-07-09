@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import useSWR from "swr"
 import { AlertTriangle, CalendarDays, Loader2 } from "lucide-react"
 import {
@@ -25,7 +25,6 @@ import {
 import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -87,12 +86,6 @@ export default function CallMetricsReportingPage() {
   const [dailyEnd, setDailyEnd] = useState(() => rangeForLastDays(30).end)
   const [monthlyStart, setMonthlyStart] = useState(() => rangeForLastMonths(12).start)
   const [monthlyEnd, setMonthlyEnd] = useState(() => rangeForLastMonths(12).end)
-  const [minDuration, setMinDuration] = useState("0")
-
-  const minDurationSeconds = useMemo(() => {
-    const parsed = Number.parseInt(minDuration, 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
-  }, [minDuration])
 
   // Immediate values drive input validation messages so typos are flagged
   // right away; debounced values drive the SWR keys below so a fetch only
@@ -107,7 +100,6 @@ export default function CallMetricsReportingPage() {
   const debouncedDailyEnd = useDebouncedValue(dailyEnd, FETCH_DEBOUNCE_MS)
   const debouncedMonthlyStart = useDebouncedValue(monthlyStart, FETCH_DEBOUNCE_MS)
   const debouncedMonthlyEnd = useDebouncedValue(monthlyEnd, FETCH_DEBOUNCE_MS)
-  const debouncedMinDuration = useDebouncedValue(minDurationSeconds, FETCH_DEBOUNCE_MS)
 
   // Presets anchor to "today" in the hotel's timezone (matching how the
   // backend buckets calls), so recompute when the preset or hotel changes.
@@ -120,25 +112,18 @@ export default function CallMetricsReportingPage() {
 
   const summaryKey =
     hotelId && !dateRangeError(debouncedSummaryStart, debouncedSummaryEnd, DAILY_RANGE_CAP_DAYS)
-      ? ([
-          "call-metrics-summary",
-          hotelId,
-          debouncedSummaryStart,
-          debouncedSummaryEnd,
-          debouncedMinDuration,
-        ] as const)
+      ? (["call-metrics-summary", hotelId, debouncedSummaryStart, debouncedSummaryEnd] as const)
       : null
   const {
     data: summaryData,
     isLoading: summaryLoading,
     error: summaryErrorRaw,
     mutate: refreshSummary,
-  } = useSWR(summaryKey, ([, hid, start, end, minDur]) =>
+  } = useSWR(summaryKey, ([, hid, start, end]) =>
     fetchCallMetricsSummary({
       hotel_id: hid,
       start_date: start,
       end_date: end,
-      min_duration_seconds: minDur,
     }),
   )
   const summary: LoadState<CallMetricsSummary> = {
@@ -148,17 +133,13 @@ export default function CallMetricsReportingPage() {
   }
 
   const hourlyKey =
-    hotelId && chartView === "hourly"
-      ? (["call-metrics-hourly", hotelId, debouncedMinDuration] as const)
-      : null
+    hotelId && chartView === "hourly" ? (["call-metrics-hourly", hotelId] as const) : null
   const {
     data: hourlyData,
     isLoading: hourlyLoading,
     error: hourlyErrorRaw,
     mutate: refreshHourly,
-  } = useSWR(hourlyKey, ([, hid, minDur]) =>
-    fetchCallMetricsHourly({ hotel_id: hid, min_duration_seconds: minDur }),
-  )
+  } = useSWR(hourlyKey, ([, hid]) => fetchCallMetricsHourly({ hotel_id: hid }))
   const hourly: LoadState<CallMetricsHourlyResponse> = {
     loading: hourlyLoading,
     data: hourlyData ?? null,
@@ -169,25 +150,18 @@ export default function CallMetricsReportingPage() {
     hotelId &&
     chartView === "daily" &&
     !dateRangeError(debouncedDailyStart, debouncedDailyEnd, DAILY_RANGE_CAP_DAYS)
-      ? ([
-          "call-metrics-daily",
-          hotelId,
-          debouncedDailyStart,
-          debouncedDailyEnd,
-          debouncedMinDuration,
-        ] as const)
+      ? (["call-metrics-daily", hotelId, debouncedDailyStart, debouncedDailyEnd] as const)
       : null
   const {
     data: dailyData,
     isLoading: dailyLoading,
     error: dailyErrorRaw,
     mutate: refreshDaily,
-  } = useSWR(dailyKey, ([, hid, start, end, minDur]) =>
+  } = useSWR(dailyKey, ([, hid, start, end]) =>
     fetchCallMetricsDaily({
       hotel_id: hid,
       start_date: start,
       end_date: end,
-      min_duration_seconds: minDur,
     }),
   )
   const daily: LoadState<CallMetricsDailyRow[]> = {
@@ -200,25 +174,18 @@ export default function CallMetricsReportingPage() {
     hotelId &&
     chartView === "monthly" &&
     !monthRangeError(debouncedMonthlyStart, debouncedMonthlyEnd, MONTHLY_RANGE_CAP_MONTHS)
-      ? ([
-          "call-metrics-monthly",
-          hotelId,
-          debouncedMonthlyStart,
-          debouncedMonthlyEnd,
-          debouncedMinDuration,
-        ] as const)
+      ? (["call-metrics-monthly", hotelId, debouncedMonthlyStart, debouncedMonthlyEnd] as const)
       : null
   const {
     data: monthlyData,
     isLoading: monthlyLoading,
     error: monthlyErrorRaw,
     mutate: refreshMonthly,
-  } = useSWR(monthlyKey, ([, hid, start, end, minDur]) =>
+  } = useSWR(monthlyKey, ([, hid, start, end]) =>
     fetchCallMetricsMonthly({
       hotel_id: hid,
       start_month: start,
       end_month: end,
-      min_duration_seconds: minDur,
     }),
   )
   const monthly: LoadState<CallMetricsMonthlyRow[]> = {
@@ -253,16 +220,6 @@ export default function CallMetricsReportingPage() {
             </p>
           </div>
           <div className="flex items-end gap-3">
-            <label className="flex w-48 flex-col gap-1 text-xs text-muted-foreground">
-              Min duration
-              <Input
-                type="number"
-                min={0}
-                value={minDuration}
-                onChange={(event) => setMinDuration(event.target.value)}
-                className="h-9 bg-card text-sm text-foreground"
-              />
-            </label>
             <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
           </div>
         </div>
