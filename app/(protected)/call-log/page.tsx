@@ -5,6 +5,16 @@ import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
 import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Loader2, Phone, Search, X } from "lucide-react"
 import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -23,11 +33,13 @@ import {
   ApiError,
   type CallListItem,
   type CallOutcomeFilter,
+  deleteCall,
   fetchCallDetail,
   fetchCallRecording,
   fetchCalls,
   fetchNotBookedTaxonomy,
 } from "@/lib/api"
+import { useCurrentUser } from "@/lib/current-user-context"
 import { dateRangeError, formatShortDate, rangeForLastDays } from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
 
@@ -215,6 +227,7 @@ export default function CallLogPage() {
 function CallLogPageInner() {
   const { hotelId, hotels, hotelTimezone, loading: hotelLoading, accessState } = useHotel()
   const hotelName = hotels.find((h) => h.hotel_id === hotelId)?.display_name
+  const { isPlatformAdmin } = useCurrentUser()
 
   // Filters can arrive via URL params (drill-through from the Not Booked
   // Reasons page); they seed the initial state only.
@@ -350,6 +363,29 @@ function CallLogPageInner() {
 
   const toggleRow = (id: string) => {
     setExpandedRow((prev) => (prev === id ? null : id))
+  }
+
+  // Deletion is a two-step flow: the row's "x" only stages the call here
+  // (opening the confirmation dialog); the actual DELETE fires from the
+  // dialog's confirm action.
+  const [pendingDelete, setPendingDelete] = useState<CallListItem | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    const call = pendingDelete
+    setPendingDelete(null)
+    setDeletingId(call.id)
+    try {
+      await deleteCall(call.id)
+      setExpandedRow((prev) => (prev === call.id ? null : prev))
+      toast.success("Call deleted")
+      await refreshCalls()
+    } catch (err) {
+      toast.error(describeError(err))
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   const items = page?.items ?? []
@@ -520,6 +556,11 @@ function CallLogPageInner() {
                   <th className="p-4 font-medium">Outcome</th>
                   <th className="p-4 font-medium">Not Booked Reason</th>
                   <th className="p-4 font-medium">Notes</th>
+                  {isPlatformAdmin && (
+                    <th className="p-4 font-medium">
+                      <span className="sr-only">Delete</span>
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="text-sm">
@@ -574,10 +615,34 @@ function CallLogPageInner() {
                         <td className="p-4 text-muted-foreground max-w-xs truncate">
                           {call.summary ?? "—"}
                         </td>
+                        {isPlatformAdmin && (
+                          <td className="p-4">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Delete call ${call.provider_call_id}`}
+                              title="Delete call"
+                              disabled={deletingId !== null}
+                              onClick={(e) => {
+                                // The row's own click expands the transcript.
+                                e.stopPropagation()
+                                setPendingDelete(call)
+                              }}
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            >
+                              {deletingId === call.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <X className="w-4 h-4" />
+                              )}
+                            </Button>
+                          </td>
+                        )}
                       </tr>
                       {expandedRow === call.id && (
                         <tr key={`${call.id}-transcript`} className="bg-muted/20">
-                          <td colSpan={7} className="p-0">
+                          <td colSpan={isPlatformAdmin ? 8 : 7} className="p-0">
                             <div className="p-6 border-b border-border">
                               {transcript?.hasRecording && (
                                 <div className="mb-6">
@@ -684,6 +749,48 @@ function CallLogPageInner() {
             </Button>
           </div>
         </div>
+
+        {/* Delete confirmation — one shared dialog; the "x" buttons only stage
+            a call into pendingDelete, so deletion always passes through here. */}
+        <AlertDialog
+          open={pendingDelete !== null}
+          onOpenChange={(open) => {
+            if (!open) setPendingDelete(null)
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this call?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {pendingDelete && (
+                  <>
+                    This permanently deletes the call from{" "}
+                    {parseUtc(pendingDelete.created_at).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}{" "}
+                    (Call ID{" "}
+                    <span className="font-mono text-xs">{pendingDelete.provider_call_id}</span>
+                    ), including its transcript, recording, analytics, and survey
+                    responses. This cannot be undone.
+                  </>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => void confirmDelete()}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete call
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   )

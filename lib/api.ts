@@ -744,6 +744,15 @@ export function fetchCallDetail(callId: string, opts: Pick<Options, "signal"> = 
   return api<CallDetail>(`/api/v1/calls/${callId}`, opts)
 }
 
+// Platform-admin only: hard-deletes the call and everything hanging off it
+// (analytics, FAQ occurrences, identifiers, surveys, Vapi recording).
+export function deleteCall(callId: string) {
+  return api<void>(`/api/v1/calls/${callId}`, {
+    method: "DELETE",
+    parseJson: false,
+  })
+}
+
 // The generic api() helper always parses JSON, so recording audio needs its own
 // path: same auth headers, but it returns the raw audio/mpeg body as a Blob for
 // <audio> playback (the browser can't send the Clerk bearer on an <audio src>).
