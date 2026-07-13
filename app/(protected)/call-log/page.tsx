@@ -138,6 +138,16 @@ function formatDuration(seconds: number | null): string {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
+// Caller ID is stored E.164. Pretty-print US/Canada (+1) numbers as
+// (AAA) BBB-CCCC; leave any other country's number as-is. Null = the caller
+// withheld/blocked their number (or the row was erased).
+function formatCallerPhone(e164: string | null): string {
+  if (!e164) return "—"
+  const us = e164.match(/^\+1(\d{3})(\d{3})(\d{4})$/)
+  if (us) return `(${us[1]}) ${us[2]}-${us[3]}`
+  return e164
+}
+
 type TranscriptTurn = { speaker: "Agent" | "Guest" | "System"; text: string }
 
 // The backend stores transcripts as "User: ..." / "Assistant: ..." lines
@@ -551,6 +561,7 @@ function CallLogPageInner() {
                 <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
                   <th className="p-4 font-medium">Call Date</th>
                   <th className="p-4 font-medium">Time</th>
+                  <th className="p-4 font-medium">Caller</th>
                   <th className="p-4 font-medium">Call ID</th>
                   <th className="p-4 font-medium">Duration</th>
                   <th className="p-4 font-medium">Outcome</th>
@@ -593,6 +604,9 @@ function CallLogPageInner() {
                             hour: "numeric",
                             minute: "2-digit",
                           })}
+                        </td>
+                        <td className="p-4 text-card-foreground tabular-nums whitespace-nowrap">
+                          {formatCallerPhone(call.caller_phone_e164)}
                         </td>
                         <td className="p-4">
                           <CopyableCallId callId={call.provider_call_id} />
@@ -642,7 +656,7 @@ function CallLogPageInner() {
                       </tr>
                       {expandedRow === call.id && (
                         <tr key={`${call.id}-transcript`} className="bg-muted/20">
-                          <td colSpan={isPlatformAdmin ? 8 : 7} className="p-0">
+                          <td colSpan={isPlatformAdmin ? 9 : 8} className="p-0">
                             <div className="p-6 border-b border-border">
                               {transcript?.hasRecording && (
                                 <div className="mb-6">

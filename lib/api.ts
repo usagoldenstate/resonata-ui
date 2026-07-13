@@ -340,6 +340,8 @@ export type CallListItem = {
   hotel_id: string | null
   summary: string | null
   duration_seconds: number | null
+  // Plaintext caller ID (E.164); null for blocked/withheld callers or erased rows.
+  caller_phone_e164: string | null
   analytics: CallAnalyticsSummary | null
   // Server-derived: a PMS reservation was attributed to this call's link send.
   booked: boolean
@@ -371,6 +373,8 @@ export type CallDetail = {
   transcript: string | null
   summary: string | null
   duration_seconds: number | null
+  // Plaintext caller ID (E.164); null for blocked/withheld callers or erased rows.
+  caller_phone_e164: string | null
   // Server-derived: a playable Twilio recording is attached. The raw sid is never
   // exposed; audio is fetched by call_id through the authed proxy below.
   has_recording: boolean
