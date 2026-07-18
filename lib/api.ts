@@ -450,6 +450,10 @@ export type SynxisConfig = {
   synxis_hotel_id: string
   currency: string
   locale: string
+  // PMS id → Synxis code. Empty = passthrough of the PMS business codes;
+  // non-empty = allowlist (unmapped ids omit the URL param — search-page link).
+  room_type_mappings: Record<string, string>
+  rate_mappings: Record<string, string>
 }
 
 // The shape of `config` depends on `booking_engine_provider`; each provider's
@@ -470,6 +474,8 @@ export type BookingEngineState = {
 export type PmsCatalogRoomType = {
   room_type_id: string
   room_name: string
+  // PMS business short code (e.g. StayNTouch `SK`); null when the PMS has none.
+  room_code: string | null
 }
 
 export type PmsCatalogRate = {

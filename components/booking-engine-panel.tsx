@@ -3,13 +3,18 @@
 import * as React from "react"
 import {
   AlertTriangle,
+  ArrowLeftRight,
+  ArrowRight,
   CheckCircle2,
   ExternalLink,
+  Info,
   Link2,
   Loader2,
   Plus,
+  Puzzle,
   RefreshCw,
   Save,
+  Settings2,
   Trash2,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -53,6 +58,44 @@ function newRow(key = "", value = ""): KeyValueRow {
   return { id: nextRowId++, key, value }
 }
 
+// ── Shared presentation primitives ────────────────────────────────────────────
+
+// Section chrome: icon + title header strip over a padded body.
+function SectionCard({
+  icon,
+  title,
+  description,
+  children,
+}: {
+  icon: React.ReactNode
+  title: string
+  description?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-5 py-3.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground">
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          {description ? (
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              {description}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <div className="p-5">{children}</div>
+    </section>
+  )
+}
+
+// Selectable option card wrapping a RadioGroupItem: highlights when checked.
+const radioCardClass =
+  "flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/50 has-[[data-state=checked]]:border-primary/60 has-[[data-state=checked]]:bg-primary/5"
+
 // ── Panel (provider dispatcher) ───────────────────────────────────────────────
 
 export function BookingEnginePanel() {
@@ -74,10 +117,9 @@ export function BookingEnginePanel() {
       try {
         const engineState = await fetchBookingEngineState(hotelId, { signal })
         setState(engineState)
-        // The PMS catalog (room types + a live rate sample) only feeds the P3
-        // mapping editor. Synxis passes PMS room codes through untouched, so it
-        // skips the catalog round-trip entirely.
-        if (engineState.configurable && engineState.booking_engine_provider === "p3") {
+        // The PMS catalog (room types + a live rate sample) feeds both
+        // providers' mapping editors.
+        if (engineState.configurable) {
           try {
             setCatalog(await fetchBookingEnginePmsCatalog(hotelId, { signal }))
           } catch (e) {
@@ -146,6 +188,7 @@ export function BookingEnginePanel() {
         hotelId={hotelId}
         hotelName={hotelName}
         state={state}
+        catalog={catalog}
         onState={setState}
         onReload={() => void load()}
       />
@@ -190,32 +233,38 @@ function EditorHeader({
   onSave?: () => void
 }) {
   return (
-    <section className="rounded-lg border border-border p-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">
-            Booking Engine — {hotelName}
-          </h2>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Badge variant="default">{provider ?? "not set"}</Badge>
+    <section className="rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="text-base font-semibold text-foreground">Booking Engine</h2>
+            <Badge variant="secondary" className="font-mono">
+              {provider ?? "not set"}
+            </Badge>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="truncate text-sm text-muted-foreground">{hotelName}</span>
+            <span className="h-1 w-1 shrink-0 rounded-full bg-border" aria-hidden />
             {configValid ? (
-              <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Config valid
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400">
+                <CheckCircle2 className="h-3 w-3" /> Config valid
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-destructive">
-                <AlertTriangle className="h-3.5 w-3.5" /> Invalid config
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                <AlertTriangle className="h-3 w-3" /> Invalid config
               </span>
             )}
             {dirty ? (
-              <span className="text-xs font-medium text-amber-700">Unsaved changes</span>
+              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400">
+                Unsaved changes
+              </span>
             ) : null}
           </div>
           {!configValid && configError ? (
             <p className="mt-2 text-xs text-destructive">{configError}</p>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <Button
             type="button"
             variant="outline"
@@ -267,25 +316,72 @@ type SynxisFormState = {
   synxisHotelId: string
   currency: string
   locale: string
+  roomMode: MappingMode
+  // PMS room_type_id -> Synxis code draft (catalog rows; blank = unmapped)
+  roomCodes: Record<string, string>
+  rateMode: MappingMode
+  rateCodes: Record<string, string>
+  // Manual rows for rates the catalog sample didn't surface.
+  extraRateRows: KeyValueRow[]
 }
 
-function synxisFormFromConfig(config: Partial<SynxisConfig> | null): SynxisFormState {
-  return {
+function synxisFormFromConfig(
+  config: Partial<SynxisConfig> | null,
+  catalog: BookingEnginePmsCatalog | null,
+): SynxisFormState {
+  const roomMappings = config?.room_type_mappings ?? {}
+  const rateMappings = config?.rate_mappings ?? {}
+  const form: SynxisFormState = {
     baseUrl: config?.base_url ?? "",
     chainId: config?.chain_id ?? "",
     synxisHotelId: config?.synxis_hotel_id ?? "",
     currency: config?.currency ?? "USD",
     locale: config?.locale ?? "en-US",
+    // A saved config with empty mappings means passthrough; a missing config
+    // defaults to explicit mapping (the safe choice for a fresh hotel).
+    roomMode: config && Object.keys(roomMappings).length === 0 ? "passthrough" : "map",
+    roomCodes: { ...roomMappings },
+    rateMode: config && Object.keys(rateMappings).length === 0 ? "passthrough" : "map",
+    rateCodes: {},
+    extraRateRows: [],
   }
+  const catalogRateIds = new Set((catalog?.rates ?? []).map((rate) => rate.rate_id))
+  for (const [pmsId, synxisCode] of Object.entries(rateMappings)) {
+    if (catalogRateIds.has(pmsId)) {
+      form.rateCodes[pmsId] = synxisCode
+    } else {
+      form.extraRateRows.push(newRow(pmsId, synxisCode))
+    }
+  }
+  return form
 }
 
 function buildSynxisConfig(form: SynxisFormState): SynxisConfig {
+  const roomMappings: Record<string, string> = {}
+  if (form.roomMode === "map") {
+    for (const [pmsId, code] of Object.entries(form.roomCodes)) {
+      if (code.trim()) roomMappings[pmsId.trim()] = code.trim()
+    }
+  }
+  const rateMappings: Record<string, string> = {}
+  if (form.rateMode === "map") {
+    for (const [pmsId, code] of Object.entries(form.rateCodes)) {
+      if (code.trim()) rateMappings[pmsId.trim()] = code.trim()
+    }
+    for (const row of form.extraRateRows) {
+      if (row.key.trim() && row.value.trim()) {
+        rateMappings[row.key.trim()] = row.value.trim()
+      }
+    }
+  }
   return {
     base_url: form.baseUrl.trim(),
     chain_id: form.chainId.trim(),
     synxis_hotel_id: form.synxisHotelId.trim(),
     currency: form.currency.trim() || "USD",
     locale: form.locale.trim() || "en-US",
+    room_type_mappings: roomMappings,
+    rate_mappings: rateMappings,
   }
 }
 
@@ -293,21 +389,27 @@ function SynxisEditor({
   hotelId,
   hotelName,
   state,
+  catalog,
   onState,
   onReload,
 }: {
   hotelId: string
   hotelName: string
   state: BookingEngineState
+  catalog: BookingEnginePmsCatalog | null
   onState: (next: BookingEngineState) => void
   onReload: () => void
 }) {
   const [form, setForm] = React.useState<SynxisFormState>(() =>
-    synxisFormFromConfig(state.config as Partial<SynxisConfig> | null),
+    synxisFormFromConfig(state.config as Partial<SynxisConfig> | null, catalog),
   )
   const [savedSnapshot, setSavedSnapshot] = React.useState(() =>
     state.config_valid && state.config
-      ? JSON.stringify(buildSynxisConfig(synxisFormFromConfig(state.config as Partial<SynxisConfig>)))
+      ? JSON.stringify(
+          buildSynxisConfig(
+            synxisFormFromConfig(state.config as Partial<SynxisConfig>, catalog),
+          ),
+        )
       : "",
   )
   const [saving, setSaving] = React.useState(false)
@@ -315,12 +417,15 @@ function SynxisEditor({
   // Re-seed when the parent swaps `state` (after a save). Local edits don't
   // touch `state`, so this won't clobber in-progress typing.
   React.useEffect(() => {
-    const next = synxisFormFromConfig(state.config as Partial<SynxisConfig> | null)
+    const next = synxisFormFromConfig(
+      state.config as Partial<SynxisConfig> | null,
+      catalog,
+    )
     setForm(next)
     setSavedSnapshot(
       state.config_valid && state.config ? JSON.stringify(buildSynxisConfig(next)) : "",
     )
-  }, [state])
+  }, [state, catalog])
 
   const dirty = JSON.stringify(buildSynxisConfig(form)) !== savedSnapshot
   useUnsavedGuards(dirty, "You have unsaved booking engine changes. Leave anyway?")
@@ -368,9 +473,12 @@ function SynxisEditor({
         onSave={save}
       />
 
-      <section className="rounded-lg border border-border p-5">
-        <h3 className="text-sm font-semibold text-foreground">Synxis engine basics</h3>
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      <SectionCard
+        icon={<Settings2 className="h-4 w-4" />}
+        title="Synxis engine basics"
+        description="Connection details, copied from a live Synxis booking link."
+      >
+        <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="synxis-base-url">Booking engine base URL</Label>
             <Input
@@ -437,28 +545,92 @@ function SynxisEditor({
           </div>
         </div>
 
-        <Alert className="mt-5 border-border">
-          <AlertTriangle className="h-4 w-4" />
+        <Alert className="mt-5 border-border bg-muted/40">
+          <Info className="h-4 w-4" />
           <AlertTitle>How the link is built</AlertTitle>
           <AlertDescription>
-            Dates, room count, and per-room adults/children come from the call. The room
-            code passes through from the PMS room id (e.g. <code>JNR</code>). Verify with
-            a preview link before going live.
+            Dates, room count, and per-room adults/children come from the call. The{" "}
+            <code>room=</code> / <code>rate=</code> params carry Synxis&apos;s own codes —
+            mapped from the PMS ids below, or passed through from the PMS codes when no
+            mapping is set. PMS and Synxis codes often disagree (Heathman: PMS{" "}
+            <code>SK</code> vs Synxis <code>KBN</code>), so verify with a preview link
+            before going live.
           </AlertDescription>
         </Alert>
-      </section>
+      </SectionCard>
 
-      <SynxisPreviewSection hotelId={hotelId} form={form} />
+      <MappingSection
+        kind="room"
+        title="Room type mapping"
+        engineLabel="Synxis"
+        unmappedNote={SYNXIS_UNMAPPED_NOTE}
+        mode={form.roomMode}
+        onModeChange={(roomMode) => setForm((f) => ({ ...f, roomMode }))}
+        rows={(catalog?.room_types ?? []).map((rt) => ({
+          pmsId: rt.room_type_id,
+          label: `${rt.room_name}${rt.room_code ? ` (${rt.room_code})` : ""}`,
+        }))}
+        extraConfigIds={Object.keys(form.roomCodes).filter(
+          (id) => !(catalog?.room_types ?? []).some((rt) => rt.room_type_id === id),
+        )}
+        codes={form.roomCodes}
+        onCodeChange={(pmsId, code) =>
+          setForm((f) => ({ ...f, roomCodes: { ...f.roomCodes, [pmsId]: code } }))
+        }
+        catalogNote={
+          catalog
+            ? `${catalog.room_types.length} room types from the PMS catalog cache.`
+            : "PMS catalog unavailable — room types could not be listed."
+        }
+      />
+      <MappingSection
+        kind="rate"
+        title="Rate mapping"
+        engineLabel="Synxis"
+        unmappedNote={SYNXIS_UNMAPPED_NOTE}
+        mode={form.rateMode}
+        onModeChange={(rateMode) => setForm((f) => ({ ...f, rateMode }))}
+        rows={(catalog?.rates ?? []).map((rate) => ({
+          pmsId: rate.rate_id,
+          label: rate.rate_name
+            ? `${rate.rate_name}${rate.rate_code ? ` (${rate.rate_code})` : ""}`
+            : rate.rate_id,
+        }))}
+        extraConfigIds={[]}
+        codes={form.rateCodes}
+        onCodeChange={(pmsId, code) =>
+          setForm((f) => ({ ...f, rateCodes: { ...f.rateCodes, [pmsId]: code } }))
+        }
+        catalogNote={
+          catalog?.rates_error
+            ? catalog.rates_error
+            : catalog
+              ? `Rates discovered from a live availability sample (${catalog.sample_check_in} → ${catalog.sample_check_out}); the list may be incomplete — add missing rates below. Map only rates the Synxis booking engine actually sells.`
+              : "PMS catalog unavailable — enter rates manually below."
+        }
+        manualRows={form.extraRateRows}
+        onManualRowsChange={(extraRateRows) => setForm((f) => ({ ...f, extraRateRows }))}
+        manualKeyPlaceholder="PMS rate id"
+        manualValuePlaceholder="Synxis rate code"
+      />
+
+      <SynxisPreviewSection hotelId={hotelId} form={form} catalog={catalog} />
     </div>
   )
 }
 
+// Unlike P3 (unmapped = transfer, no link), a Synxis miss degrades gracefully.
+const SYNXIS_UNMAPPED_NOTE =
+  "Unmapped items are simply omitted from the link: the guest still gets an email, landing on the Synxis search page instead of a pre-selected room/rate."
+
 function SynxisPreviewSection({
   hotelId,
   form,
+  catalog,
 }: {
   hotelId: string
   form: SynxisFormState
+  catalog: BookingEnginePmsCatalog | null
 }) {
   const [checkIn, setCheckIn] = React.useState(() => isoDatePlus(14))
   const [checkOut, setCheckOut] = React.useState(() => isoDatePlus(16))
@@ -466,15 +638,27 @@ function SynxisPreviewSection({
   const [children, setChildren] = React.useState("0")
   const [rooms, setRooms] = React.useState("1")
   const [roomTypeId, setRoomTypeId] = React.useState("")
+  const [rateId, setRateId] = React.useState("")
   const [building, setBuilding] = React.useState(false)
   const [url, setUrl] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
+
+  const roomOptions = catalog?.room_types ?? []
+  const rateOptions = [
+    ...(catalog?.rates ?? []).map((r) => ({
+      id: r.rate_id,
+      label: r.rate_name ?? r.rate_id,
+    })),
+    ...form.extraRateRows
+      .filter((r) => r.key.trim())
+      .map((r) => ({ id: r.key.trim(), label: `${r.key.trim()} (manual)` })),
+  ]
 
   const generate = async () => {
     setError(null)
     setUrl(null)
     if (!roomTypeId.trim()) {
-      setError("Enter a room code first.")
+      setError("Pick a room type first.")
       return
     }
     setBuilding(true)
@@ -487,6 +671,7 @@ function SynxisPreviewSection({
         children: Number(children) || 0,
         rooms: Number(rooms) || 1,
         room_type_id: roomTypeId.trim(),
+        rate_id: rateId.trim(),
       })
       setUrl(result.url)
     } catch (e) {
@@ -497,13 +682,12 @@ function SynxisPreviewSection({
   }
 
   return (
-    <section className="rounded-lg border border-border p-5">
-      <h3 className="text-sm font-semibold text-foreground">Preview a checkout link</h3>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Builds a link from the form above — including unsaved changes — without saving or
-        emailing anything. Adults/children are per room.
-      </p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <SectionCard
+      icon={<Link2 className="h-4 w-4" />}
+      title="Preview a checkout link"
+      description="Builds a link from the form above — including unsaved changes — without saving or emailing anything. Adults/children are per room. The preview applies the mapping tables only: with mapping off (passthrough) or an unmapped selection, the room/rate params are omitted."
+    >
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div className="space-y-1.5">
           <Label htmlFor="synxis-prev-check-in">Check-in</Label>
           <Input
@@ -523,14 +707,53 @@ function SynxisPreviewSection({
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="synxis-prev-room">Room code</Label>
-          <Input
-            id="synxis-prev-room"
-            value={roomTypeId}
-            onChange={(e) => setRoomTypeId(e.target.value)}
-            placeholder="JNR"
-            className="font-mono"
-          />
+          <Label>Room type</Label>
+          {roomOptions.length > 0 ? (
+            <Select value={roomTypeId} onValueChange={setRoomTypeId}>
+              <SelectTrigger className="bg-card">
+                <SelectValue placeholder="Pick a room" />
+              </SelectTrigger>
+              <SelectContent>
+                {roomOptions.map((rt) => (
+                  <SelectItem key={rt.room_type_id} value={rt.room_type_id}>
+                    {rt.room_name}
+                    {rt.room_code ? ` (${rt.room_code})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={roomTypeId}
+              onChange={(e) => setRoomTypeId(e.target.value)}
+              placeholder="PMS room_type_id"
+              className="font-mono"
+            />
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label>Rate (optional)</Label>
+          {rateOptions.length > 0 ? (
+            <Select value={rateId} onValueChange={setRateId}>
+              <SelectTrigger className="bg-card">
+                <SelectValue placeholder="Pick a rate" />
+              </SelectTrigger>
+              <SelectContent>
+                {rateOptions.map((rate) => (
+                  <SelectItem key={rate.id} value={rate.id}>
+                    {rate.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={rateId}
+              onChange={(e) => setRateId(e.target.value)}
+              placeholder="PMS rate_id"
+              className="font-mono"
+            />
+          )}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="synxis-prev-adults">Adults (per room)</Label>
@@ -569,9 +792,17 @@ function SynxisPreviewSection({
       </Button>
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       {url ? (
-        <div className="mt-3 rounded-md border border-border bg-card p-3">
-          <p className="break-all font-mono text-xs text-foreground">{url}</p>
-          <Button asChild type="button" variant="outline" size="sm" className="mt-2">
+        <div className="mt-4 flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="min-w-0 break-all font-mono text-xs leading-5 text-foreground">
+            {url}
+          </p>
+          <Button
+            asChild
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 self-start sm:self-auto"
+          >
             <a href={url} target="_blank" rel="noreferrer">
               <ExternalLink className="h-4 w-4" />
               Open in new tab
@@ -579,7 +810,7 @@ function SynxisPreviewSection({
           </Button>
         </div>
       ) : null}
-    </section>
+    </SectionCard>
   )
 }
 
@@ -772,7 +1003,7 @@ function P3Editor({
         onModeChange={(roomMode) => setForm((f) => ({ ...f, roomMode }))}
         rows={(catalog?.room_types ?? []).map((rt) => ({
           pmsId: rt.room_type_id,
-          label: rt.room_name,
+          label: `${rt.room_name}${rt.room_code ? ` (${rt.room_code})` : ""}`,
         }))}
         extraConfigIds={Object.keys(form.roomCodes).filter(
           (id) => !(catalog?.room_types ?? []).some((rt) => rt.room_type_id === id),
@@ -831,9 +1062,12 @@ function P3BasicsSection({
   setForm: React.Dispatch<React.SetStateAction<P3FormState>>
 }) {
   return (
-    <section className="rounded-lg border border-border p-5">
-      <h3 className="text-sm font-semibold text-foreground">P3 engine basics</h3>
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+    <SectionCard
+      icon={<Settings2 className="h-4 w-4" />}
+      title="P3 engine basics"
+      description="Connection details, copied from a live P3 checkout URL."
+    >
+      <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="be-base-url">Booking engine base URL</Label>
           <Input
@@ -870,7 +1104,7 @@ function P3BasicsSection({
           }
           className="gap-3"
         >
-          <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3">
+          <label className={radioCardClass}>
             <RadioGroupItem value="rates_rooms_inline" className="mt-0.5" />
             <span>
               <span className="block text-sm font-medium text-foreground">
@@ -881,7 +1115,7 @@ function P3BasicsSection({
               </span>
             </span>
           </label>
-          <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3">
+          <label className={radioCardClass}>
             <RadioGroupItem value="trailing_rate_room" className="mt-0.5" />
             <span>
               <span className="block text-sm font-medium text-foreground">Trailing rate/room</span>
@@ -914,7 +1148,7 @@ function P3BasicsSection({
           </AlertDescription>
         </Alert>
       </div>
-    </section>
+    </SectionCard>
   )
 }
 
@@ -934,6 +1168,8 @@ function MappingSection({
   onManualRowsChange,
   manualKeyPlaceholder,
   manualValuePlaceholder,
+  engineLabel = "P3",
+  unmappedNote,
 }: {
   kind: "room" | "rate"
   title: string
@@ -948,96 +1184,121 @@ function MappingSection({
   onManualRowsChange?: (rows: KeyValueRow[]) => void
   manualKeyPlaceholder?: string
   manualValuePlaceholder?: string
+  // Copy overrides — defaults describe the P3 behavior (unmapped = transfer).
+  engineLabel?: string
+  unmappedNote?: string
 }) {
   const unmappedCount =
     mode === "map" ? rows.filter((row) => !(codes[row.pmsId] ?? "").trim()).length : 0
+  const unmappedBehavior =
+    unmappedNote ??
+    `Unmapped ${kind}s fail safe at call time: no link is sent and the caller is transferred to the front desk.`
 
   return (
-    <section className="rounded-lg border border-border p-5">
-      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+    <SectionCard icon={<ArrowLeftRight className="h-4 w-4" />} title={title}>
       <RadioGroup
         value={mode}
         onValueChange={(value) => onModeChange(value as MappingMode)}
-        className="mt-3 gap-3"
+        className="gap-3"
       >
-        <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3">
+        <label className={radioCardClass}>
           <RadioGroupItem value="passthrough" className="mt-0.5" />
           <span>
             <span className="block text-sm font-medium text-foreground">
               No mapping — use PMS codes as-is
             </span>
             <span className="block text-xs text-muted-foreground">
-              The PMS {kind} codes ARE the P3 codes. Verify with a preview link before
-              going live: a mismatch produces emailed dead links, not errors.
+              The PMS {kind} codes ARE the {engineLabel} codes. Verify with a preview
+              link before going live: a mismatch produces emailed dead links, not errors.
             </span>
           </span>
         </label>
-        <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3">
+        <label className={radioCardClass}>
           <RadioGroupItem value="map" className="mt-0.5" />
           <span>
             <span className="block text-sm font-medium text-foreground">
-              Map PMS codes to P3 codes
+              Map PMS codes to {engineLabel} codes
             </span>
-            <span className="block text-xs text-muted-foreground">
-              Unmapped {kind}s fail safe at call time: no link is sent and the caller is
-              transferred to the front desk.
-            </span>
+            <span className="block text-xs text-muted-foreground">{unmappedBehavior}</span>
           </span>
         </label>
       </RadioGroup>
 
       {mode === "map" ? (
-        <div className="mt-4">
+        <div className="mt-5">
           <p className="text-xs text-muted-foreground">{catalogNote}</p>
           {unmappedCount > 0 ? (
-            <p className="mt-1 text-xs font-medium text-amber-700">
-              {unmappedCount} {kind}
-              {unmappedCount === 1 ? "" : "s"} unmapped — callers selecting them will be
-              transferred instead of receiving a link.
+            <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                {unmappedCount} {kind}
+                {unmappedCount === 1 ? "" : "s"} unmapped — {unmappedBehavior}
+              </span>
+            </div>
+          ) : null}
+          {rows.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Nothing to prepopulate from the PMS.
             </p>
           ) : null}
-          <div className="mt-3 space-y-2">
-            {rows.map((row) => (
-              <div key={row.pmsId} className="flex items-center gap-3">
-                <div className="w-1/2 min-w-0">
-                  <p className="truncate text-sm text-foreground">{row.label}</p>
-                  <p className="truncate font-mono text-xs text-muted-foreground">{row.pmsId}</p>
-                </div>
-                <span className="text-muted-foreground">→</span>
-                <Input
-                  value={codes[row.pmsId] ?? ""}
-                  onChange={(e) => onCodeChange(row.pmsId, e.target.value)}
-                  placeholder={`P3 ${kind} code`}
-                  className="max-w-48 font-mono"
-                />
+          {rows.length > 0 || extraConfigIds.length > 0 ? (
+            <div className="mt-3 overflow-hidden rounded-lg border border-border">
+              <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-3 py-2">
+                <p className="w-1/2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  PMS {kind}
+                </p>
+                <span className="w-4 shrink-0" aria-hidden />
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {engineLabel} code
+                </p>
               </div>
-            ))}
-            {rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nothing to prepopulate from the PMS.
-              </p>
-            ) : null}
-            {extraConfigIds.map((pmsId) => (
-              <div key={pmsId} className="flex items-center gap-3">
-                <div className="w-1/2 min-w-0">
-                  <p className="truncate text-sm text-foreground">
-                    <span className="font-mono">{pmsId}</span>{" "}
-                    <span className="text-xs text-amber-700">(in saved config, not in PMS catalog)</span>
-                  </p>
-                </div>
-                <span className="text-muted-foreground">→</span>
-                <Input
-                  value={codes[pmsId] ?? ""}
-                  onChange={(e) => onCodeChange(pmsId, e.target.value)}
-                  className="max-w-48 font-mono"
-                />
+              <div className="divide-y divide-border">
+                {rows.map((row) => (
+                  <div
+                    key={row.pmsId}
+                    className="flex items-center gap-3 px-3 py-2 transition-colors hover:bg-muted/30"
+                  >
+                    <div className="w-1/2 min-w-0">
+                      <p className="truncate text-sm text-foreground">{row.label}</p>
+                      <p className="truncate font-mono text-xs text-muted-foreground">{row.pmsId}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+                    <Input
+                      value={codes[row.pmsId] ?? ""}
+                      onChange={(e) => onCodeChange(row.pmsId, e.target.value)}
+                      placeholder={`${engineLabel} ${kind} code`}
+                      className="max-w-48 font-mono"
+                    />
+                  </div>
+                ))}
+                {extraConfigIds.map((pmsId) => (
+                  <div
+                    key={pmsId}
+                    className="flex items-center gap-3 px-3 py-2 transition-colors hover:bg-muted/30"
+                  >
+                    <div className="w-1/2 min-w-0">
+                      <p className="truncate text-sm text-foreground">
+                        <span className="font-mono">{pmsId}</span>{" "}
+                        <span className="text-xs text-amber-700 dark:text-amber-400">
+                          (in saved config, not in PMS catalog)
+                        </span>
+                      </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+                    <Input
+                      value={codes[pmsId] ?? ""}
+                      onChange={(e) => onCodeChange(pmsId, e.target.value)}
+                      className="max-w-48 font-mono"
+                    />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ) : null}
 
           {manualRows && onManualRowsChange ? (
-            <div className="mt-4 border-t border-border pt-4">
-              <p className="text-xs text-muted-foreground">
+            <div className="mt-5 border-t border-border pt-4">
+              <p className="text-xs font-medium text-muted-foreground">
                 Additional {kind}s not shown above:
               </p>
               <div className="mt-2 space-y-2">
@@ -1055,7 +1316,7 @@ function MappingSection({
                       placeholder={manualKeyPlaceholder}
                       className="max-w-56 font-mono"
                     />
-                    <span className="text-muted-foreground">→</span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
                     <Input
                       value={row.value}
                       onChange={(e) =>
@@ -1095,7 +1356,7 @@ function MappingSection({
           ) : null}
         </div>
       ) : null}
-    </section>
+    </SectionCard>
   )
 }
 
@@ -1110,16 +1371,20 @@ function AddonSection({
 }) {
   const setRows = (addonRows: KeyValueRow[]) => setForm((f) => ({ ...f, addonRows }))
   return (
-    <section className="rounded-lg border border-border p-5">
-      <h3 className="text-sm font-semibold text-foreground">Add-on mapping (optional)</h3>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Maps PMS add-on ids (what <code>lookup_available_addons</code> returns, e.g.{" "}
-        <code>pet_fee</code>) to P3 &quot;Choose Extras&quot; query keys (e.g. <code>PET</code>,
-        from a captured checkout URL). Leave empty if the hotel sells no add-ons via the
-        link — there is no pass-through for add-ons: an unmapped add-on blocks the link
-        and transfers the caller.
-      </p>
-      <div className="mt-3 space-y-2">
+    <SectionCard
+      icon={<Puzzle className="h-4 w-4" />}
+      title="Add-on mapping (optional)"
+      description={
+        <>
+          Maps PMS add-on ids (what <code>lookup_available_addons</code> returns, e.g.{" "}
+          <code>pet_fee</code>) to P3 &quot;Choose Extras&quot; query keys (e.g.{" "}
+          <code>PET</code>, from a captured checkout URL). Leave empty if the hotel sells
+          no add-ons via the link — there is no pass-through for add-ons: an unmapped
+          add-on blocks the link and transfers the caller.
+        </>
+      }
+    >
+      <div className="space-y-2">
         {form.addonRows.map((row) => (
           <div key={row.id} className="flex items-center gap-3">
             <Input
@@ -1134,7 +1399,7 @@ function AddonSection({
               placeholder="PMS add-on id (pet_fee)"
               className="max-w-56 font-mono"
             />
-            <span className="text-muted-foreground">→</span>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
             <Input
               value={row.value}
               onChange={(e) =>
@@ -1168,7 +1433,7 @@ function AddonSection({
         <Plus className="h-4 w-4" />
         Add add-on
       </Button>
-    </section>
+    </SectionCard>
   )
 }
 
@@ -1231,13 +1496,12 @@ function P3PreviewSection({
   }
 
   return (
-    <section className="rounded-lg border border-border p-5">
-      <h3 className="text-sm font-semibold text-foreground">Preview a checkout link</h3>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Builds a link from the form above — including unsaved changes — without saving or
-        emailing anything. Open it to verify it lands on a working P3 checkout page.
-      </p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <SectionCard
+      icon={<Link2 className="h-4 w-4" />}
+      title="Preview a checkout link"
+      description="Builds a link from the form above — including unsaved changes — without saving or emailing anything. Open it to verify it lands on a working P3 checkout page."
+    >
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div className="space-y-1.5">
           <Label htmlFor="prev-check-in">Check-in</Label>
           <Input
@@ -1267,6 +1531,7 @@ function P3PreviewSection({
                 {roomOptions.map((rt) => (
                   <SelectItem key={rt.room_type_id} value={rt.room_type_id}>
                     {rt.room_name}
+                    {rt.room_code ? ` (${rt.room_code})` : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1331,9 +1596,17 @@ function P3PreviewSection({
       </Button>
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       {url ? (
-        <div className="mt-3 rounded-md border border-border bg-card p-3">
-          <p className="break-all font-mono text-xs text-foreground">{url}</p>
-          <Button asChild type="button" variant="outline" size="sm" className="mt-2">
+        <div className="mt-4 flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="min-w-0 break-all font-mono text-xs leading-5 text-foreground">
+            {url}
+          </p>
+          <Button
+            asChild
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 self-start sm:self-auto"
+          >
             <a href={url} target="_blank" rel="noreferrer">
               <ExternalLink className="h-4 w-4" />
               Open in new tab
@@ -1341,7 +1614,7 @@ function P3PreviewSection({
           </Button>
         </div>
       ) : null}
-    </section>
+    </SectionCard>
   )
 }
 
@@ -1356,7 +1629,7 @@ function isoDatePlus(days: number): string {
 function Notice({ tone, message }: { tone: "muted" | "error"; message: string }) {
   return (
     <div
-      className={`rounded-md border px-3 py-2 text-sm ${
+      className={`rounded-lg border bg-card px-4 py-3 text-sm shadow-sm ${
         tone === "error"
           ? "border-destructive/30 text-destructive"
           : "border-border text-muted-foreground"
