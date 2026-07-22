@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import {
   Building2,
   Key,
@@ -16,6 +16,7 @@ import {
   Mic,
   Accessibility,
   Search,
+  SearchX,
   Check,
   ChevronRight,
   Plus,
@@ -781,8 +782,141 @@ function formatScrapeError(e: unknown): string {
 }
 
 
+// ─── Knowledge Base Search ───
+//
+// Flat keyword scan over everything the editor holds: plain fields, catalog
+// meta + items, pool cards, and venue cards. Each hit carries the DOM id of
+// the row it lives in (`targetId`) so jumping to a result can scroll to and
+// flash the exact row, plus the pool/venue id when that row starts collapsed.
+interface SearchHit {
+  sectionId: string
+  sectionTitle: string
+  targetId: string
+  label: string
+  value: string
+  expandKind?: "pool" | "venue"
+  expandId?: string
+}
+
+function textMatches(q: string, ...texts: (string | null | undefined)[]): boolean {
+  return texts.some((t) => !!t && t.toLowerCase().includes(q))
+}
+
+function collectHits(sections: Section[], rawQuery: string): SearchHit[] {
+  const q = rawQuery.toLowerCase()
+  const hits: SearchHit[] = []
+
+  for (const s of sections) {
+    const push = (targetId: string, label: string, value: string, extra?: Pick<SearchHit, "expandKind" | "expandId">) =>
+      hits.push({ sectionId: s.id, sectionTitle: s.title, targetId, label, value, ...extra })
+
+    // Empty fields still match on their label — searching "pet fee" should
+    // surface the field that's waiting to be filled in, not hide it.
+    for (const f of s.fields || []) {
+      if (textMatches(q, f.label, f.value)) push(`kb-${s.id}-${f.key}`, f.label, f.value)
+    }
+    for (const m of s.meta || []) {
+      if (textMatches(q, m.label, m.value)) push(`kb-${s.id}-meta-${m.key}`, m.label, m.value)
+    }
+
+    if (s.type === "catalog") {
+      for (const item of s.items || []) {
+        for (const col of s.schema || []) {
+          const val = item[col.key] || ""
+          if (val && textMatches(q, col.label, val)) {
+            push(`kb-${s.id}-item-${item.id}`, `${item.name || s.itemLabel || "Item"} · ${col.label}`, val)
+          }
+        }
+      }
+    }
+
+    if (s.type === "pool") {
+      for (const p of s.pools || []) {
+        const features = [
+          p.heated && "Heated",
+          p.hotTub && "Hot Tub / Jacuzzi",
+          p.poolsideService && "Poolside Service",
+          p.poolBar && "Pool Bar",
+          p.cabanas && "Cabanas",
+        ]
+          .filter(Boolean)
+          .join(", ")
+        const pairs: [string, string][] = [
+          ["Name", p.name],
+          ["Type", p.poolType],
+          ["Hours & Seasonality", p.hours],
+          ["Features", features],
+          ["Cabana Surcharge", p.cabanaSurcharge],
+          ["Other Pool Info", p.otherInfo],
+        ]
+        for (const [label, value] of pairs) {
+          if (value && textMatches(q, label, value)) {
+            push(`kb-${s.id}-pool-${p.id}`, `${p.name || "Untitled Pool"} · ${label}`, value, {
+              expandKind: "pool",
+              expandId: p.id,
+            })
+          }
+        }
+      }
+    }
+
+    if (s.type === "venue") {
+      for (const v of s.venues || []) {
+        const pairs: [string, string][] = [
+          ["Venue Name", v.name],
+          ["Capacity", v.capacity],
+          ["Description", v.description],
+        ]
+        for (const [label, value] of pairs) {
+          if (value && textMatches(q, label, value)) {
+            push(`kb-${s.id}-venue-${v.id}`, `${v.name || "Untitled Venue"} · ${label}`, value, {
+              expandKind: "venue",
+              expandId: v.id,
+            })
+          }
+        }
+      }
+    }
+  }
+
+  return hits
+}
+
+// Trim long values to a window around the first match so a paragraph-length
+// description doesn't blow out the result row.
+function makeSnippet(text: string, query: string, radius = 70): string {
+  const idx = text.toLowerCase().indexOf(query.toLowerCase())
+  if (idx < 0 || text.length <= radius * 2) return text
+  const start = Math.max(0, idx - radius)
+  const end = Math.min(text.length, idx + query.length + radius)
+  return (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "")
+}
+
+function Highlighted({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>
+  const lower = text.toLowerCase()
+  const q = query.toLowerCase()
+  const parts: React.ReactNode[] = []
+  let i = 0
+  for (;;) {
+    const idx = lower.indexOf(q, i)
+    if (idx === -1) {
+      parts.push(text.slice(i))
+      break
+    }
+    if (idx > i) parts.push(text.slice(i, idx))
+    parts.push(
+      <mark key={idx} className="bg-primary/15 text-primary rounded-sm px-0.5 font-medium">
+        {text.slice(idx, idx + q.length)}
+      </mark>,
+    )
+    i = idx + q.length
+  }
+  return <>{parts}</>
+}
+
 // ─── Knowledge Base Tab ───
-export function KnowledgeBaseTab({ 
+export function KnowledgeBaseTab({
   data, 
   setData, 
   onScrapeComplete 
@@ -801,6 +935,79 @@ export function KnowledgeBaseTab({
   const skipBlurRef = useRef(false)
   const [addingSec, setAddingSec] = useState(false)
   const [newSecTitle, setNewSecTitle] = useState("")
+
+  // ── Keyword search state ──
+  const [query, setQuery] = useState("")
+  const [flashId, setFlashId] = useState<string | null>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const trimmedQuery = query.trim()
+  const searching = trimmedQuery.length > 0
+
+  const hits = useMemo(
+    () => (searching ? collectHits(sections, trimmedQuery) : []),
+    [sections, trimmedQuery, searching],
+  )
+  const hitsBySection = useMemo(() => {
+    const m = new Map<string, SearchHit[]>()
+    for (const h of hits) {
+      const arr = m.get(h.sectionId)
+      if (arr) arr.push(h)
+      else m.set(h.sectionId, [h])
+    }
+    return m
+  }, [hits])
+  // Sections whose title matches show up in results even with no field hits,
+  // so searching "spa" always surfaces the Spa section itself.
+  const titleMatchIds = useMemo(() => {
+    if (!searching) return new Set<string>()
+    const q = trimmedQuery.toLowerCase()
+    return new Set(sections.filter((s) => s.title.toLowerCase().includes(q)).map((s) => s.id))
+  }, [sections, trimmedQuery, searching])
+  const resultSections = searching
+    ? sections.filter((s) => hitsBySection.has(s.id) || titleMatchIds.has(s.id))
+    : []
+
+  // ⌘K / Ctrl+K focuses the search box from anywhere on the tab.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
+  // After a jump, wait a beat for the target section to render, then scroll
+  // the flashed row into view; the highlight clears itself shortly after.
+  useEffect(() => {
+    if (!flashId) return
+    const scroll = setTimeout(() => {
+      document.getElementById(flashId)?.scrollIntoView({ behavior: "smooth", block: "center" })
+    }, 80)
+    const clear = setTimeout(() => setFlashId(null), 2200)
+    return () => {
+      clearTimeout(scroll)
+      clearTimeout(clear)
+    }
+  }, [flashId])
+
+  const flashCls = (id: string) =>
+    flashId === id ? "bg-primary/10 ring-2 ring-primary/40 rounded-lg" : ""
+
+  const jumpToHit = (hit: SearchHit) => {
+    setActiveSec(hit.sectionId)
+    if (hit.expandKind === "pool" && hit.expandId) {
+      setExpandedPools((prev) => ({ ...prev, [hit.expandId!]: true }))
+    }
+    if (hit.expandKind === "venue" && hit.expandId) {
+      setExpandedVenues((prev) => ({ ...prev, [hit.expandId!]: true }))
+    }
+    setQuery("")
+    setFlashId(hit.targetId)
+  }
 
   // Two-way sync between local `sections` state and parent `data.sections`.
   // Identity comparison on both sides keeps the round-trip from looping:
@@ -1032,21 +1239,33 @@ export function KnowledgeBaseTab({
           {sections.map((s) => {
             let miss = (s.fields || []).filter((f) => f.confidence === "missing").length
             if (s.meta) miss += s.meta.filter((m) => m.confidence === "missing").length
+            const secHits = hitsBySection.get(s.id)?.length ?? 0
+            const dimmed = searching && secHits === 0 && !titleMatchIds.has(s.id)
             return (
               <button
                 key={s.id}
-                onClick={() => setActiveSec(s.id)}
+                onClick={() => {
+                  setActiveSec(s.id)
+                  if (searching) setQuery("")
+                }}
                 className={cn(
-                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors mb-0.5",
-                  activeSec === s.id ? "bg-primary/10 text-primary font-medium hover:bg-primary/15" : "text-muted-foreground hover:bg-primary/5 hover:text-foreground"
+                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-all mb-0.5",
+                  activeSec === s.id ? "bg-primary/10 text-primary font-medium hover:bg-primary/15" : "text-muted-foreground hover:bg-primary/5 hover:text-foreground",
+                  dimmed && "opacity-40"
                 )}
               >
                 <span className={activeSec === s.id ? "text-primary" : "text-muted-foreground/70"}>
                   {renderSecIcon(s)}
                 </span>
                 <span className="flex-1 truncate">{s.title}</span>
-                {miss > 0 && (
-                  <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">{miss}</span>
+                {searching ? (
+                  secHits > 0 && (
+                    <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">{secHits}</span>
+                  )
+                ) : (
+                  miss > 0 && (
+                    <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">{miss}</span>
+                  )
                 )}
               </button>
             )
@@ -1096,6 +1315,123 @@ export function KnowledgeBaseTab({
 
       {/* Main content */}
       <div className="flex-1 p-6 overflow-y-auto">
+        {/* Keyword search */}
+        <div className="relative mb-5">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Input
+            ref={searchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setQuery("")
+                e.currentTarget.blur()
+              }
+            }}
+            placeholder="Search the knowledge base…"
+            className="pl-10 pr-16 h-10 bg-muted/40 focus-visible:bg-background transition-colors"
+          />
+          {query ? (
+            <button
+              onClick={() => setQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Clear search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          ) : (
+            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              ⌘K
+            </kbd>
+          )}
+        </div>
+
+        {searching ? (
+          /* Search results */
+          <div className="space-y-4 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between px-1">
+              <div className="text-sm text-muted-foreground">
+                {hits.length === 0 && resultSections.length === 0 ? (
+                  <>No matches for <span className="font-medium text-foreground">“{trimmedQuery}”</span></>
+                ) : (
+                  <>
+                    <span className="font-semibold text-foreground">{hits.length}</span>
+                    {hits.length === 1 ? " match" : " matches"} across{" "}
+                    <span className="font-semibold text-foreground">{resultSections.length}</span>
+                    {resultSections.length === 1 ? " section" : " sections"}
+                  </>
+                )}
+              </div>
+              <button onClick={() => setQuery("")} className="text-xs font-medium text-primary hover:underline">
+                Clear search
+              </button>
+            </div>
+
+            {resultSections.length === 0 ? (
+              <Card>
+                <CardContent className="py-14 flex flex-col items-center text-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                    <SearchX className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                  <div className="text-sm font-medium text-foreground">Nothing found</div>
+                  <div className="text-xs text-muted-foreground max-w-sm leading-relaxed">
+                    Try a different keyword — search covers every section, field, dining venue, pool, and event space.
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              resultSections.map((s) => {
+                const secHits = hitsBySection.get(s.id) ?? []
+                return (
+                  <Card key={s.id} className="overflow-hidden py-0 gap-0">
+                    <button
+                      onClick={() => {
+                        setActiveSec(s.id)
+                        setQuery("")
+                      }}
+                      className="w-full flex items-center gap-2.5 px-5 py-3.5 bg-muted/40 hover:bg-muted/70 transition-colors text-left"
+                    >
+                      <span className="text-primary">{renderSecIcon(s)}</span>
+                      <span className="text-sm font-semibold text-foreground flex-1">
+                        <Highlighted text={s.title} query={trimmedQuery} />
+                      </span>
+                      {secHits.length > 0 && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          {secHits.length} {secHits.length === 1 ? "match" : "matches"}
+                        </Badge>
+                      )}
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                    {secHits.length > 0 && (
+                      <div className="divide-y divide-border border-t border-border">
+                        {secHits.map((h) => (
+                          <button
+                            key={`${h.targetId}-${h.label}`}
+                            onClick={() => jumpToHit(h)}
+                            className="w-full flex items-start gap-3 px-5 py-3 text-left hover:bg-primary/5 transition-colors group"
+                          >
+                            <span className="w-44 shrink-0 text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+                              <Highlighted text={h.label} query={trimmedQuery} />
+                            </span>
+                            <span className="flex-1 min-w-0 text-sm text-foreground leading-relaxed break-words">
+                              {h.value ? (
+                                <Highlighted text={makeSnippet(h.value, trimmedQuery)} query={trimmedQuery} />
+                              ) : (
+                                <span className="italic text-muted-foreground/60">Not filled in yet</span>
+                              )}
+                            </span>
+                            <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                )
+              })
+            )}
+          </div>
+        ) : (
+          <>
         {activeSec === "overview" && (
           <AutoFillCard onScrapeComplete={onScrapeComplete} hasData={hasData} />
         )}
@@ -1121,7 +1457,7 @@ export function KnowledgeBaseTab({
                       {sec.meta.map((field) => {
                         const editing = editingField === `meta_${field.key}`
                         return (
-                          <div key={field.key} className="flex items-start gap-3 py-2.5 border-b border-border last:border-0">
+                          <div key={field.key} id={`kb-${sec.id}-meta-${field.key}`} className={cn("flex items-start gap-3 py-2.5 border-b border-border last:border-0 transition-all duration-500", flashCls(`kb-${sec.id}-meta-${field.key}`))}>
                             <div className="w-40 shrink-0 pt-0.5">
                               <div className="text-sm font-medium text-muted-foreground">{field.label}</div>
                             </div>
@@ -1180,7 +1516,7 @@ export function KnowledgeBaseTab({
                     {sec.itemLabel || "Items"} ({sec.items?.length || 0})
                   </div>
                   {(sec.items || []).map((item, i) => (
-                    <div key={item.id} className="bg-muted/50 border border-border rounded-lg p-4 mb-2.5">
+                    <div key={item.id} id={`kb-${sec.id}-item-${item.id}`} className={cn("bg-muted/50 border border-border rounded-lg p-4 mb-2.5 transition-all duration-500", flashId === `kb-${sec.id}-item-${item.id}` && "ring-2 ring-primary/40 bg-primary/10")}>
                       <div className="flex gap-2.5 items-end flex-wrap">
                         {(sec.schema || []).map((col) => (
                           <div key={col.key} style={{ flex: col.flex }} className="min-w-0">
@@ -1228,7 +1564,7 @@ export function KnowledgeBaseTab({
                   {(sec.pools || []).map((pool) => {
                     const isExpanded = expandedPools[pool.id] !== false // Default expanded
                     return (
-                      <div key={pool.id} className="border border-border rounded-lg overflow-hidden">
+                      <div key={pool.id} id={`kb-${sec.id}-pool-${pool.id}`} className={cn("border border-border rounded-lg overflow-hidden transition-all duration-500", flashId === `kb-${sec.id}-pool-${pool.id}` && "ring-2 ring-primary/40")}>
                         {/* Pool Header */}
                         <div 
                           className="flex items-center justify-between px-4 py-3 bg-muted/50 cursor-pointer"
@@ -1412,7 +1748,7 @@ export function KnowledgeBaseTab({
                       const editing = editingField === field.key
                       const editingLabel = editingField === `label_${field.key}`
                       return (
-                        <div key={field.key} className="flex items-start gap-3 py-3 border-b border-border last:border-0">
+                        <div key={field.key} id={`kb-${sec.id}-${field.key}`} className={cn("flex items-start gap-3 py-3 border-b border-border last:border-0 transition-all duration-500", flashCls(`kb-${sec.id}-${field.key}`))}>
                           <div className="w-44 shrink-0 pt-0.5">
                             {field.custom && editingLabel ? (
                               <Input
@@ -1509,7 +1845,7 @@ export function KnowledgeBaseTab({
                   {(sec.venues || []).map((venue) => {
                     const isExpanded = expandedVenues[venue.id] !== false // Default expanded
                     return (
-                      <div key={venue.id} className="border border-border rounded-lg overflow-hidden">
+                      <div key={venue.id} id={`kb-${sec.id}-venue-${venue.id}`} className={cn("border border-border rounded-lg overflow-hidden transition-all duration-500", flashId === `kb-${sec.id}-venue-${venue.id}` && "ring-2 ring-primary/40")}>
                         {/* Venue Header */}
                         <div 
                           className="flex items-center justify-between px-4 py-3 bg-muted/50 cursor-pointer"
@@ -1585,7 +1921,7 @@ export function KnowledgeBaseTab({
                         const editing = editingField === field.key
                         const editingLabel = editingField === `label_${field.key}`
                         return (
-                          <div key={field.key} className="flex items-start gap-3 py-3 border-b border-border last:border-0">
+                          <div key={field.key} id={`kb-${sec.id}-${field.key}`} className={cn("flex items-start gap-3 py-3 border-b border-border last:border-0 transition-all duration-500", flashCls(`kb-${sec.id}-${field.key}`))}>
                             <div className="w-44 shrink-0 pt-0.5">
                               {field.custom && editingLabel ? (
                                 <Input
@@ -1680,7 +2016,7 @@ export function KnowledgeBaseTab({
                     const editing = editingField === field.key
                     const editingLabel = editingField === `label_${field.key}`
                     return (
-                      <div key={field.key} className="flex items-start gap-3 py-3 border-b border-border last:border-0">
+                      <div key={field.key} id={`kb-${sec.id}-${field.key}`} className={cn("flex items-start gap-3 py-3 border-b border-border last:border-0 transition-all duration-500", flashCls(`kb-${sec.id}-${field.key}`))}>
                         <div className="w-44 shrink-0 pt-0.5">
                           {field.custom && editingLabel ? (
                             <Input
@@ -1775,6 +2111,8 @@ export function KnowledgeBaseTab({
               )}
             </CardContent>
           </Card>
+        )}
+          </>
         )}
       </div>
     </div>
