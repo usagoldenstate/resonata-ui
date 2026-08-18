@@ -46,8 +46,8 @@ const FETCH_DEBOUNCE_MS = 400
 // Presentation-only: stable color per category name (matches the backend's
 // FAQ_CATEGORIES closed set). Unknown names fall back to a neutral tone.
 const CATEGORY_BADGE: Record<string, string> = {
-  Pricing: "bg-[#c4a84b]/10 text-[#a08930]",
-  Booking: "bg-[#6b7a4a]/10 text-[#6b7a4a]",
+  Pricing: "bg-[#b08a4e]/10 text-[#7a5e2e]",
+  Booking: "bg-[#e8622c]/10 text-[#e8622c]",
   Policies: "bg-[#8b5a3c]/10 text-[#8b5a3c]",
   Amenities: "bg-blue-500/10 text-blue-600",
   Services: "bg-purple-500/10 text-purple-600",
@@ -290,15 +290,15 @@ export default function FAQsPage() {
           <>
             {/* Top Question Highlight */}
             {topQuestion ? (
-              <Card className="border-border bg-[#6b7a4a]/5 mb-6">
+              <Card className="border-border bg-[#e8622c]/5 mb-6">
                 <CardContent className="p-5">
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-full bg-[#6b7a4a] flex items-center justify-center flex-shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-[#e8622c] flex items-center justify-center flex-shrink-0">
                       <Crown className="w-6 h-6 text-white" />
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-[#6b7a4a] uppercase tracking-wide">
+                        <span className="text-xs font-medium text-[#e8622c] uppercase tracking-wide">
                           Most Asked Question
                         </span>
                         <span className="text-xs text-muted-foreground">
@@ -327,8 +327,8 @@ export default function FAQsPage() {
               <Card className="border-border">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                      <MessageSquare className="w-5 h-5 text-[#6b7a4a]" />
+                    <div className="w-10 h-10 rounded-lg bg-[#e8622c]/10 flex items-center justify-center">
+                      <MessageSquare className="w-5 h-5 text-[#e8622c]" />
                     </div>
                     <div>
                       <p className="text-2xl font-semibold text-card-foreground">
@@ -342,8 +342,8 @@ export default function FAQsPage() {
               <Card className="border-border">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                      <span className="text-[#6b7a4a] font-semibold text-sm">#</span>
+                    <div className="w-10 h-10 rounded-lg bg-[#e8622c]/10 flex items-center justify-center">
+                      <span className="text-[#e8622c] font-semibold text-sm">#</span>
                     </div>
                     <div>
                       <p className="text-2xl font-semibold text-card-foreground">
@@ -354,7 +354,7 @@ export default function FAQsPage() {
                         {priorDelta !== null ? (
                           <span
                             className={`inline-flex items-center gap-0.5 ${
-                              priorDelta > 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"
+                              priorDelta > 0 ? "text-[#e8622c]" : "text-[#8b5a3c]"
                             }`}
                           >
                             {priorDelta > 0 ? (
@@ -404,7 +404,7 @@ export default function FAQsPage() {
                         </div>
                         <div className="h-3 bg-muted rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-[#6b7a4a] rounded-full transition-all"
+                            className="h-full bg-[#e8622c] rounded-full transition-all"
                             style={{ width: `${c.percentage}%` }}
                           />
                         </div>
@@ -550,8 +550,8 @@ export default function FAQsPage() {
                           className="p-5 hover:bg-muted/30 transition-colors"
                         >
                           <div className="flex items-start gap-4">
-                            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-[#6b7a4a]/10">
-                              <span className="text-sm font-semibold text-[#6b7a4a]">{rank}</span>
+                            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-[#e8622c]/10">
+                              <span className="text-sm font-semibold text-[#e8622c]">{rank}</span>
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-4 mb-2">

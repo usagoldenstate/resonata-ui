@@ -24,7 +24,6 @@ import {
 } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
-import { Card, CardContent } from "@/components/ui/card"
 import {
   Select,
   SelectContent,
@@ -239,13 +238,13 @@ export default function CallMetricsReportingPage() {
           />
         ) : null}
 
-        <section className="mb-8 rounded-lg border border-border p-4">
-          <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <section className="mb-10">
+          <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-foreground">
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
                 Conversion Metrics
               </h2>
-              <p className="text-xs text-muted-foreground">
+              <p className="mt-1 text-sm text-muted-foreground">
                 Based on call creation date in the hotel timezone
               </p>
             </div>
@@ -272,7 +271,7 @@ export default function CallMetricsReportingPage() {
           {summary.error ? <Notice tone="error" message={summary.error} /> : null}
           {summaryEmpty ? <Notice tone="muted" message="No calls found in this date range." /> : null}
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
               label="Total Call Volume"
               value={summary.loading ? "..." : formatNumber(summaryData?.total_calls)}
@@ -311,14 +310,13 @@ export default function CallMetricsReportingPage() {
           ) : null}
         </section>
 
-        <Card className="border-border">
-          <CardContent className="p-6">
-            <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <section>
+            <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <h2 className="text-sm font-medium uppercase tracking-wide text-card-foreground">
+                <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
                   Call Volume
                 </h2>
-                <p className="text-xs text-muted-foreground">
+                <p className="mt-1 text-sm text-muted-foreground">
                   Hourly averages, daily totals, and monthly seasonality
                 </p>
               </div>
@@ -360,11 +358,12 @@ export default function CallMetricsReportingPage() {
               </div>
             </div>
 
+            <div className="rounded-2xl bg-card p-6">
             {chartView === "hourly" ? <HourlyChart state={hourly} /> : null}
             {chartView === "daily" ? <DailyChart state={daily} /> : null}
             {chartView === "monthly" ? <MonthlyChart state={monthly} /> : null}
-          </CardContent>
-        </Card>
+            </div>
+        </section>
       </main>
     </div>
   )
@@ -409,7 +408,7 @@ function HourlyChart({ state }: { state: LoadState<CallMetricsHourlyResponse> })
               ]}
               labelFormatter={(label) => `Hour: ${label}`}
             />
-            <Bar dataKey="avg_calls" name="Avg calls" fill="#6b7a4a" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="avg_calls" name="Avg calls" fill="#e8622c" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -444,7 +443,7 @@ function DailyChart({ state }: { state: LoadState<CallMetricsDailyRow[]> }) {
             type="monotone"
             dataKey="calls"
             name="Calls"
-            stroke="#6b7a4a"
+            stroke="#e8622c"
             strokeWidth={2}
             dot={false}
             activeDot={{ r: 4 }}
@@ -487,7 +486,7 @@ function MonthlyChart({ state }: { state: LoadState<CallMetricsMonthlyRow[]> }) 
           <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
           <Tooltip labelFormatter={(label) => formatMonthLabel(String(label))} />
           <Legend />
-          <Bar dataKey="calls" name="Calls" fill="#6b7a4a" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="calls" name="Calls" fill="#e8622c" radius={[4, 4, 0, 0]} />
           <Bar dataKey="booked" name="Booked" fill="#c8aa5a" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
@@ -505,15 +504,13 @@ function MetricCard({
   hint?: string
 }) {
   return (
-    <Card className="border-border">
-      <CardContent className="p-6">
-        <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className="text-2xl font-semibold text-card-foreground">{value}</p>
-        {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
-      </CardContent>
-    </Card>
+    <div className="rounded-2xl bg-card px-5 py-5">
+      <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-primary">
+        {label}
+      </p>
+      <p className="text-3xl font-extrabold tracking-tight text-foreground">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
   )
 }
 

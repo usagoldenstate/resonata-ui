@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Resonata — panel treatments</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #0e0e10;
+      --muted: #5c5c66;
+      --cream: #f7f6f2;
+      --white: #fff;
+      --orange: #e8622c;
+      --gold: #b08a4e;
+      --tray: #efece4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.45 Mulish, ui-sans-serif, system-ui, sans-serif;
+      color: var(--ink);
+      background: var(--cream);
+    }
+    header {
+      padding: 18px 24px 8px;
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    header h1 { margin: 0 0 6px; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+    header p { margin: 0; max-width: 44rem; color: var(--muted); }
+    .grid {
+      display: grid;
+      gap: 28px;
+      padding: 16px 24px 48px;
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    figure { margin: 0; }
+    figcaption {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    figcaption span { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: 8px; }
+    .kicker { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--orange); }
+    .sub { font-size: 13px; color: var(--muted); margin: 4px 0 16px; }
+    .num { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; }
+    .label { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+
+    /* 1. Outline — what you already disliked */
+    .outline-panel {
+      background: var(--white);
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 16px;
+      padding: 22px;
+    }
+    .outline-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .outline-metric {
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .outline-row {
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-top: 12px;
+    }
+
+    /* 2. Tonal tiles — Material/Instatic: fill, not stroke */
+    .tonal-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .tonal-metric {
+      background: var(--white);
+      border-radius: 16px;
+      padding: 18px 16px;
+    }
+    .tonal-row {
+      background: var(--white);
+      border-radius: 16px;
+      padding: 14px 16px;
+      margin-top: 10px;
+    }
+
+    /* 3. Tray — outer recessed panel, inner white sheets */
+    .tray {
+      background: var(--tray);
+      border-radius: 20px;
+      padding: 8px;
+    }
+    .tray-label { padding: 10px 14px 4px; }
+    .tray-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 8px; }
+    .tray-metric { background: var(--white); border-radius: 14px; padding: 16px; }
+    .tray-row { background: var(--white); border-radius: 14px; padding: 14px 16px; margin: 0 8px 8px; }
+
+    /* 4. One sheet — one box for the section, rows are not boxed */
+    .sheet {
+      background: var(--white);
+      border-radius: 20px;
+      padding: 22px 24px;
+      box-shadow: 0 1px 0 rgba(14,14,16,0.04);
+    }
+    .sheet-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; padding-bottom: 18px; margin-bottom: 8px; border-bottom: 1px solid rgba(0,0,0,0.06); }
+    .sheet-row { padding: 14px 0; border-bottom: 1px solid rgba(0,0,0,0.06); }
+    .sheet-row:last-child { border-bottom: 0; padding-bottom: 0; }
+
+    .bar { height: 6px; background: rgba(14,14,16,0.06); border-radius: 99px; margin-top: 8px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; width: 38%; background: var(--orange); border-radius: 99px; }
+    .bar.zero > span { width: 0; }
+    .row-top { display: flex; justify-content: space-between; font-size: 14px; }
+    .row-top b { font-weight: 700; }
+    .row-top em { font-style: normal; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Boxed, but not outline cards</h1>
+    <p>Same Conversion Metrics + Price row, four container treatments. Outline is the old look. The other three still feel like boxes — they just don’t use a 1px gray stroke on every nested thing.</p>
+  </header>
+  <div class="grid">
+    <figure>
+      <figcaption>1. Outline <span>nested white cards + 1px borders — current default, feels like a template</span></figcaption>
+      <div class="outline-panel">
+        <div class="kicker">Conversion Metrics</div>
+        <div class="sub">Based on call creation date</div>
+        <div class="outline-metrics">
+          <div class="outline-metric"><div class="label">Total calls</div><div class="num">186</div></div>
+          <div class="outline-metric"><div class="label">Minutes</div><div class="num">412</div></div>
+          <div class="outline-metric"><div class="label">CSAT</div><div class="num">4.6</div></div>
+        </div>
+        <div class="outline-row">
+          <div class="row-top"><b>Price</b><em>0 (0%)</em></div>
+          <div class="bar zero"><span></span></div>
+        </div>
+      </div>
+    </figure>
+
+    <figure>
+      <figcaption>2. Tonal tiles <span>white sheets on cream, no stroke — still a box, depth from fill</span></figcaption>
+      <div>
+        <div class="kicker">Conversion Metrics</div>
+        <div class="sub">Based on call creation date</div>
+        <div class="tonal-metrics">
+          <div class="tonal-metric"><div class="label">Total calls</div><div class="num">186</div></div>
+          <div class="tonal-metric"><div class="label">Minutes</div><div class="num">412</div></div>
+          <div class="tonal-metric"><div class="label">CSAT</div><div class="num">4.6</div></div>
+        </div>
+        <div class="tonal-row">
+          <div class="row-top"><b>Price</b><em>0 (0%)</em></div>
+          <div class="bar zero"><span></span></div>
+        </div>
+      </div>
+    </figure>
+
+    <figure>
+      <figcaption>3. Tray <span>recessed oatmeal panel, white tiles inside — closest to stacked paper</span></figcaption>
+      <div class="tray">
+        <div class="tray-label">
+          <div class="kicker">Conversion Metrics</div>
+          <div class="sub">Based on call creation date</div>
+        </div>
+        <div class="tray-metrics">
+          <div class="tray-metric"><div class="label">Total calls</div><div class="num">186</div></div>
+          <div class="tray-metric"><div class="label">Minutes</div><div class="num">412</div></div>
+          <div class="tray-metric"><div class="label">CSAT</div><div class="num">4.6</div></div>
+        </div>
+        <div class="tray-row">
+          <div class="row-top"><b>Price</b><em>0 (0%)</em></div>
+          <div class="bar zero"><span></span></div>
+        </div>
+      </div>
+    </figure>
+
+    <figure>
+      <figcaption>4. One sheet <span>one white panel per section; numbers and rows live inside it, not in their own cards</span></figcaption>
+      <div class="sheet">
+        <div class="kicker">Conversion Metrics</div>
+        <div class="sub">Based on call creation date</div>
+        <div class="sheet-metrics">
+          <div><div class="label">Total calls</div><div class="num">186</div></div>
+          <div><div class="label">Minutes</div><div class="num">412</div></div>
+          <div><div class="label">CSAT</div><div class="num">4.6</div></div>
+        </div>
+        <div class="sheet-row">
+          <div class="row-top"><b>Price</b><em>0 (0%)</em></div>
+          <div class="bar zero"><span></span></div>
+        </div>
+      </div>
+    </figure>
+  </div>
+</body>
+</html>

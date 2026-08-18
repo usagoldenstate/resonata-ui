@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Resonata — look & feel sketches</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant:wght@500;600;700&family=Mulish:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --olive: #6b7a4a;
+      --clay: #8b5a3c;
+      --gold: #b08a4e;
+      --ink: #0e0e10;
+      --ink-muted: #5c5c66;
+      --surface: #f7f6f2;
+      --orange: #e8622c;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: #eceae4;
+      color: var(--ink);
+      font: 14px/1.45 Mulish, ui-sans-serif, system-ui, sans-serif;
+    }
+
+    /* ---------- picker chrome (not part of the product) ---------- */
+    .chooser[hidden] { display: none; }
+    body:has(.chooser[hidden]) { grid-template-rows: 1fr; }
+    .chooser {
+      display: flex;
+      gap: 24px;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 14px 20px 12px;
+      background: #f7f5f0;
+      border-bottom: 1px solid #d8d3c8;
+    }
+    .chooser h1 {
+      margin: 0 0 4px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6a6458;
+    }
+    .chooser p { margin: 0; font-size: 13px; color: #4a453c; max-width: 42rem; }
+    .picks { display: flex; gap: 8px; flex-wrap: wrap; }
+    .picks button {
+      appearance: none;
+      border: 1px solid #cfc8ba;
+      background: #fff;
+      color: #2b281f;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font: inherit;
+    }
+    .picks button[aria-pressed="true"] {
+      background: #2b281f;
+      border-color: #2b281f;
+      color: #f7f5f0;
+    }
+    .picks .screen { background: transparent; }
+
+    .stage { min-height: 0; overflow: hidden; }
+
+    /* ---------- shared app shell ---------- */
+    .app {
+      display: grid;
+      grid-template-columns: 210px 1fr;
+      height: 100%;
+    }
+    .nav { display: flex; flex-direction: column; min-height: 0; }
+    .brand { padding: 22px 20px 12px; font-size: 22px; font-weight: 600; }
+    .brand span { color: var(--gold); }
+    .brand-logo { height: 22px; width: auto; display: none; }
+    .brand-type { display: none; }
+    [data-theme="current"] .brand-type,
+    [data-theme="brass"] .brand-type { display: inline; }
+    [data-theme="paper"] .brand-logo,
+    [data-theme="site"] .brand-logo { display: block; }
+    .hotel { padding: 4px 16px 16px; }
+    .hotel label {
+      display: block;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      opacity: 0.7;
+    }
+    .hotel select {
+      width: 100%;
+      font: inherit;
+      padding: 6px 8px;
+    }
+    .section-label {
+      padding: 0 16px 6px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .nav a {
+      display: block;
+      margin: 2px 8px;
+      padding: 8px 12px;
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .nav .foot { margin-top: auto; padding: 10px 8px 16px; border-top: 1px solid; }
+    .main { min-width: 0; overflow: auto; }
+    .page { padding: 28px 32px 48px; }
+    .hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 22px; }
+    .hdr h2 { margin: 0; }
+    .hdr .sub { margin: 4px 0 0; opacity: 0.65; }
+    .ghost, .solid {
+      font: inherit;
+      padding: 8px 12px;
+      cursor: default;
+    }
+    .kicker { font-size: 12px; opacity: 0.6; }
+    .num { font-variant-numeric: tabular-nums; }
+    .delta.up { color: var(--orange); }
+    .delta.down { color: var(--clay); }
+    [data-theme="current"] .delta.up { color: var(--olive); }
+
+    [data-screen="call-log"] .dash { display: none; }
+    [data-screen="dashboard"] .log { display: none; }
+
+    /* ===================== CURRENT ===================== */
+    [data-theme="current"] .app { background: #f3f2ee; color: #3d3a32; }
+    [data-theme="current"] .nav {
+      background: #fff;
+      border-right: 1px solid #e6e3db;
+    }
+    [data-theme="current"] .section-label.insights { color: var(--olive); }
+    [data-theme="current"] .section-label.agent { color: var(--clay); }
+    [data-theme="current"] .nav a { color: #7a766c; }
+    [data-theme="current"] .nav a.active {
+      background: color-mix(in srgb, var(--olive) 12%, white);
+      color: var(--olive);
+      position: relative;
+    }
+    [data-theme="current"] .nav a.active::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 8px; bottom: 8px;
+      width: 4px; border-radius: 0 4px 4px 0;
+      background: var(--olive);
+    }
+    [data-theme="current"] .hotel select,
+    [data-theme="current"] .ghost,
+    [data-theme="current"] .solid {
+      border: 1px solid #e6e3db;
+      border-radius: 8px;
+      background: #fff;
+    }
+    [data-theme="current"] .solid { background: var(--olive); color: #fff; border-color: var(--olive); }
+    [data-theme="current"] .hdr h2 { font-size: 24px; font-weight: 600; }
+    [data-theme="current"] .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+    }
+    [data-theme="current"] .card {
+      background: #fff;
+      border: 1px solid #e6e3db;
+      border-radius: 12px;
+      padding: 22px;
+    }
+    [data-theme="current"] .card h3 { margin: 0 0 2px; font-size: 17px; }
+    [data-theme="current"] .big { font-size: 30px; font-weight: 600; }
+    [data-theme="current"] .bar {
+      height: 8px; background: #eeeae2; border-radius: 99px; overflow: hidden;
+    }
+    [data-theme="current"] .bar > span { display: block; height: 100%; background: var(--olive); }
+    [data-theme="current"] .pill {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    [data-theme="current"] table { width: 100%; border-collapse: collapse; }
+    [data-theme="current"] th {
+      text-align: left; font-size: 11px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: #8a8579; padding: 12px 14px;
+      border-bottom: 1px solid #e6e3db;
+    }
+    [data-theme="current"] td { padding: 14px; border-bottom: 1px solid #eeeae2; }
+
+    /* ===================== PAPER — website cream + Cormorant editorial ===================== */
+    [data-theme="paper"] .app {
+      background: var(--surface);
+      color: var(--ink);
+      font-family: Mulish, sans-serif;
+    }
+    [data-theme="paper"] .nav {
+      background: #f1efe8;
+      border-right: 1px solid rgba(0,0,0,0.08);
+    }
+    [data-theme="paper"] .section-label { color: var(--orange); font-weight: 700; letter-spacing: 0.14em; }
+    [data-theme="paper"] .nav a {
+      color: var(--ink-muted);
+      border-radius: 0;
+      margin: 0;
+      padding: 9px 20px;
+      border-left: 2px solid transparent;
+    }
+    [data-theme="paper"] .nav a.active {
+      background: transparent;
+      color: var(--ink);
+      border-left-color: var(--gold);
+      font-weight: 700;
+    }
+    [data-theme="paper"] .hotel select {
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--gold);
+      border-radius: 0;
+      padding: 4px 0;
+      color: var(--ink);
+    }
+    [data-theme="paper"] .hdr h2 {
+      font-family: Cormorant, Georgia, serif;
+      font-size: 36px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    [data-theme="paper"] .ghost, [data-theme="paper"] .solid {
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--ink);
+      border-radius: 0;
+      padding: 4px 0;
+      color: var(--ink);
+      font-weight: 600;
+    }
+    [data-theme="paper"] .stat-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      border-top: 1px solid rgba(176,138,78,0.45);
+      border-bottom: 1px solid rgba(176,138,78,0.45);
+      margin-bottom: 28px;
+    }
+    [data-theme="paper"] .stat {
+      padding: 18px 20px 16px 0;
+    }
+    [data-theme="paper"] .stat + .stat { padding-left: 20px; border-left: 1px solid rgba(176,138,78,0.35); }
+    [data-theme="paper"] .stat .big {
+      font-family: Cormorant, Georgia, serif;
+      font-size: 38px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      display: block;
+      color: var(--orange);
+    }
+    [data-theme="paper"] .split {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 40px;
+    }
+    [data-theme="paper"] .rule { border-top: 1px solid rgba(176,138,78,0.45); padding-top: 16px; }
+    [data-theme="paper"] h3 {
+      font-family: Cormorant, Georgia, serif;
+      font-size: 24px;
+      font-weight: 600;
+      margin: 0 0 10px;
+    }
+    [data-theme="paper"] .reason {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px dashed rgba(176,138,78,0.4);
+      font-size: 14px;
+    }
+    [data-theme="paper"] table { width: 100%; border-collapse: collapse; }
+    [data-theme="paper"] th, [data-theme="paper"] td {
+      text-align: left;
+      padding: 12px 8px;
+      border-bottom: 1px solid rgba(0,0,0,0.08);
+    }
+    [data-theme="paper"] th {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+    [data-theme="paper"] .pill { font-style: italic; font-size: 13px; }
+
+    /* ===================== INK RAIL — dark closing-section from the site ===================== */
+    [data-theme="brass"] .app {
+      background: var(--surface);
+      color: var(--ink);
+      font-family: Mulish, sans-serif;
+    }
+    [data-theme="brass"] .nav {
+      background: var(--ink);
+      color: #fff;
+      border-right: 0;
+    }
+    [data-theme="brass"] .brand {
+      font-family: Cormorant, Georgia, serif;
+      font-size: 26px;
+      font-weight: 600;
+      color: #fff;
+    }
+    [data-theme="brass"] .brand span { color: var(--gold); }
+    [data-theme="brass"] .section-label { color: var(--gold); letter-spacing: 0.14em; }
+    [data-theme="brass"] .nav a {
+      color: rgba(255,255,255,0.62);
+      border-radius: 10px;
+    }
+    [data-theme="brass"] .nav a.active {
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+    }
+    [data-theme="brass"] .hotel label { color: var(--gold); }
+    [data-theme="brass"] .hotel select {
+      background: #1a1a1d;
+      color: #fff;
+      border: 0;
+      border-radius: 10px;
+    }
+    [data-theme="brass"] .nav .foot { border-color: rgba(255,255,255,0.08); }
+    [data-theme="brass"] .hdr h2 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    [data-theme="brass"] .ghost, [data-theme="brass"] .solid {
+      border-radius: 100px;
+      padding: 9px 18px;
+      font-weight: 600;
+    }
+    [data-theme="brass"] .ghost { background: transparent; border: 1px solid rgba(0,0,0,0.12); color: var(--ink-muted); }
+    [data-theme="brass"] .solid { background: var(--orange); color: #fff; border: 0; }
+    [data-theme="brass"] .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    [data-theme="brass"] .feature, [data-theme="brass"] .tile {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 16px;
+      padding: 22px 24px;
+    }
+    [data-theme="brass"] .feature .big {
+      font-size: 52px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--orange);
+    }
+    [data-theme="brass"] .stack { display: grid; gap: 14px; }
+    [data-theme="brass"] .tile h3, [data-theme="brass"] .feature h3 {
+      margin: 0 0 6px;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--orange);
+      font-weight: 700;
+    }
+    [data-theme="brass"] .tile .big { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; }
+    [data-theme="brass"] .lower {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    [data-theme="brass"] table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    [data-theme="brass"] .sheet {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    [data-theme="brass"] th, [data-theme="brass"] td {
+      text-align: left;
+      padding: 13px 16px;
+      border-bottom: 1px solid rgba(0,0,0,0.08);
+    }
+    [data-theme="brass"] th { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: #a8a8b0; }
+    [data-theme="brass"] .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #fdeee4;
+      color: var(--orange);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    [data-theme="brass"] .pill.booked { background: #e8d9be; color: #7a5e2e; }
+
+    /* ===================== WEBSITE — direct translation of resonata.io ===================== */
+    [data-theme="site"] .app {
+      background: var(--surface);
+      color: var(--ink);
+      font-family: Mulish, sans-serif;
+    }
+    [data-theme="site"] .nav {
+      background: rgba(247,246,242,0.96);
+      border-right: 1px solid rgba(0,0,0,0.08);
+    }
+    [data-theme="site"] .section-label {
+      color: var(--orange);
+      font-weight: 700;
+      letter-spacing: 0.16em;
+    }
+    [data-theme="site"] .nav a {
+      color: var(--ink-muted);
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    [data-theme="site"] .nav a.active {
+      background: rgba(0,0,0,0.05);
+      color: var(--ink);
+      font-weight: 600;
+    }
+    [data-theme="site"] .hotel select {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 10px;
+    }
+    [data-theme="site"] .nav .foot { border-color: rgba(0,0,0,0.08); }
+    [data-theme="site"] .page { padding: 28px 32px; }
+    [data-theme="site"] .hdr h2 {
+      font-size: clamp(28px, 3vw, 40px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.08;
+    }
+    [data-theme="site"] .ghost, [data-theme="site"] .solid {
+      border-radius: 100px;
+      padding: 10px 20px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    [data-theme="site"] .ghost { background: transparent; border: 0; border-bottom: 1px solid rgba(0,0,0,0.08); border-radius: 0; color: var(--ink-muted); padding: 4px 0; }
+    [data-theme="site"] .solid { background: var(--orange); color: #fff; border: 0; }
+    [data-theme="site"] .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    [data-theme="site"] .kpi {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 16px;
+      padding: 28px 24px;
+    }
+    [data-theme="site"] .kpi .kicker {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--orange);
+      opacity: 1;
+    }
+    [data-theme="site"] .kpi .big {
+      font-size: 48px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--orange);
+      line-height: 1;
+      margin: 8px 0 10px;
+    }
+    [data-theme="site"] .pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    [data-theme="site"] .panel {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 16px;
+      padding: 28px 24px;
+    }
+    [data-theme="site"] .panel h3 {
+      margin: 0 0 14px;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      text-transform: none;
+    }
+    [data-theme="site"] .rowline {
+      display: grid;
+      grid-template-columns: 90px 1fr 40px;
+      gap: 8px;
+      align-items: center;
+      font-size: 14px;
+      margin: 8px 0;
+      color: var(--ink-muted);
+    }
+    [data-theme="site"] .meter { height: 6px; background: #fdeee4; border-radius: 100px; overflow: hidden; }
+    [data-theme="site"] .meter > span { display: block; height: 100%; background: var(--orange); }
+    [data-theme="site"] table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 16px; overflow: hidden; }
+    [data-theme="site"] .sheet {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    [data-theme="site"] th, [data-theme="site"] td {
+      text-align: left;
+      padding: 16px 18px;
+      border-bottom: 1px solid rgba(0,0,0,0.08);
+      font-size: 14px;
+    }
+    [data-theme="site"] th {
+      font-size: 11px;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: #a8a8b0;
+      font-weight: 700;
+      background: #fff;
+    }
+    [data-theme="site"] .pill {
+      padding: 4px 10px;
+      border-radius: 100px;
+      background: #fdeee4;
+      color: var(--orange);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    [data-theme="site"] .pill.booked { background: #e8d9be; color: #7a5e2e; }
+    [data-theme="site"] .dot { display: none; }
+
+  </style>
+</head>
+<body data-theme="site" data-screen="dashboard">
+  <header class="chooser">
+    <div>
+      <h1>Look & feel sketches</h1>
+      <p id="blurb">Website: cream canvas, Mulish headlines, orange stats, gold wordmark — the same language as resonata.io.</p>
+    </div>
+    <div>
+      <div class="picks" style="margin-bottom:8px">
+        <button data-theme="current">Current</button>
+        <button data-theme="site" aria-pressed="true">Website</button>
+        <button data-theme="paper">Paper ledger</button>
+        <button data-theme="brass">Ink rail</button>
+      </div>
+      <div class="picks">
+        <button class="screen" data-screen="dashboard" aria-pressed="true">Dashboard</button>
+        <button class="screen" data-screen="call-log">Call log</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div class="app">
+      <aside class="nav">
+        <div class="brand">
+          <img class="brand-logo" src="logo.png" alt="Resonata">
+          <span class="brand-type">Resona<span>ta</span></span>
+        </div>
+        <div class="hotel">
+          <label>Hotel</label>
+          <select>
+            <option>The Marlowe House</option>
+            <option>Harbor Court</option>
+          </select>
+        </div>
+        <div class="section-label insights">Insights</div>
+        <a href="#" class="dash-link active">Dashboard</a>
+        <a href="#" class="log-link">Call Log</a>
+        <a href="#">FAQs</a>
+        <div class="section-label agent">Agent</div>
+        <a href="#">Knowledge Base</a>
+        <a href="#">Room Mapping</a>
+        <a href="#">Agent Configuration</a>
+        <div class="foot">
+          <a href="#">Settings</a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="page dash">
+          <div class="hdr">
+            <div>
+              <h2>Dashboard</h2>
+              <p class="sub">The Marlowe House · Jul 18 – Aug 16, 2026</p>
+            </div>
+            <div>
+              <button class="ghost">Last 30 days</button>
+              <button class="solid">Compare periods</button>
+            </div>
+          </div>
+
+          <!-- current + paper + night layouts share these blocks; CSS rearranges -->
+          <div class="current-only grid-2" data-only="current">
+            <div class="card">
+              <h3>Call Volume</h3>
+              <p class="kicker">Daily call trends</p>
+              <p class="big num">186 <span style="font-size:14px;font-weight:400">bookable</span> <span class="delta up">+8.4%</span></p>
+              <p class="kicker">412 min total call time</p>
+            </div>
+            <div class="card">
+              <h3>Conversion Rate</h3>
+              <p class="kicker">Booking success</p>
+              <p class="big num">41.9% <span class="delta up">+3.2pp</span></p>
+              <div class="bar" style="margin:8px 0"><span style="width:42%"></span></div>
+              <p class="kicker">78 booked · 108 not booked</p>
+            </div>
+            <div class="card">
+              <h3>Not Booked Reasons</h3>
+              <p class="kicker">Why guests did not book</p>
+              <p class="big num">108</p>
+              <p>Price 38% · Availability 24% · Amenities 18%</p>
+            </div>
+            <div class="card">
+              <h3>Projected Revenue</h3>
+              <p class="kicker">Room revenue from bookings</p>
+              <p class="big num">$84,620 <span class="delta up">+6.1%</span></p>
+              <p class="kicker">ADR $312</p>
+            </div>
+          </div>
+
+          <div data-only="paper">
+            <div class="stat-row">
+              <div class="stat"><span class="kicker">Bookable calls</span><span class="big num">186</span><span class="delta up">up 8.4% vs prior</span></div>
+              <div class="stat"><span class="kicker">Conversion</span><span class="big num">41.9%</span><span class="delta up">+3.2 points</span></div>
+              <div class="stat"><span class="kicker">Not booked</span><span class="big num">108</span><span>mostly price</span></div>
+              <div class="stat"><span class="kicker">Projected revenue</span><span class="big num">$84,620</span><span>ADR $312</span></div>
+            </div>
+            <div class="split">
+              <div class="rule">
+                <h3>Why guests walked</h3>
+                <div class="reason"><span>Price</span><span>38%</span></div>
+                <div class="reason"><span>Availability</span><span>24%</span></div>
+                <div class="reason"><span>Amenities</span><span>18%</span></div>
+                <div class="reason"><span>Policy</span><span>12%</span></div>
+                <div class="reason"><span>Other</span><span>8%</span></div>
+              </div>
+              <div class="rule">
+                <h3>Notes from the desk</h3>
+                <p>Harbor-view inventory is still the conversion leak. Night rates over $320 accounted for most “too expensive” calls this window.</p>
+                <p class="kicker">412 minutes on the phone · ≈ 6.9 hours</p>
+              </div>
+            </div>
+          </div>
+
+          <div data-only="brass">
+            <div class="hero">
+              <div class="feature">
+                <h3>Projected revenue</h3>
+                <div class="big num">$84,620</div>
+                <p class="kicker">Last 30 days · ADR $312 · <span class="delta up">+6.1%</span></p>
+              </div>
+              <div class="stack">
+                <div class="tile"><h3>Bookable calls</h3><div class="big num">186</div></div>
+                <div class="tile"><h3>Conversion</h3><div class="big num">41.9%</div></div>
+              </div>
+            </div>
+            <div class="lower">
+              <div class="tile">
+                <h3>Not booked</h3>
+                <div class="big num">108</div>
+                <p>Price still leads. Availability is the second story — connecting rooms for September.</p>
+              </div>
+              <div class="tile">
+                <h3>Time on calls</h3>
+                <div class="big num">412 min</div>
+                <p class="kicker">About 6.9 hours of guest conversation</p>
+              </div>
+            </div>
+          </div>
+
+          <div data-only="site">
+            <div class="kpis">
+              <div class="kpi"><div class="kicker">Bookable</div><div class="big num">186</div><div class="delta up">+8.4%</div></div>
+              <div class="kpi"><div class="kicker">Conversion</div><div class="big num">41.9%</div><div class="delta up">+3.2pp</div></div>
+              <div class="kpi"><div class="kicker">Not booked</div><div class="big num">108</div></div>
+              <div class="kpi"><div class="kicker">Revenue</div><div class="big num">$84,620</div><div class="delta up">+6.1%</div></div>
+            </div>
+            <div class="pair">
+              <div class="panel">
+                <h3>Booked vs missed</h3>
+                <div class="rowline"><span>Booked</span><div class="meter"><span style="width:42%"></span></div><span>78</span></div>
+                <div class="rowline"><span>Not booked</span><div class="meter"><span style="width:58%;background:#9a4a32"></span></div><span>108</span></div>
+              </div>
+              <div class="panel">
+                <h3>Walk reasons</h3>
+                <div class="rowline"><span>Price</span><div class="meter"><span style="width:38%"></span></div><span>38%</span></div>
+                <div class="rowline"><span>Avail.</span><div class="meter"><span style="width:24%"></span></div><span>24%</span></div>
+                <div class="rowline"><span>Amen.</span><div class="meter"><span style="width:18%"></span></div><span>18%</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="page log">
+          <div class="hdr">
+            <div>
+              <h2>Call Log</h2>
+              <p class="sub">The Marlowe House · 248 calls</p>
+            </div>
+            <button class="ghost">All time</button>
+          </div>
+          <div class="sheet">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Caller</th>
+                  <th>Duration</th>
+                  <th>Outcome</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Aug 16, 4:18 PM</td>
+                  <td>(415) 555-0142</td>
+                  <td>6m 12s</td>
+                  <td><span class="pill booked"><span class="dot booked"></span>Booked</span></td>
+                  <td>King suite, two nights, late arrival.</td>
+                </tr>
+                <tr>
+                  <td>Aug 16, 2:41 PM</td>
+                  <td>(206) 555-0198</td>
+                  <td>4m 03s</td>
+                  <td><span class="pill miss"><span class="dot miss"></span>Not booked · Price</span></td>
+                  <td>Harbor view under $280.</td>
+                </tr>
+                <tr>
+                  <td>Aug 15, 11:05 AM</td>
+                  <td>(718) 555-0107</td>
+                  <td>3m 47s</td>
+                  <td><span class="pill"><span class="dot link"></span>Link sent</span></td>
+                  <td>Pet-friendly garden queen.</td>
+                </tr>
+                <tr>
+                  <td>Aug 15, 9:22 AM</td>
+                  <td>(503) 555-0166</td>
+                  <td>2m 19s</td>
+                  <td><span class="pill">Not bookable</span></td>
+                  <td>Restaurant hours only.</td>
+                </tr>
+                <tr>
+                  <td>Aug 14, 6:54 PM</td>
+                  <td>(617) 555-0133</td>
+                  <td>5m 28s</td>
+                  <td><span class="pill miss"><span class="dot miss"></span>Not booked · Availability</span></td>
+                  <td>No connecting rooms in September.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const blurbs = {
+      current: "What you have now: shadcn cards, olive chips, identical 2×2 tiles. Fine, a bit template-y.",
+      site: "Website: cream canvas, Mulish headlines, orange stats, gold wordmark — the same language as resonata.io.",
+      paper: "Paper ledger: still cream and gold, but Cormorant titles and hairlines instead of boxed cards.",
+      brass: "Ink rail: the black closing block from the site becomes the sidebar; orange pills and big 31%-style numbers.",
+    };
+
+    const onlyBlocks = document.querySelectorAll("[data-only]");
+    function showTheme(theme) {
+      document.body.dataset.theme = theme;
+      onlyBlocks.forEach((el) => {
+        el.style.display = el.dataset.only === theme ? "" : "none";
+      });
+      document.getElementById("blurb").textContent = blurbs[theme];
+      document.querySelectorAll(".picks button[data-theme]").forEach((b) => {
+        b.setAttribute("aria-pressed", b.dataset.theme === theme ? "true" : "false");
+      });
+    }
+
+    function showScreen(screen) {
+      document.body.dataset.screen = screen;
+      document.querySelectorAll(".dash-link").forEach((a) => a.classList.toggle("active", screen === "dashboard"));
+      document.querySelectorAll(".log-link").forEach((a) => a.classList.toggle("active", screen === "call-log"));
+      document.querySelectorAll(".picks button[data-screen]").forEach((b) => {
+        b.setAttribute("aria-pressed", b.dataset.screen === screen ? "true" : "false");
+      });
+    }
+
+    document.querySelectorAll(".picks button[data-theme]").forEach((b) => {
+      b.addEventListener("click", () => showTheme(b.dataset.theme));
+    });
+    document.querySelectorAll(".picks button[data-screen]").forEach((b) => {
+      b.addEventListener("click", () => showScreen(b.dataset.screen));
+    });
+    document.querySelector(".dash-link").addEventListener("click", (e) => { e.preventDefault(); showScreen("dashboard"); });
+    document.querySelector(".log-link").addEventListener("click", (e) => { e.preventDefault(); showScreen("call-log"); });
+
+    const params = new URLSearchParams(location.search);
+    const initialTheme = params.get("theme");
+    showTheme(blurbs[initialTheme] ? initialTheme : "site");
+    showScreen(params.get("screen") === "call-log" ? "call-log" : "dashboard");
+    if (params.get("embed") === "1") {
+      document.querySelector(".chooser")?.setAttribute("hidden", "");
+    }
+  </script>
+</body>
+</html>

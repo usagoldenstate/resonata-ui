@@ -32,10 +32,8 @@ type Accent = "insights" | "agent"
 type NavItem = { label: string; href: string; icon: ReactNode; visible: boolean }
 type NavSection = { label: string; accent: Accent; items: NavItem[] }
 
-// Everything reporting-flavored — the dashboard, call log, per-metric reports,
-// and FAQ analytics — lives under Insights. Everything that shapes how the
-// voice agent behaves lives under Agent. Each section carries its own accent
-// so color signals which part of the product you're in.
+// Insights vs Agent is still the information architecture. Visual accent is
+// the same site orange on both section labels, matching resonata.io.
 const sections: NavSection[] = [
   {
     label: "Insights",
@@ -61,24 +59,12 @@ const sections: NavSection[] = [
   },
 ]
 
-// Full, static class strings per accent so Tailwind's JIT sees them. Do not
-// build these by interpolation — `bg-brand-${accent}/10` would be purged.
-const ACCENT: Record<Accent, { label: string; activeText: string; activeBg: string; rail: string; icon: string }> = {
-  insights: {
-    label: "text-brand-insights",
-    activeText: "text-brand-insights",
-    activeBg: "bg-brand-insights/10",
-    rail: "bg-brand-insights",
-    icon: "text-brand-insights",
-  },
-  agent: {
-    label: "text-brand-agent",
-    activeText: "text-brand-agent",
-    activeBg: "bg-brand-agent/10",
-    rail: "bg-brand-agent",
-    icon: "text-brand-agent",
-  },
-}
+// Section labels share the site orange. Active items are a quiet ink pill —
+// color lives on the heading, not on every row.
+const navLabelClass = "px-3 pb-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-primary"
+const navItemClass = "relative w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors"
+const navItemActive = "bg-black/[0.05] text-foreground"
+const navItemIdle = "text-muted-foreground hover:text-foreground hover:bg-black/[0.04]"
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -95,15 +81,15 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-52 bg-sidebar border-r border-sidebar-border flex flex-col">
-      <div className="p-6">
-        <h1 className="text-xl font-semibold text-sidebar-foreground">
-          Resona<span className="text-[#6b7a4a]">ta</span>
-        </h1>
+    <aside className="w-56 bg-sidebar border-r border-sidebar-border flex flex-col">
+      <div className="px-5 pt-6 pb-3">
+        <Link href="/" onClick={guardedNav} className="block w-fit">
+          <img src="/images/logo.png" alt="Resonata" className="h-7 w-auto" />
+        </Link>
       </div>
 
-      <div className="px-4 pb-4">
-        <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1.5">
+      <div className="px-4 pb-5">
+        <label className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary block mb-2">
           Hotel
         </label>
         {loading ? (
@@ -126,7 +112,7 @@ export function Sidebar() {
               }
               setHotelId(e.target.value)
             }}
-            className="w-full text-sm rounded-md border border-sidebar-border bg-background px-2 py-1.5"
+            className="w-full text-sm rounded-xl border border-border bg-card px-3 py-2"
           >
             {hotels.map((h) => (
               <option key={h.hotel_id} value={h.hotel_id}>
@@ -141,15 +127,9 @@ export function Sidebar() {
         {sections.map((section) => {
           const items = section.items.filter((item) => item.visible)
           if (items.length === 0) return null
-          const accent = ACCENT[section.accent]
           return (
-            <div key={section.label} className="mb-4">
-              <div
-                className={cn(
-                  "px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider",
-                  accent.label,
-                )}
-              >
+            <div key={section.label} className="mb-5">
+              <div className={navLabelClass}>
                 {section.label}
               </div>
               <ul className="space-y-0.5">
@@ -160,29 +140,9 @@ export function Sidebar() {
                       <Link
                         href={item.href}
                         onClick={guardedNav}
-                        className={cn(
-                          "relative w-full flex items-center gap-2.5 pl-4 pr-3 py-2 rounded-lg text-sm transition-colors",
-                          isActive
-                            ? cn(accent.activeBg, accent.activeText, "font-medium")
-                            : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
-                        )}
+                        className={cn(navItemClass, isActive ? navItemActive : navItemIdle)}
                       >
-                        {isActive && (
-                          <span
-                            className={cn(
-                              "absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full",
-                              accent.rail,
-                            )}
-                          />
-                        )}
-                        <span
-                          className={cn(
-                            "shrink-0",
-                            isActive ? accent.icon : "text-muted-foreground",
-                          )}
-                        >
-                          {item.icon}
-                        </span>
+                        <span className="shrink-0">{item.icon}</span>
                         <span className="flex-1 truncate">{item.label}</span>
                       </Link>
                     </li>
@@ -199,10 +159,10 @@ export function Sidebar() {
           href="/settings"
           onClick={guardedNav}
           className={cn(
-            "w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm transition-colors",
+            "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors",
             pathname === "/settings"
-              ? "bg-muted/60 text-sidebar-foreground font-medium"
-              : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
+              ? "bg-black/[0.05] text-foreground"
+              : "text-muted-foreground hover:text-foreground hover:bg-black/[0.04]",
           )}
         >
           <Settings className="w-4 h-4 shrink-0" />
@@ -213,10 +173,10 @@ export function Sidebar() {
             href="/demo-hotels"
             onClick={guardedNav}
             className={cn(
-              "w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm transition-colors",
+              "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors",
               pathname === "/demo-hotels"
-                ? "bg-muted/60 text-sidebar-foreground font-medium"
-                : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
+                ? "bg-black/[0.05] text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-black/[0.04]",
             )}
           >
             <FlaskConical className="w-4 h-4 shrink-0" />
@@ -228,10 +188,10 @@ export function Sidebar() {
             href="/dev-pages"
             onClick={guardedNav}
             className={cn(
-              "w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm transition-colors",
-              pathname === "/dev-pages"
-                ? "bg-muted/60 text-sidebar-foreground font-medium"
-                : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
+              "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors",
+              pathname.startsWith("/dev-pages")
+                ? "bg-black/[0.05] text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-black/[0.04]",
             )}
           >
             <Wrench className="w-4 h-4 shrink-0" />
@@ -244,7 +204,7 @@ export function Sidebar() {
             window.localStorage.removeItem("resonata.selected_hotel_id")
             await signOut({ redirectUrl: "/sign-in" })
           }}
-          className="w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-black/[0.04] transition-colors"
         >
           <LogOut className="w-4 h-4 shrink-0" />
           Sign out

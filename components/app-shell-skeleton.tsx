@@ -13,13 +13,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 export function AppShellSkeleton() {
   return (
     <div className="min-h-screen bg-background flex" aria-busy="true" aria-label="Loading">
-      <aside className="w-52 bg-sidebar border-r border-sidebar-border flex flex-col">
-        <div className="p-6">
-          {/* Wordmark is cheap and stable, so show it for real rather than as a
-              bar — it's the one bit of the shell that never changes. */}
-          <h1 className="text-xl font-semibold text-sidebar-foreground">
-            Resona<span className="text-[#6b7a4a]">ta</span>
-          </h1>
+      <aside className="w-56 bg-sidebar border-r border-sidebar-border flex flex-col">
+        <div className="px-5 pt-6 pb-3">
+          <img src="/images/logo.png" alt="Resonata" className="h-7 w-auto" />
         </div>
 
         <div className="px-4 pb-4">

@@ -1,13 +1,20 @@
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Geist_Mono, Mulish } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ClerkProvider } from '@clerk/nextjs'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const mulish = Mulish({
+  subsets: ["latin"],
+  variable: "--font-mulish",
+  weight: ["300", "400", "500", "600", "700", "800"],
+})
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+})
 
 export const metadata: Metadata = {
   title: 'Resonata Dashboard',
@@ -45,7 +52,7 @@ export default async function RootLayout({
   return (
     <ClerkProvider nonce={nonce}>
       <html lang="en">
-        <body className="font-sans antialiased">
+        <body className={`${mulish.variable} ${geistMono.variable} font-sans antialiased`}>
           {children}
           <Toaster />
           {process.env.NODE_ENV === 'production' && <Analytics />}

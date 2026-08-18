@@ -4,51 +4,52 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(0.96 0.005 90);
-  --foreground: oklch(0.25 0.01 90);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.25 0.01 90);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.25 0.01 90);
-  --primary: oklch(0.55 0.1 95);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.25 0.01 90);
-  --muted: oklch(0.96 0.005 90);
-  --muted-foreground: oklch(0.5 0.01 90);
-  --accent: oklch(0.55 0.1 95);
-  --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.55 0.15 25);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.9 0.005 90);
-  --input: oklch(0.96 0.005 90);
-  --ring: oklch(0.55 0.1 95);
-  --chart-1: oklch(0.55 0.1 95);
-  --chart-2: oklch(0.7 0.12 85);
-  --chart-3: oklch(0.5 0.08 30);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.5rem;
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.25 0.01 90);
-  --sidebar-primary: oklch(0.55 0.1 95);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.25 0.01 90);
-  --sidebar-border: oklch(0.9 0.005 90);
-  --sidebar-ring: oklch(0.55 0.1 95);
-  
-  /* Custom colors for status badges */
-  --success: oklch(0.55 0.1 95);
-  --success-foreground: oklch(1 0 0);
-  --warning: oklch(0.7 0.12 85);
-  --warning-foreground: oklch(0.3 0.05 85);
-  --error: oklch(0.5 0.08 30);
-  --error-foreground: oklch(1 0 0);
+  --background: #f7f6f2;
+  --foreground: #0e0e10;
+  --card: #ffffff;
+  --card-foreground: #0e0e10;
+  --popover: #ffffff;
+  --popover-foreground: #0e0e10;
+  --primary: #e8622c;
+  --primary-foreground: #ffffff;
+  --secondary: #efece4;
+  --secondary-foreground: #0e0e10;
+  --muted: #efece4;
+  --muted-foreground: #5c5c66;
+  --accent: #efece4;
+  --accent-foreground: #0e0e10;
+  --destructive: #c2410c;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+  --input: #efece4;
+  --ring: #e8622c;
+  --chart-1: #e8622c;
+  --chart-2: #b08a4e;
+  --chart-3: #0e0e10;
+  --chart-4: #cf4f1d;
+  --chart-5: #d4c4a8;
+  --radius: 1rem;
+  --sidebar: #f7f6f2;
+  --sidebar-foreground: #0e0e10;
+  --sidebar-primary: #e8622c;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(0, 0, 0, 0.05);
+  --sidebar-accent-foreground: #0e0e10;
+  --sidebar-border: rgba(0, 0, 0, 0.08);
+  --sidebar-ring: #e8622c;
 
-  /* Sidebar section accents — olive (brand) for Insights, clay for Agent. */
-  --brand-insights: oklch(0.55 0.1 95);
-  --brand-agent: oklch(0.5 0.08 30);
+  --success: #e8622c;
+  --success-foreground: #ffffff;
+  --warning: #b08a4e;
+  --warning-foreground: #0e0e10;
+  --error: #c2410c;
+  --error-foreground: #ffffff;
+
+  --brand-insights: #e8622c;
+  --brand-agent: #e8622c;
+  --brand-gold: #b08a4e;
+  --brand-gold-light: #e8d9be;
+  --brand-orange-light: #fdeee4;
 }
 
 .dark {
@@ -91,8 +92,8 @@
 }
 
 @theme inline {
-  --font-sans: 'Geist', 'Geist Fallback';
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-sans: var(--font-mulish), 'Mulish', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), 'Geist Mono', ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -119,6 +120,9 @@
   --color-chart-5: var(--chart-5);
   --color-brand-insights: var(--brand-insights);
   --color-brand-agent: var(--brand-agent);
+  --color-brand-gold: var(--brand-gold);
+  --color-brand-gold-light: var(--brand-gold-light);
+  --color-brand-orange-light: var(--brand-orange-light);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

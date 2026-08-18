@@ -24,8 +24,8 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value"
 // Presentation-only: the category names + counts come from the backend taxonomy;
 // the UI keeps just the color mapping keyed on the stable category name.
 const COLOR_BY_CATEGORY: Record<string, string> = {
-  Price: "bg-[#6b7a4a]",
-  Availability: "bg-[#c4a84b]",
+  Price: "bg-[#e8622c]",
+  Availability: "bg-[#b08a4e]",
   Amenities: "bg-[#8b5a3c]",
   Policy: "bg-[#64748b]",
   Other: "bg-[#9ca3af]",
@@ -273,20 +273,19 @@ export default function NotBookedReportingPage() {
 
         {!selectedReason ? (
           <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <Card className="border-border">
-                <CardContent className="p-4">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
+            {/* Summary */}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 mb-8">
+              <div className="rounded-2xl bg-card px-5 py-5">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary mb-1">
                     Total Not Booked
                   </p>
-                  <p className="text-2xl font-semibold text-card-foreground">
+                  <p className="text-3xl font-extrabold tracking-tight text-foreground">
                     {breakdown.loading ? "..." : totalNotBooked.toLocaleString()}
                   </p>
                   {priorDelta !== null ? (
                     <p
                       className={`text-xs mt-1 flex items-center gap-1 ${
-                        priorDelta > 0 ? "text-[#8b5a3c]" : "text-[#6b7a4a]"
+                        priorDelta > 0 ? "text-[#8b5a3c]" : "text-[#e8622c]"
                       }`}
                     >
                       {priorDelta > 0 ? (
@@ -299,40 +298,33 @@ export default function NotBookedReportingPage() {
                   ) : (
                     <p className="text-xs mt-1 text-muted-foreground">vs prior period</p>
                   )}
-                </CardContent>
-              </Card>
-              <Card className="border-border">
-                <CardContent className="p-4">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
+              </div>
+              <div className="rounded-2xl bg-card px-5 py-5">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary mb-1">
                     Top Reason
                   </p>
-                  <p className="text-2xl font-semibold text-card-foreground">
+                  <p className="text-3xl font-extrabold tracking-tight text-foreground">
                     {breakdown.loading ? "..." : topReason?.count ? topReason.category : "--"}
                   </p>
                   <p className="text-xs mt-1 text-muted-foreground">
                     {topReason?.count ? `${formatPercent(topReason.percentage)} of not booked` : "—"}
                   </p>
-                </CardContent>
-              </Card>
-              <Card className="border-border">
-                <CardContent className="p-4">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
+              </div>
+              <div className="rounded-2xl bg-card px-5 py-5">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary mb-1">
                     Addressable
                   </p>
-                  <p className="text-2xl font-semibold text-card-foreground">
+                  <p className="text-3xl font-extrabold tracking-tight text-foreground">
                     {breakdown.loading
                       ? "..."
                       : formatPercent(breakdownData?.addressable_percentage)}
                   </p>
                   <p className="text-xs mt-1 text-muted-foreground">Could potentially convert</p>
-                </CardContent>
-              </Card>
+              </div>
             </div>
 
-            {/* Reasons Breakdown */}
-            <Card className="border-border">
-              <CardContent className="p-5">
-                <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-4">
+            <section>
+                <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary mb-4">
                   Reasons Breakdown
                 </h3>
 
@@ -340,27 +332,27 @@ export default function NotBookedReportingPage() {
                   <ChartState message="Loading reasons breakdown..." loading />
                 ) : (
                   <>
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       {categories.map((reason) => {
                         const color = COLOR_BY_CATEGORY[reason.category] ?? DEFAULT_COLOR
                         return (
                           <button
                             key={reason.category}
                             onClick={() => setSelectedReason(reason.category)}
-                            className="w-full text-left rounded-md border border-border px-4 py-3 transition-colors hover:border-card-foreground/50 hover:bg-muted/70"
+                            className="w-full text-left rounded-2xl bg-card px-5 py-4 transition-colors hover:bg-white"
                           >
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-base font-medium text-card-foreground">
+                            <div className="flex items-baseline justify-between gap-4 mb-2">
+                              <span className="text-base font-semibold text-foreground">
                                 {reason.category}
                               </span>
-                              <span className="text-sm text-muted-foreground">
+                              <span className="text-sm text-muted-foreground tabular-nums">
                                 {reason.count} ({formatPercent(reason.percentage)})
                               </span>
                             </div>
-                            <div className="h-4 bg-muted rounded-full overflow-hidden">
+                            <div className="h-1.5 bg-foreground/5 rounded-full overflow-hidden">
                               <div
                                 className={`h-full ${color} rounded-full transition-all`}
-                                style={{ width: `${reason.percentage}%` }}
+                                style={{ width: `${Math.max(reason.percentage, 0)}%` }}
                               />
                             </div>
                           </button>
@@ -368,12 +360,11 @@ export default function NotBookedReportingPage() {
                       })}
                     </div>
 
-                    {/* Summary Bar */}
-                    <div className="mt-5 pt-4 border-t border-border">
-                      <p className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-2">
+                    <div className="mt-6 rounded-2xl bg-card px-5 py-5">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary mb-3">
                         Distribution
                       </p>
-                      <div className="flex h-4 rounded-full overflow-hidden bg-muted">
+                      <div className="flex h-2 rounded-full overflow-hidden bg-foreground/5">
                         {categories.map((reason) => (
                           <button
                             key={reason.category}
@@ -399,14 +390,13 @@ export default function NotBookedReportingPage() {
                     </div>
                   </>
                 )}
-              </CardContent>
-            </Card>
+            </section>
           </>
         ) : (
           <>
             {/* Selected Reason Detail View */}
             <div className="grid grid-cols-3 gap-4 mb-6">
-              <Card className="border-border">
+              <Card className="border-0">
                 <CardContent className="p-4">
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
                     Total Cases
@@ -419,7 +409,7 @@ export default function NotBookedReportingPage() {
                   </p>
                 </CardContent>
               </Card>
-              <Card className="border-border">
+              <Card className="border-0">
                 <CardContent className="p-4">
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
                     Peak Month
@@ -432,7 +422,7 @@ export default function NotBookedReportingPage() {
                   </p>
                 </CardContent>
               </Card>
-              <Card className="border-border">
+              <Card className="border-0">
                 <CardContent className="p-4">
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
                     Top Issue
@@ -450,7 +440,7 @@ export default function NotBookedReportingPage() {
             </div>
 
             {/* Subcategories */}
-            <Card className="border-border mb-6">
+            <Card className="mb-6 border-0">
               <CardContent className="p-6">
                 <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-4">
                   Subcategories
@@ -487,7 +477,7 @@ export default function NotBookedReportingPage() {
             </Card>
 
             {/* Seasonality */}
-            <Card className="border-border mb-6">
+            <Card className="mb-6 border-0">
               <CardContent className="p-6">
                 <h3 className="text-sm font-medium text-card-foreground uppercase tracking-wide mb-4">
                   Monthly Trend

@@ -80,14 +80,14 @@ function deriveOutcome(call: CallListItem): OutcomeLabel {
 
 function OutcomeBadge({ outcome }: { outcome: OutcomeLabel }) {
   const styles: Record<OutcomeLabel, string> = {
-    Booked: "bg-[#6b7a4a]/10 text-[#6b7a4a] border border-[#6b7a4a]/20",
-    "Link Sent": "bg-[#c4a84b]/10 text-[#a08930] border border-[#c4a84b]/20 whitespace-nowrap",
-    "Not Booked": "bg-[#9ca3af]/10 text-[#6b7280] border border-[#9ca3af]/20 whitespace-nowrap",
-    "Not Bookable": "bg-muted text-muted-foreground border border-border whitespace-nowrap",
-    Pending: "bg-muted text-muted-foreground border border-border",
+    Booked: "bg-brand-gold-light text-[#7a5e2e]",
+    "Link Sent": "bg-brand-orange-light text-primary whitespace-nowrap",
+    "Not Booked": "bg-[#e7e7ea] text-[#5a5a62] whitespace-nowrap",
+    "Not Bookable": "bg-muted text-muted-foreground whitespace-nowrap",
+    Pending: "bg-muted text-muted-foreground",
   }
   return (
-    <span className={`px-3 py-1 rounded-full text-xs font-medium ${styles[outcome]}`}>
+    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${styles[outcome]}`}>
       {outcome}
     </span>
   )
@@ -119,7 +119,7 @@ function CopyableCallId({ callId }: { callId: string }) {
     >
       <span className="truncate">{callId}</span>
       {copied ? (
-        <Check className="w-3.5 h-3.5 shrink-0 text-[#6b7a4a]" />
+        <Check className="w-3.5 h-3.5 shrink-0 text-[#e8622c]" />
       ) : (
         <Copy className="w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
       )}
@@ -416,7 +416,7 @@ function CallLogPageInner() {
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
-            <h2 className="text-2xl font-semibold text-foreground">Call Log</h2>
+            <h2 className="text-3xl font-extrabold tracking-tight text-foreground">Call Log</h2>
             {hotelName && (
               <p className="text-sm text-muted-foreground mt-1">{hotelName}</p>
             )}
@@ -429,8 +429,8 @@ function CallLogPageInner() {
           <Card className="border-border flex-shrink-0">
             <CardContent className="p-4 pr-8">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                  <Phone className="w-5 h-5 text-[#6b7a4a]" />
+                <div className="w-10 h-10 rounded-lg bg-[#e8622c]/10 flex items-center justify-center">
+                  <Phone className="w-5 h-5 text-[#e8622c]" />
                 </div>
                 <div>
                   <p className="text-2xl font-semibold text-card-foreground">{total}</p>
@@ -681,11 +681,11 @@ function CallLogPageInner() {
                                   {transcript.turns.map((line, idx) => (
                                     <div key={idx} className="flex gap-3">
                                       <span
-                                        className={`text-xs font-medium px-2 py-1 rounded shrink-0 ${
+                                        className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${
                                           line.speaker === "Agent"
-                                            ? "bg-[#6b7a4a]/10 text-[#6b7a4a]"
+                                            ? "bg-brand-gold-light text-[#7a5e2e]"
                                             : line.speaker === "Guest"
-                                              ? "bg-[#c4a84b]/10 text-[#a08930]"
+                                              ? "bg-brand-orange-light text-primary"
                                               : "bg-muted text-muted-foreground"
                                         }`}
                                       >

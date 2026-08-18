@@ -294,15 +294,16 @@ export default function RevenueReportingPage() {
           <Notice tone="error" message={rangeError} />
         ) : null}
 
-        <section className="mb-8 rounded-lg border border-border p-4">
-          <div className="mb-4">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-foreground">
+        <section className="mb-10">
+          <div className="mb-5">
+            <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
               Booking Funnel
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               From answered call to projected revenue · reflects the selected date range
             </p>
           </div>
+          <div className="rounded-2xl bg-card p-6">
           <RevenueFunnel
             metricsState={calls}
             revenueState={summary}
@@ -312,14 +313,15 @@ export default function RevenueReportingPage() {
             callsReceivedError={callBasis === "bookable" ? notBooked.error : null}
             currency={currency}
           />
+          </div>
         </section>
 
-        <section className="mb-8 rounded-lg border border-border p-4">
-          <div className="mb-4">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-foreground">
+        <section className="mb-10">
+          <div className="mb-5">
+            <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
               Booking Performance
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               Conversion and per-booking value
             </p>
           </div>
@@ -336,7 +338,7 @@ export default function RevenueReportingPage() {
             <Notice tone="muted" message="No attributed bookings in this date range." />
           ) : null}
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             <MetricCard
               label="Conversion Rate"
               value={callsReceivedLoading ? "..." : formatPercent(conversionRate)}
@@ -384,10 +386,10 @@ export default function RevenueReportingPage() {
           ) : null}
         </section>
 
-        <Card className="border-border">
+        <Card>
           <CardContent className="p-6">
             <div className="mb-6">
-              <h2 className="text-sm font-medium uppercase tracking-wide text-card-foreground">
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
                 Daily Projected Revenue
               </h2>
               <p className="text-xs text-muted-foreground">
@@ -444,7 +446,7 @@ function RevenueTrendChart({
             formatter={(value) => [formatMoney(Number(value) * 100, currency), "Projected revenue"]}
             labelFormatter={(label) => formatDateLabel(String(label))}
           />
-          <Bar dataKey="revenue" name="Projected revenue" fill="#6b7a4a" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="revenue" name="Projected revenue" fill="#e8622c" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -461,15 +463,13 @@ function MetricCard({
   hint?: string
 }) {
   return (
-    <Card className="border-border">
-      <CardContent className="p-6">
-        <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className="text-2xl font-semibold text-card-foreground">{value}</p>
-        {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
-      </CardContent>
-    </Card>
+    <div className="rounded-2xl bg-card px-5 py-5">
+      <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-primary">
+        {label}
+      </p>
+      <p className="text-3xl font-extrabold tracking-tight text-foreground">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
   )
 }
 
@@ -540,7 +540,7 @@ function RevenueFunnel({
           <div
             key={stage.label}
             className={`rounded-lg border p-4 ${
-              stage.payoff ? "border-[#6b7a4a]/50 bg-[#6b7a4a]/10" : "border-border bg-card"
+              stage.payoff ? "border-[#e8622c]/50 bg-[#e8622c]/10" : "border-border bg-card"
             }`}
           >
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -551,7 +551,7 @@ function RevenueFunnel({
             {stage.payoff ? null : (
               <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-[#6b7a4a]"
+                  className="h-full rounded-full bg-[#e8622c]"
                   style={{ width: `${loading ? 0 : stage.share ?? 0}%` }}
                 />
               </div>

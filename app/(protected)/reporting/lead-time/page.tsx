@@ -92,7 +92,7 @@ export default function LeadTimeReportPage() {
                 Avg Lead Time
               </p>
               <p className="text-2xl font-semibold text-card-foreground">{stats.avgLeadTime} days</p>
-              <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
+              <p className="text-xs mt-1 flex items-center gap-1 text-[#e8622c]">
                 <span>+</span> {stats.avgChange} days vs prior year
               </p>
             </CardContent>
@@ -103,7 +103,7 @@ export default function LeadTimeReportPage() {
                 Median Lead Time
               </p>
               <p className="text-2xl font-semibold text-card-foreground">{stats.medianLeadTime} days</p>
-              <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
+              <p className="text-xs mt-1 flex items-center gap-1 text-[#e8622c]">
                 <span>+</span> {stats.medianChange} days vs prior year
               </p>
             </CardContent>
@@ -163,7 +163,7 @@ export default function LeadTimeReportPage() {
                   <Legend 
                     wrapperStyle={{ fontSize: '12px' }}
                   />
-                  <Bar dataKey="booked" name="Booked" stackId="a" fill="#6b7a4a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="booked" name="Booked" stackId="a" fill="#e8622c" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="notBooked" name="Not Booked" stackId="a" fill="#a3a682" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -208,9 +208,9 @@ export default function LeadTimeReportPage() {
                     type="monotone" 
                     dataKey="average" 
                     name="Average" 
-                    stroke="#6b7a4a" 
+                    stroke="#e8622c" 
                     strokeWidth={2}
-                    dot={{ fill: '#6b7a4a', strokeWidth: 2 }}
+                    dot={{ fill: '#e8622c', strokeWidth: 2 }}
                     activeDot={{ r: 6 }}
                   />
                   <Line 

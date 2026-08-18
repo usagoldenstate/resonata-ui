@@ -231,7 +231,7 @@ export default function SettingsPage() {
           <Button
             onClick={handleSaveClick}
             disabled={saving || loading || !detail}
-            className="bg-[#6b7a4a] hover:bg-[#5a6940] text-white"
+            className="bg-[#e8622c] hover:bg-[#cf4f1d] text-white"
           >
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
             {saved ? "Saved!" : saving ? "Saving..." : "Save Changes"}
@@ -300,8 +300,8 @@ export default function SettingsPage() {
           <Card className="border-border">
             <CardHeader className="pb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                  <Building2 className="w-5 h-5 text-[#6b7a4a]" />
+                <div className="w-10 h-10 rounded-lg bg-[#e8622c]/10 flex items-center justify-center">
+                  <Building2 className="w-5 h-5 text-[#e8622c]" />
                 </div>
                 <div>
                   <CardTitle className="text-base">Hotel Information</CardTitle>
@@ -395,8 +395,8 @@ export default function SettingsPage() {
           <Card className="border-border">
             <CardHeader className="pb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                  <Globe className="w-5 h-5 text-[#6b7a4a]" />
+                <div className="w-10 h-10 rounded-lg bg-[#e8622c]/10 flex items-center justify-center">
+                  <Globe className="w-5 h-5 text-[#e8622c]" />
                 </div>
                 <div>
                   <CardTitle className="text-base">Regional Settings</CardTitle>

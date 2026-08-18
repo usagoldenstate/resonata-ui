@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Resonata — style comparison</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      font: 13px/1.35 ui-sans-serif, system-ui, sans-serif;
+      background: #ded9cf;
+      color: #2b281f;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 16px;
+      padding: 10px 14px;
+      background: #f7f5f0;
+      border-bottom: 1px solid #cfc8ba;
+    }
+    header strong { font-size: 13px; }
+    header span { color: #6a6458; }
+    .screens a {
+      color: #2b281f;
+      margin-left: 10px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      min-height: 0;
+      height: 100%;
+    }
+    figure {
+      margin: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: 0;
+      border-right: 1px solid #cfc8ba;
+      border-bottom: 1px solid #cfc8ba;
+      background: #b9b3a6;
+    }
+    figcaption {
+      padding: 6px 10px;
+      background: #f7f5f0;
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>Resonata style comparison</strong>
+      <span> — four directions on the same Dashboard / Call Log</span>
+    </div>
+    <div class="screens">
+      Screen:
+      <a href="?screen=dashboard">Dashboard</a>
+      <a href="?screen=call-log">Call Log</a>
+    </div>
+  </header>
+  <div class="grid">
+    <figure>
+      <figcaption>Current</figcaption>
+      <iframe title="Current" data-theme="current"></iframe>
+    </figure>
+    <figure>
+      <figcaption>Website</figcaption>
+      <iframe title="Website" data-theme="site"></iframe>
+    </figure>
+    <figure>
+      <figcaption>Paper ledger</figcaption>
+      <iframe title="Paper ledger" data-theme="paper"></iframe>
+    </figure>
+    <figure>
+      <figcaption>Ink rail</figcaption>
+      <iframe title="Ink rail" data-theme="brass"></iframe>
+    </figure>
+  </div>
+  <script>
+    const screen = new URLSearchParams(location.search).get("screen") === "call-log"
+      ? "call-log"
+      : "dashboard";
+    document.querySelectorAll("iframe").forEach((frame) => {
+      frame.src = `index.html?theme=${frame.dataset.theme}&screen=${screen}&embed=1`;
+    });
+  </script>
+</body>
+</html>

@@ -40,8 +40,8 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value"
 // Presentation-only color mapping, keyed on the backend taxonomy category name.
 // Mirrors the Not Booked reporting page so the dashboard tile matches the detail view.
 const COLOR_BY_CATEGORY: Record<string, string> = {
-  Price: "bg-[#6b7a4a]",
-  Availability: "bg-[#c4a84b]",
+  Price: "bg-[#e8622c]",
+  Availability: "bg-[#b08a4e]",
   Amenities: "bg-[#8b5a3c]",
   Policy: "bg-[#64748b]",
   Other: "bg-[#9ca3af]",
@@ -304,7 +304,7 @@ export default function Dashboard() {
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-semibold text-foreground">Dashboard</h2>
+            <h2 className="text-3xl font-extrabold tracking-tight text-foreground">Dashboard</h2>
             <p className="text-sm text-muted-foreground">Click any section to view detailed analytics</p>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <DateRangeFilter
@@ -346,7 +346,7 @@ export default function Dashboard() {
             <Button
               variant={showComparison ? "default" : "outline"}
               onClick={handleToggleComparison}
-              className={showComparison ? "bg-[#6b7a4a] hover:bg-[#5a6940]" : "border-border"}
+              className={showComparison ? "bg-primary hover:bg-[#cf4f1d]" : "border-border bg-card"}
             >
               <GitCompareArrows className="w-4 h-4 mr-2" />
               Compare Periods
@@ -375,7 +375,7 @@ export default function Dashboard() {
         {/* Main Grid - 2x2 */}
         <div className="grid grid-cols-2 gap-6">
           {/* Call Volume Section */}
-          <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all group h-full">
+          <Card className="border-0 h-full transition-colors group hover:bg-white">
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <Link href="/reporting/call-volume" className="flex-1">
@@ -406,7 +406,7 @@ export default function Dashboard() {
                     </button>
                   </div>
                   <Link href="/reporting/call-volume">
-                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
+                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#e8622c] transition-colors" />
                   </Link>
                 </div>
               </div>
@@ -420,7 +420,7 @@ export default function Dashboard() {
                     {callVolumeType === "bookable" ? "bookable calls" : "calls"}
                   </span>
                   {callsDiff !== null && (
-                    <span className={`text-sm flex items-center gap-1 ${callsDiff >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
+                    <span className={`text-sm flex items-center gap-1 ${callsDiff >= 0 ? "text-[#e8622c]" : "text-[#8b5a3c]"}`}>
                       {callsDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                       {Math.abs(callsDiff).toFixed(1)}%
                     </span>
@@ -429,8 +429,8 @@ export default function Dashboard() {
 
                 {/* Total call time for the selected period */}
                 <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
-                  <div className="w-9 h-9 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                    <Clock className="w-4 h-4 text-[#6b7a4a]" />
+                  <div className="w-9 h-9 rounded-lg bg-[#e8622c]/10 flex items-center justify-center">
+                    <Clock className="w-4 h-4 text-[#e8622c]" />
                   </div>
                   <div>
                     <p className="text-xl font-semibold text-card-foreground leading-tight">
@@ -448,14 +448,14 @@ export default function Dashboard() {
 
           {/* Conversion Rate Section */}
           <Link href="/reporting/revenue" className="block">
-            <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all cursor-pointer group h-full">
+            <Card className="border-0 h-full transition-colors group cursor-pointer hover:bg-white">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-lg font-semibold text-card-foreground">Conversion Rate</h3>
                     <p className="text-xs text-muted-foreground">Booking success metrics</p>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
+                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#e8622c] transition-colors" />
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
@@ -464,7 +464,7 @@ export default function Dashboard() {
                   </span>
                   <span className="text-sm text-muted-foreground">avg rate</span>
                   {rateDiff !== null && (
-                    <span className={`text-sm flex items-center gap-1 ${rateDiff >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
+                    <span className={`text-sm flex items-center gap-1 ${rateDiff >= 0 ? "text-[#e8622c]" : "text-[#8b5a3c]"}`}>
                       {rateDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                       {Math.abs(rateDiff).toFixed(1)}pp
                     </span>
@@ -477,7 +477,7 @@ export default function Dashboard() {
                     <span className="text-xs text-muted-foreground w-16">Booked</span>
                     <div className="flex-1 bg-muted rounded-full h-3">
                       <div
-                        className="bg-[#6b7a4a] h-3 rounded-full transition-all"
+                        className="bg-[#e8622c] h-3 rounded-full transition-all"
                         style={{ width: `${avgRate ?? 0}%` }}
                       />
                     </div>
@@ -500,14 +500,14 @@ export default function Dashboard() {
 
           {/* Not Booked Reasons Section */}
           <Link href="/reporting/not-booked" className="block">
-            <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all cursor-pointer group h-full">
+            <Card className="border-0 h-full transition-colors group cursor-pointer hover:bg-white">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-lg font-semibold text-card-foreground">Not Booked Reasons</h3>
                     <p className="text-xs text-muted-foreground">Why guests did not book</p>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
+                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#e8622c] transition-colors" />
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
@@ -548,14 +548,14 @@ export default function Dashboard() {
 
           {/* Projected Revenue Section */}
           <Link href="/reporting/revenue" className="block">
-            <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all cursor-pointer group h-full">
+            <Card className="border-0 h-full transition-colors group cursor-pointer hover:bg-white">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-lg font-semibold text-card-foreground">Projected Revenue</h3>
                     <p className="text-xs text-muted-foreground">Projected room revenue from bookings</p>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
+                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#e8622c] transition-colors" />
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
@@ -564,7 +564,7 @@ export default function Dashboard() {
                   </span>
                   <span className="text-sm text-muted-foreground">total revenue</span>
                   {revenueDiff !== null && (
-                    <span className={`text-sm flex items-center gap-1 ${revenueDiff >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
+                    <span className={`text-sm flex items-center gap-1 ${revenueDiff >= 0 ? "text-[#e8622c]" : "text-[#8b5a3c]"}`}>
                       {revenueDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                       {Math.abs(revenueDiff).toFixed(1)}%
                     </span>
@@ -573,8 +573,8 @@ export default function Dashboard() {
 
                 {/* ADR */}
                 <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
-                  <div className="w-9 h-9 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                    <DollarSign className="w-4 h-4 text-[#6b7a4a]" />
+                  <div className="w-9 h-9 rounded-lg bg-[#e8622c]/10 flex items-center justify-center">
+                    <DollarSign className="w-4 h-4 text-[#e8622c]" />
                   </div>
                   <div>
                     <p className="text-xl font-semibold text-card-foreground leading-tight">
