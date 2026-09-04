@@ -25,6 +25,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Sidebar } from "@/components/sidebar"
+import { OperaCancellationCard } from "@/components/opera-cancellation-card"
+import { StaynTouchCancellationCard } from "@/components/stayntouch-cancellation-card"
 import { useHotel } from "@/lib/hotel-context"
 import { useCurrentUser } from "@/lib/current-user-context"
 import {
@@ -445,6 +447,12 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+          {isPlatformAdmin && detail?.pms_provider === "opera" && hotelId && (
+            <OperaCancellationCard hotelId={hotelId} />
+          )}
+          {isPlatformAdmin && detail?.pms_provider === "stayntouch" && hotelId && (
+            <StaynTouchCancellationCard hotelId={hotelId} />
+          )}
         </div>
         )}
       </main>

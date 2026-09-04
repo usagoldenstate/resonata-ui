@@ -655,6 +655,119 @@ export function updateHotelPlatformSettings(
   })
 }
 
+export type OperaCancellationCatalogItem = {
+  code: string
+  description: string | null
+  group_code: string | null
+  inactive: boolean
+}
+
+export type OperaCancellationConfig = {
+  reason_code: string
+  allowed_source_codes: Record<string, string>
+  allowed_guarantee_codes: string[]
+  catalog_verified_at: string
+}
+
+export type OperaCancellationSetup = {
+  saved: OperaCancellationConfig | null
+  ready: boolean
+  validation_errors: string[]
+  catalogs: {
+    reasons: OperaCancellationCatalogItem[]
+    sources: OperaCancellationCatalogItem[]
+    guarantees: OperaCancellationCatalogItem[]
+  }
+}
+
+export type OperaCancellationSetupUpdate = {
+  reason_code: string
+  allowed_source_codes: string[]
+  allowed_guarantee_codes: string[]
+}
+
+export function fetchOperaCancellationSetup(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<OperaCancellationSetup>(
+    `/api/v1/admin/hotels/${hotelId}/opera-cancellation/setup`,
+    opts,
+  )
+}
+
+export function saveOperaCancellationSetup(
+  hotelId: string,
+  body: OperaCancellationSetupUpdate,
+) {
+  return api<OperaCancellationSetup>(
+    `/api/v1/admin/hotels/${hotelId}/opera-cancellation/setup`,
+    { method: "PUT", body },
+  )
+}
+
+export function disableOperaCancellation(hotelId: string) {
+  return api<{ status: "disabled"; hotel_id: string }>(
+    `/api/v1/admin/hotels/${hotelId}/opera-cancellation/setup`,
+    { method: "DELETE" },
+  )
+}
+
+export type StaynTouchCancellationCatalogItem = {
+  id: number
+  label: string
+  description: string | null
+  active: boolean
+}
+
+export type StaynTouchCancellationConfig = {
+  allowed_origins: { id: number; name: string }[]
+  allowed_sources: { id: number; code: string }[]
+  catalog_verified_at: string
+}
+
+export type StaynTouchCancellationSetup = {
+  saved: StaynTouchCancellationConfig | null
+  ready: boolean
+  validation_errors: string[]
+  catalogs: {
+    origins: StaynTouchCancellationCatalogItem[]
+    sources: StaynTouchCancellationCatalogItem[]
+  }
+}
+
+export type StaynTouchCancellationSetupUpdate = {
+  allowed_origin_ids: number[]
+  allowed_source_ids: number[]
+}
+
+export function fetchStaynTouchCancellationSetup(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<StaynTouchCancellationSetup>(
+    `/api/v1/admin/hotels/${hotelId}/stayntouch-cancellation/setup`,
+    opts,
+  )
+}
+
+export function saveStaynTouchCancellationSetup(
+  hotelId: string,
+  body: StaynTouchCancellationSetupUpdate,
+) {
+  return api<StaynTouchCancellationSetup>(
+    `/api/v1/admin/hotels/${hotelId}/stayntouch-cancellation/setup`,
+    { method: "PUT", body },
+  )
+}
+
+export function disableStaynTouchCancellation(hotelId: string) {
+  return api<{ status: "disabled"; hotel_id: string }>(
+    `/api/v1/admin/hotels/${hotelId}/stayntouch-cancellation/setup`,
+    { method: "DELETE" },
+  )
+}
+
 export function fetchAdminUsers(opts: Pick<Options, "signal"> = {}) {
   return api<UserAccessItem[]>("/api/v1/admin/users", opts)
 }
