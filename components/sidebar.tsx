@@ -14,6 +14,7 @@ import {
   HelpCircle,
   Building2,
   Bed,
+  Tags,
   Mic,
   Settings,
   Wrench,
@@ -36,7 +37,10 @@ type NavSection = { label: string; accent: Accent; items: NavItem[] }
 // and FAQ analytics — lives under Insights. Everything that shapes how the
 // voice agent behaves lives under Agent. Each section carries its own accent
 // so color signals which part of the product you're in.
-const sections: NavSection[] = [
+// A function (not a constant) because some items depend on the selected hotel:
+// Rate Mapping only applies to StayNTouch hotels (the rate cache it edits is
+// StayNTouch-specific).
+const buildSections = (isStayntouchHotel: boolean): NavSection[] => [
   {
     label: "Insights",
     accent: "insights",
@@ -56,6 +60,7 @@ const sections: NavSection[] = [
     items: [
       { label: "Knowledge Base", href: "/knowledge-base", icon: <Building2 className="w-4 h-4" />, visible: true },
       { label: "Room Mapping", href: "/room-mapping", icon: <Bed className="w-4 h-4" />, visible: true },
+      { label: "Rate Mapping", href: "/rate-mapping", icon: <Tags className="w-4 h-4" />, visible: isStayntouchHotel },
       { label: "Agent Configuration", href: "/agent-config", icon: <Mic className="w-4 h-4" />, visible: true },
     ],
   },
@@ -85,6 +90,10 @@ export function Sidebar() {
   const { hotels, hotelId, setHotelId, loading, accessState } = useHotel()
   const { isPlatformAdmin } = useCurrentUser()
   const { signOut } = useClerk()
+
+  const isStayntouchHotel =
+    hotels.find((h) => h.hotel_id === hotelId)?.pms_provider === "stayntouch"
+  const sections = buildSections(isStayntouchHotel)
 
   // Block in-app navigation when the current page reports unsaved edits.
   // Used on every <Link> click and the hotel <select> change handler.
