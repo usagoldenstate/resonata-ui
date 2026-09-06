@@ -1,12 +1,13 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Building2, Globe, Save, Loader2, Lock, TriangleAlert } from "lucide-react"
+import { Building2, Globe, Megaphone, Save, Loader2, Lock, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -112,6 +113,10 @@ export default function SettingsPage() {
   const [email, setEmail] = useState("")
   const [inboundNumber, setInboundNumber] = useState("")
   const [vapiPhoneNumberId, setVapiPhoneNumberId] = useState("")
+  // Sales intake line (platform-admin only) — see the "Sales Intake Line" card.
+  const [salesLineEnabled, setSalesLineEnabled] = useState(false)
+  const [salesVapiPhoneNumberId, setSalesVapiPhoneNumberId] = useState("")
+  const [salesInquiryEmail, setSalesInquiryEmail] = useState("")
   const [timezone, setTimezone] = useState("America/New_York")
   const currency = detail?.currency ?? ""
 
@@ -123,6 +128,9 @@ export default function SettingsPage() {
     setEmail(email)
     setInboundNumber(d.inbound_phone_number ?? "")
     setVapiPhoneNumberId(d.vapi_phone_number_id ?? "")
+    setSalesLineEnabled(d.sales_line_enabled ?? false)
+    setSalesVapiPhoneNumberId(d.sales_vapi_phone_number_id ?? "")
+    setSalesInquiryEmail(d.sales_inquiry_email ?? "")
     setTimezone(d.timezone)
   }, [])
 
@@ -191,6 +199,19 @@ export default function SettingsPage() {
         const nextVapiId = vapiPhoneNumberId.trim() || null
         if (nextVapiId !== (detail.vapi_phone_number_id ?? null)) {
           pfBody.vapi_phone_number_id = nextVapiId
+        }
+        // Sales intake line. The backend validates the three together (enabling
+        // requires an address), so send whatever changed in one PATCH.
+        if (salesLineEnabled !== (detail.sales_line_enabled ?? false)) {
+          pfBody.sales_line_enabled = salesLineEnabled
+        }
+        const nextSalesVapiId = salesVapiPhoneNumberId.trim() || null
+        if (nextSalesVapiId !== (detail.sales_vapi_phone_number_id ?? null)) {
+          pfBody.sales_vapi_phone_number_id = nextSalesVapiId
+        }
+        const nextSalesEmail = salesInquiryEmail.trim() || null
+        if (nextSalesEmail !== (detail.sales_inquiry_email ?? null)) {
+          pfBody.sales_inquiry_email = nextSalesEmail
         }
         if (Object.keys(pfBody).length > 0) {
           latest = await updateHotelPlatformSettings(hotelId, pfBody)
@@ -447,6 +468,75 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+          {isPlatformAdmin && (
+            <Card className="border-border">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
+                    <Megaphone className="w-5 h-5 text-[#6b7a4a]" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Sales Intake Line</CardTitle>
+                    <CardDescription className="text-xs">
+                      A second Vapi number that takes sales inquiries when the sales team doesn&apos;t answer
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="salesLineEnabled" className="text-sm">
+                      Sales line enabled
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      While off, the sales webhook path returns 404 and no inquiries are taken.
+                    </p>
+                  </div>
+                  <Switch
+                    id="salesLineEnabled"
+                    checked={salesLineEnabled}
+                    onCheckedChange={setSalesLineEnabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="salesInquiryEmail" className="text-xs text-muted-foreground">
+                    Sales Inquiry Email
+                  </Label>
+                  <Input
+                    id="salesInquiryEmail"
+                    type="email"
+                    value={salesInquiryEmail}
+                    onChange={(e) => setSalesInquiryEmail(e.target.value)}
+                    placeholder="sales@example.com"
+                    className="bg-card border-border"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Where each recorded inquiry is emailed (Reply-To is the caller). Required while the
+                    line is enabled.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="salesVapiPhoneNumberId" className="text-xs text-muted-foreground">
+                    Sales Vapi Phone Number ID
+                  </Label>
+                  <Input
+                    id="salesVapiPhoneNumberId"
+                    value={salesVapiPhoneNumberId}
+                    onChange={(e) => setSalesVapiPhoneNumberId(e.target.value)}
+                    placeholder="00000000-0000-4000-8000-000000000000"
+                    className="bg-card border-border"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    UUID of the <em>sales</em> number in the Vapi dashboard. Its Server URL must be the
+                    hotel&apos;s webhook URL with <span className="font-mono">/sales</span> appended, using
+                    the same Server URL Secret. Must differ from the reservations number&apos;s ID. Leave
+                    blank to disable the tenant check for this line.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           {isPlatformAdmin && detail?.pms_provider === "opera" && hotelId && (
             <OperaCancellationCard hotelId={hotelId} />
           )}

@@ -338,6 +338,10 @@ export type CallListItem = {
   id: string
   provider_call_id: string
   hotel_id: string | null
+  // Which inbound line the call arrived on. "sales" = the hotel's sales
+  // department's no-answer forward, answered by the sales intake assistant
+  // (no booking; a SalesInquiry is recorded instead). Mirrors CallRecord.line.
+  line: CallLine
   summary: string | null
   duration_seconds: number | null
   // Plaintext caller ID (E.164); null for blocked/withheld callers or erased rows.
@@ -366,10 +370,37 @@ export type CallOutcomeFilter =
   | "not_bookable"
   | "pending"
 
+export type CallLine = "reservations" | "sales"
+
+// The structured intake a sales-line call produced — one per call, written
+// mid-call by the submit_sales_inquiry tool. Mirrors the backend's
+// SalesInquirySummary. `email_status` is the delivery to the hotel's sales
+// mailbox: "failed" means the row exists but the email never went out.
+export type SalesInquiry = {
+  id: string
+  caller_name: string | null
+  callback_phone_e164: string | null
+  email: string | null
+  event_type: string
+  event_dates_text: string | null
+  event_start_date: string | null
+  event_end_date: string | null
+  dates_flexible: boolean | null
+  headcount: number | null
+  needs_guest_rooms: boolean | null
+  notes: string | null
+  sent_to: string | null
+  email_status: "sending" | "sent" | "failed"
+  email_error_class: string | null
+  sent_at: string | null
+  created_at: string
+}
+
 export type CallDetail = {
   id: string
   provider_call_id: string
   hotel_id: string | null
+  line: CallLine
   transcript: string | null
   summary: string | null
   duration_seconds: number | null
@@ -378,6 +409,9 @@ export type CallDetail = {
   // Server-derived: a playable Twilio recording is attached. The raw sid is never
   // exposed; audio is fetched by call_id through the authed proxy below.
   has_recording: boolean
+  // Sales-line calls only; null on reservations calls and on sales calls that
+  // ended before the inquiry was submitted.
+  sales_inquiry: SalesInquiry | null
   created_at: string
   updated_at: string
 }
@@ -601,6 +635,11 @@ export type HotelDetail = {
   // backend rejects Vapi webhooks whose payload carries a different id
   // (tenant-binding guard). Platform-admin only; null disables the check.
   vapi_phone_number_id: string | null
+  // Sales intake line — the hotel's second Vapi number (the sales department's
+  // no-answer forward). Platform-admin only. Enabling requires the email.
+  sales_line_enabled: boolean
+  sales_vapi_phone_number_id: string | null
+  sales_inquiry_email: string | null
   pms_webhook_last_received_at: string | null
   is_active: boolean
 }
@@ -623,6 +662,9 @@ export type HotelOperatorUpdate = {
 export type HotelPlatformUpdate = {
   inbound_phone_number?: string | null
   vapi_phone_number_id?: string | null
+  sales_line_enabled?: boolean
+  sales_vapi_phone_number_id?: string | null
+  sales_inquiry_email?: string | null
   booking_engine_provider?: string | null
   is_active?: boolean
   commission_rate_basis_points?: number
@@ -857,6 +899,7 @@ export function fetchCalls(
     date_from?: string
     date_to?: string
     call_id?: string
+    line?: CallLine
   },
   opts: Pick<Options, "signal"> = {},
 ) {

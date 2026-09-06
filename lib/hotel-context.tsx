@@ -45,6 +45,15 @@ const HotelContext = React.createContext<Ctx | null>(null)
 
 const STORAGE_KEY = "resonata.selected_hotel_id"
 
+function readUrlHotelId(): string | null {
+  if (typeof window === "undefined") return null
+  try {
+    return new URLSearchParams(window.location.search).get("hotel_id")
+  } catch {
+    return null
+  }
+}
+
 function readStoredHotelId(): string | null {
   if (typeof window === "undefined") return null
   return window.localStorage.getItem(STORAGE_KEY)
@@ -79,10 +88,19 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
       // Restore stored selection if it still exists in the list; otherwise
       // default to the first active hotel so pages aren't stuck in an empty
       // state on first load.
+      // A `?hotel_id=` in the URL (the sales-inquiry email's "open the call"
+      // link) wins over the stored selection when it names a hotel this user
+      // can see — the link would otherwise open the call log on whatever hotel
+      // was last selected.
+      const fromUrl = readUrlHotelId()
+      const urlMatch = fromUrl && list.find((h) => h.hotel_id === fromUrl)
       const stored = readStoredHotelId()
-      const match = stored && list.find((h) => h.hotel_id === stored)
+      const match = urlMatch || (stored && list.find((h) => h.hotel_id === stored))
       if (match) {
         setHotelIdState(match.hotel_id)
+        if (urlMatch && typeof window !== "undefined") {
+          window.localStorage.setItem(STORAGE_KEY, match.hotel_id)
+        }
       } else if (list.length > 0) {
         // Stored id was stale (revoked/renamed hotel) or absent: fall back to
         // the first active hotel and rewrite storage so the optimistic seed
