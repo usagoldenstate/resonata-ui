@@ -324,10 +324,9 @@ export type FaqOccurrencesResponse = {
 
 export type CallAnalyticsSummary = {
   status: string
-  outcome: string | null
+  assessment: string | null
   sentiment: string | null
   booking_made: boolean | null
-  booking_link_sent: boolean | null
   not_bookable_reason: string | null
   not_booked_reason_category: string | null
   not_booked_reason_subcategory: string | null
@@ -335,6 +334,7 @@ export type CallAnalyticsSummary = {
 }
 
 export type CallListItem = {
+  outcome: CallOutcomeFilter
   id: string
   provider_call_id: string
   hotel_id: string | null

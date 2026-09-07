@@ -65,17 +65,16 @@ const notBookedReasonOptions = ["Price", "Availability", "Amenities", "Policy", 
 
 type OutcomeLabel = "Booked" | "Link Sent" | "Not Booked" | "Not Bookable" | "Pending"
 
-// Same precedence as the backend's outcome filter (api/router.py), so a row's
-// badge always matches the filter bucket that returned it. "Booked" comes from
-// the server-derived attribution flag — the classifier no longer writes
-// booking_made.
+// Outcome precedence and evidence are resolved by the backend.
 function deriveOutcome(call: CallListItem): OutcomeLabel {
-  if (call.booked) return "Booked"
-  const analytics = call.analytics
-  if (analytics?.booking_link_sent) return "Link Sent"
-  if (analytics?.outcome === "not_bookable") return "Not Bookable"
-  if (analytics?.status === "done") return "Not Booked"
-  return "Pending"
+  const labels: Record<CallOutcomeFilter, OutcomeLabel> = {
+    booked: "Booked",
+    link_sent: "Link Sent",
+    not_booked: "Not Booked",
+    not_bookable: "Not Bookable",
+    pending: "Pending",
+  }
+  return labels[call.outcome]
 }
 
 function OutcomeBadge({ outcome }: { outcome: OutcomeLabel }) {
