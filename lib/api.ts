@@ -345,6 +345,11 @@ export type CallListItem = {
   analytics: CallAnalyticsSummary | null
   // Server-derived: a PMS reservation was attributed to this call's link send.
   booked: boolean
+  // Orthogonal to `outcome`: the call ended forwarded to a human. The
+  // department name is a write-time snapshot; null when the destination
+  // matched no configured department (the row still reads as transferred).
+  transferred: boolean
+  transfer_department_name: string | null
   created_at: string
   updated_at: string
 }
@@ -378,6 +383,9 @@ export type CallDetail = {
   // Server-derived: a playable Twilio recording is attached. The raw sid is never
   // exposed; audio is fetched by call_id through the authed proxy below.
   has_recording: boolean
+  // Orthogonal to `outcome`: the call ended forwarded to a human.
+  transferred: boolean
+  transfer_department_name: string | null
   created_at: string
   updated_at: string
 }
@@ -857,6 +865,9 @@ export function fetchCalls(
     date_from?: string
     date_to?: string
     call_id?: string
+    // Narrows within whatever outcome filter is set (a transferred call keeps
+    // its own outcome bucket); omit for both.
+    transferred?: boolean
   },
   opts: Pick<Options, "signal"> = {},
 ) {

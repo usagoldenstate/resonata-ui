@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, Fragment } from "react"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Loader2, Phone, Search, X } from "lucide-react"
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Loader2, Phone, PhoneForwarded, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import {
   AlertDialog,
@@ -60,6 +60,17 @@ const outcomeFilterOptions: Array<{ value: "all" | CallOutcomeFilter; label: str
 
 const outcomeFilterValues = new Set(outcomeFilterOptions.map((o) => o.value))
 
+// Transfer is a second dimension, not an outcome bucket — a transferred call
+// still lands in booked / link_sent / not_bookable / … — so it gets its own
+// filter rather than an entry in the outcome list.
+type TransferFilter = "all" | "yes" | "no"
+const transferFilterOptions: Array<{ value: TransferFilter; label: string }> = [
+  { value: "all", label: "Transferred or not" },
+  { value: "yes", label: "Transferred" },
+  { value: "no", label: "Not transferred" },
+]
+const transferFilterValues = new Set<string>(transferFilterOptions.map((o) => o.value))
+
 // Mirrors the backend's not-booked taxonomy categories.
 const notBookedReasonOptions = ["Price", "Availability", "Amenities", "Policy", "Other"]
 
@@ -88,6 +99,21 @@ function OutcomeBadge({ outcome }: { outcome: OutcomeLabel }) {
   return (
     <span className={`px-3 py-1 rounded-full text-xs font-medium ${styles[outcome]}`}>
       {outcome}
+    </span>
+  )
+}
+
+// Additive tag next to the outcome badge: the call ended forwarded to a human.
+// Outlined (not filled) so it reads as a second dimension rather than a sixth
+// outcome. Names the department when the backend could resolve one.
+function TransferBadge({ department }: { department: string | null }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-[#a08930]/50 text-[#a08930] whitespace-nowrap"
+      title={department ? `Transferred to ${department}` : "Transferred to a human"}
+    >
+      <PhoneForwarded className="w-3 h-3" aria-hidden="true" />
+      {department ? `Transferred → ${department}` : "Transferred"}
     </span>
   )
 }
@@ -253,6 +279,10 @@ function CallLogPageInner() {
   const [notBookedSubcategoryFilter, setNotBookedSubcategoryFilter] = useState(
     () => searchParams.get("not_booked_subcategory") ?? "all",
   )
+  const [transferFilter, setTransferFilter] = useState<TransferFilter>(() => {
+    const param = searchParams.get("transferred")
+    return param && transferFilterValues.has(param) ? (param as TransferFilter) : "all"
+  })
   const [dateFrom, setDateFrom] = useState(() => searchParams.get("date_from") ?? "")
   const [dateTo, setDateTo] = useState(() => searchParams.get("date_to") ?? "")
   // Drill-through URLs carry explicit dates, so they land in custom mode;
@@ -307,7 +337,7 @@ function CallLogPageInner() {
   useEffect(() => {
     setOffset(0)
     setExpandedRow(null)
-  }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId])
+  }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, transferFilter, dateFrom, dateTo, debouncedCallId])
 
   const listKey = hotelId
     ? ([
@@ -317,6 +347,7 @@ function CallLogPageInner() {
         outcomeFilter,
         notBookedReasonFilter,
         notBookedSubcategoryFilter,
+        transferFilter,
         dateFrom,
         dateTo,
         debouncedCallId,
@@ -327,7 +358,7 @@ function CallLogPageInner() {
     isValidating: loading,
     error: errorRaw,
     mutate: refreshCalls,
-  } = useSWR(listKey, ([, hid, off, outcome, reason, subcategory, from, to, callId]) =>
+  } = useSWR(listKey, ([, hid, off, outcome, reason, subcategory, transferred, from, to, callId]) =>
     fetchCalls({
       hotel_id: hid,
       limit: PAGE_SIZE,
@@ -335,6 +366,7 @@ function CallLogPageInner() {
       outcome: outcome === "all" ? undefined : outcome,
       not_booked_reason: reason === "all" ? undefined : reason,
       not_booked_subcategory: subcategory === "all" ? undefined : subcategory,
+      transferred: transferred === "all" ? undefined : transferred === "yes",
       date_from: from || undefined,
       date_to: to || undefined,
       call_id: callId.trim() || undefined,
@@ -403,6 +435,7 @@ function CallLogPageInner() {
     outcomeFilter !== "all" ||
     notBookedReasonFilter !== "all" ||
     notBookedSubcategoryFilter !== "all" ||
+    transferFilter !== "all" ||
     dateFrom !== "" ||
     dateTo !== "" ||
     callIdSearch.trim() !== ""
@@ -517,6 +550,22 @@ function CallLogPageInner() {
             </Select>
           )}
 
+          <Select
+            value={transferFilter}
+            onValueChange={(value) => setTransferFilter(value as TransferFilter)}
+          >
+            <SelectTrigger className="w-44 bg-card border-border">
+              <SelectValue placeholder="Transferred or not" />
+            </SelectTrigger>
+            <SelectContent>
+              {transferFilterOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           {/* Call-date range */}
           <DateRangeFilter
             variant="toolbar"
@@ -540,6 +589,7 @@ function CallLogPageInner() {
                 setOutcomeFilter("all")
                 setNotBookedReasonFilter("all")
                 setNotBookedSubcategoryFilter("all")
+                setTransferFilter("all")
                 setDateFrom("")
                 setDateTo("")
                 setDateTimespan("all")
@@ -614,7 +664,12 @@ function CallLogPageInner() {
                           {formatDuration(call.duration_seconds)}
                         </td>
                         <td className="p-4">
-                          <OutcomeBadge outcome={outcome} />
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <OutcomeBadge outcome={outcome} />
+                            {call.transferred && (
+                              <TransferBadge department={call.transfer_department_name} />
+                            )}
+                          </div>
                         </td>
                         <td className="p-4">
                           {call.analytics?.not_booked_reason_category ? (
