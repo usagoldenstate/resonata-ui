@@ -198,10 +198,10 @@ function StatTile({
 }) {
   return (
     <Card className="border-border flex-shrink-0">
-      <CardContent className="p-4 pr-8">
+      <CardContent className="py-2.5 px-4 pr-8">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-            <Icon className="w-5 h-5 text-[#6b7a4a]" />
+          <div className="w-8 h-8 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
+            <Icon className="w-4 h-4 text-[#6b7a4a]" />
           </div>
           <div>
             {/* Label leads so the number reads in context, but stays a quiet
@@ -537,16 +537,10 @@ function CallLogPageInner() {
             detail={stats ? `${bookableCount} of ${decidedCount} assessed` : undefined}
           />
           <StatTile
-            icon={PhoneForwarded}
-            value={formatRate(stats?.transferred ?? 0, statsTotal)}
-            label="Transferred"
-            detail={stats ? `${stats.transferred} of ${statsTotal} calls` : undefined}
-          />
-          <StatTile
             icon={Link2}
-            value={formatRate(stats?.link_sent ?? 0, statsTotal)}
+            value={formatRate(stats?.link_sent ?? 0, bookableCount)}
             label="Link Sent"
-            detail={stats ? `${stats.link_sent} of ${statsTotal} calls` : undefined}
+            detail={stats ? `${stats.link_sent} of ${bookableCount} bookable` : undefined}
           />
           {/* Hidden until the first attributed booking so an empty 0% tile
               doesn't sit on the page while PMS attribution is new. */}
@@ -558,6 +552,12 @@ function CallLogPageInner() {
               detail={`${stats.booked} of ${statsTotal} calls`}
             />
           )}
+          <StatTile
+            icon={PhoneForwarded}
+            value={formatRate(stats?.transferred ?? 0, statsTotal)}
+            label="Transferred"
+            detail={stats ? `${stats.transferred} of ${statsTotal} calls` : undefined}
+          />
         </div>
 
         {/* Filters */}
