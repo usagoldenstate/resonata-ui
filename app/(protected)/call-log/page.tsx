@@ -4,16 +4,20 @@ import { Suspense, useEffect, useState, Fragment } from "react"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
 import {
+  BadgeCheck,
+  CalendarCheck,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Copy,
+  Link2,
   Loader2,
   Mail,
   Megaphone,
   Phone,
+  PhoneForwarded,
   Search,
   X,
 } from "lucide-react"
@@ -35,6 +39,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -51,6 +56,7 @@ import {
   deleteCall,
   fetchCallDetail,
   fetchCallRecording,
+  fetchCallStats,
   fetchCalls,
   fetchNotBookedTaxonomy,
 } from "@/lib/api"
@@ -62,18 +68,42 @@ const PAGE_SIZE = 50
 
 // "All time" is the default: the call log lists every call unless a window is
 // chosen, unlike the reporting pages' rolling 30-day default.
-const datePresets = makePresets(["all", "7", "30", "90"])
+const datePresets = makePresets(["all", "7", "14", "30", "90"])
 
-const outcomeFilterOptions: Array<{ value: "all" | CallOutcomeFilter; label: string }> = [
+// The outcome dropdown filters on two dimensions. The first six entries are the
+// server-derived outcome buckets; the last two filter on transfer instead, which
+// is orthogonal (a transferred call still lands in booked / link_sent / …), so
+// picking one of them clears the outcome narrowing and vice versa.
+type TransferChoice = "transferred" | "not_transferred"
+type OutcomeFilter = "all" | CallOutcomeFilter | TransferChoice
+
+const outcomeFilterOptions: Array<{ value: OutcomeFilter; label: string }> = [
   { value: "all", label: "All outcomes" },
   { value: "booked", label: "Booked" },
   { value: "link_sent", label: "Link Sent" },
   { value: "not_booked", label: "Not Booked" },
   { value: "not_bookable", label: "Not Bookable" },
   { value: "pending", label: "Pending" },
+  { value: "transferred", label: "Transferred" },
+  { value: "not_transferred", label: "Not transferred" },
 ]
 
-const outcomeFilterValues = new Set(outcomeFilterOptions.map((o) => o.value))
+const outcomeFilterValues = new Set<string>(outcomeFilterOptions.map((o) => o.value))
+
+// The dropdown draws a divider above this entry: everything from here down
+// filters on transfer rather than on the outcome bucket.
+const firstTransferChoice: OutcomeFilter = "transferred"
+
+// Splits the single dropdown value back into the two backend query params.
+function outcomeFilterParams(filter: OutcomeFilter): {
+  outcome?: CallOutcomeFilter
+  transferred?: boolean
+} {
+  if (filter === "all") return {}
+  if (filter === "transferred") return { transferred: true }
+  if (filter === "not_transferred") return { transferred: false }
+  return { outcome: filter }
+}
 
 // Which inbound line the call arrived on (CallRecord.line). Sales-line calls
 // carry a sales inquiry instead of a booking outcome.
@@ -200,17 +230,16 @@ const notBookedReasonOptions = ["Price", "Availability", "Amenities", "Policy", 
 
 type OutcomeLabel = "Booked" | "Link Sent" | "Not Booked" | "Not Bookable" | "Pending"
 
-// Same precedence as the backend's outcome filter (api/router.py), so a row's
-// badge always matches the filter bucket that returned it. "Booked" comes from
-// the server-derived attribution flag — the classifier no longer writes
-// booking_made.
+// Outcome precedence and evidence are resolved by the backend.
 function deriveOutcome(call: CallListItem): OutcomeLabel {
-  if (call.booked) return "Booked"
-  const analytics = call.analytics
-  if (analytics?.booking_link_sent) return "Link Sent"
-  if (analytics?.outcome === "not_bookable") return "Not Bookable"
-  if (analytics?.status === "done") return "Not Booked"
-  return "Pending"
+  const labels: Record<CallOutcomeFilter, OutcomeLabel> = {
+    booked: "Booked",
+    link_sent: "Link Sent",
+    not_booked: "Not Booked",
+    not_bookable: "Not Bookable",
+    pending: "Pending",
+  }
+  return labels[call.outcome]
 }
 
 function OutcomeBadge({ outcome }: { outcome: OutcomeLabel }) {
@@ -224,6 +253,21 @@ function OutcomeBadge({ outcome }: { outcome: OutcomeLabel }) {
   return (
     <span className={`px-3 py-1 rounded-full text-xs font-medium ${styles[outcome]}`}>
       {outcome}
+    </span>
+  )
+}
+
+// Additive tag next to the outcome badge: the call ended forwarded to a human.
+// Outlined (not filled) so it reads as a second dimension rather than a sixth
+// outcome. Names the department when the backend could resolve one.
+function TransferBadge({ department }: { department: string | null }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-[#a08930]/50 text-[#a08930] whitespace-nowrap"
+      title={department ? `Transferred to ${department}` : "Transferred to a human"}
+    >
+      <PhoneForwarded className="w-3 h-3" aria-hidden="true" />
+      {department ? `Transferred → ${department}` : "Transferred"}
     </span>
   )
 }
@@ -271,6 +315,46 @@ function parseUtc(value: string): Date {
 function formatDuration(seconds: number | null): string {
   if (seconds === null || seconds === undefined) return "—"
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+// Whole-percent share; "—" when there's nothing to divide by.
+function formatRate(count: number, denominator: number): string {
+  if (denominator <= 0) return "—"
+  return `${Math.round((count / denominator) * 100)}%`
+}
+
+function StatTile({
+  icon: Icon,
+  value,
+  label,
+  detail,
+}: {
+  icon: typeof Phone
+  value: string
+  label: string
+  // Small line under the label, e.g. the raw count behind a percentage.
+  detail?: string
+}) {
+  return (
+    <Card className="border-border flex-shrink-0">
+      <CardContent className="py-2.5 px-4 pr-8">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
+            <Icon className="w-4 h-4 text-[#6b7a4a]" />
+          </div>
+          <div>
+            {/* Label leads so the number reads in context, but stays a quiet
+                eyebrow (tiny, muted, tracked caps) beneath the page header. */}
+            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              {label}
+            </p>
+            <p className="text-2xl font-semibold leading-tight text-card-foreground">{value}</p>
+            {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 // Caller ID is stored E.164. Pretty-print US/Canada (+1) numbers as
@@ -379,11 +463,15 @@ function CallLogPageInner() {
   // Filters can arrive via URL params (drill-through from the Not Booked
   // Reasons page); they seed the initial state only.
   const searchParams = useSearchParams()
-  const [outcomeFilter, setOutcomeFilter] = useState<"all" | CallOutcomeFilter>(() => {
+  const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>(() => {
     const param = searchParams.get("outcome")
-    return param && outcomeFilterValues.has(param as CallOutcomeFilter)
-      ? (param as CallOutcomeFilter)
-      : "all"
+    if (param && outcomeFilterValues.has(param)) return param as OutcomeFilter
+    // Older links narrowed on transfer through its own param, back when it was
+    // a separate dropdown; those still land on the merged entries.
+    const transferred = searchParams.get("transferred")
+    if (transferred === "yes" || transferred === "true") return "transferred"
+    if (transferred === "no" || transferred === "false") return "not_transferred"
+    return "all"
   })
   const [notBookedReasonFilter, setNotBookedReasonFilter] = useState(
     () => searchParams.get("not_booked_reason") ?? "all",
@@ -470,12 +558,12 @@ function CallLogPageInner() {
     isValidating: loading,
     error: errorRaw,
     mutate: refreshCalls,
-  } = useSWR(listKey, ([, hid, off, outcome, reason, subcategory, from, to, callId, line]) =>
+  } = useSWR(listKey, ([, hid, off, filter, reason, subcategory, from, to, callId, line]) =>
     fetchCalls({
       hotel_id: hid,
       limit: PAGE_SIZE,
       offset: off,
-      outcome: outcome === "all" ? undefined : outcome,
+      ...outcomeFilterParams(filter),
       not_booked_reason: reason === "all" ? undefined : reason,
       not_booked_subcategory: subcategory === "all" ? undefined : subcategory,
       date_from: from || undefined,
@@ -486,11 +574,20 @@ function CallLogPageInner() {
   )
   const error = errorRaw ? describeError(errorRaw) : null
 
+  // Tiles describe the whole period (hotel + date range only), so they don't
+  // move when the outcome / reason / call-id filters change. Non-fatal: on
+  // failure the rate tiles just show "—".
+  const { data: stats, mutate: refreshStats } = useSWR(
+    hotelId ? (["call-log-stats", hotelId, dateFrom, dateTo] as const) : null,
+    ([, hid, from, to]) =>
+      fetchCallStats({ hotel_id: hid, date_from: from || undefined, date_to: to || undefined }),
+  )
+
   const [refreshing, setRefreshing] = useState(false)
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      await refreshCalls()
+      await Promise.all([refreshCalls(), refreshStats()])
     } finally {
       setRefreshing(false)
     }
@@ -553,6 +650,12 @@ function CallLogPageInner() {
     callIdSearch.trim() !== "" ||
     lineFilter !== "all"
 
+  const statsTotal = stats?.total_calls ?? 0
+  // Bookable = every call that had a verdict other than not_bookable. Pending
+  // calls have no verdict yet, so they're left out of the denominator.
+  const bookableCount = stats ? stats.booked + stats.link_sent + stats.not_booked : 0
+  const decidedCount = stats ? statsTotal - stats.pending : 0
+
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
@@ -571,21 +674,39 @@ function CallLogPageInner() {
 
         {/* Stats Summary */}
         <div className="flex flex-wrap gap-4 mb-6">
-          <Card className="border-border flex-shrink-0">
-            <CardContent className="p-4 pr-8">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                  <Phone className="w-5 h-5 text-[#6b7a4a]" />
-                </div>
-                <div>
-                  <p className="text-2xl font-semibold text-card-foreground">{total}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {hasFilters ? "Matching Calls" : "Total Calls"}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StatTile
+            icon={Phone}
+            value={String(total)}
+            label={hasFilters ? "Matching Calls" : "Total Calls"}
+          />
+          <StatTile
+            icon={CalendarCheck}
+            value={formatRate(bookableCount, decidedCount)}
+            label="Bookable"
+            detail={stats ? `${bookableCount} of ${decidedCount} assessed` : undefined}
+          />
+          <StatTile
+            icon={Link2}
+            value={formatRate(stats?.link_sent ?? 0, bookableCount)}
+            label="Link Sent"
+            detail={stats ? `${stats.link_sent} of ${bookableCount} bookable` : undefined}
+          />
+          {/* Hidden until the first attributed booking so an empty 0% tile
+              doesn't sit on the page while PMS attribution is new. */}
+          {stats && stats.booked >= 1 && (
+            <StatTile
+              icon={BadgeCheck}
+              value={formatRate(stats.booked, statsTotal)}
+              label="Booked"
+              detail={`${stats.booked} of ${statsTotal} calls`}
+            />
+          )}
+          <StatTile
+            icon={PhoneForwarded}
+            value={formatRate(stats?.transferred ?? 0, statsTotal)}
+            label="Transferred"
+            detail={stats ? `${stats.transferred} of ${statsTotal} calls` : undefined}
+          />
         </div>
 
         {/* Filters */}
@@ -627,16 +748,17 @@ function CallLogPageInner() {
           </Select>
           <Select
             value={outcomeFilter}
-            onValueChange={(value) => setOutcomeFilter(value as "all" | CallOutcomeFilter)}
+            onValueChange={(value) => setOutcomeFilter(value as OutcomeFilter)}
           >
             <SelectTrigger className="w-44 bg-card border-border">
               <SelectValue placeholder="All outcomes" />
             </SelectTrigger>
             <SelectContent>
               {outcomeFilterOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
+                <Fragment key={option.value}>
+                  {option.value === firstTransferChoice && <SelectSeparator />}
+                  <SelectItem value={option.value}>{option.label}</SelectItem>
+                </Fragment>
               ))}
             </SelectContent>
           </Select>
@@ -782,7 +904,12 @@ function CallLogPageInner() {
                           {call.line === "sales" ? (
                             <span className="text-muted-foreground">—</span>
                           ) : (
-                            <OutcomeBadge outcome={outcome} />
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <OutcomeBadge outcome={outcome} />
+                              {call.transferred && (
+                                <TransferBadge department={call.transfer_department_name} />
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="p-4">

@@ -324,10 +324,9 @@ export type FaqOccurrencesResponse = {
 
 export type CallAnalyticsSummary = {
   status: string
-  outcome: string | null
+  assessment: string | null
   sentiment: string | null
   booking_made: boolean | null
-  booking_link_sent: boolean | null
   not_bookable_reason: string | null
   not_booked_reason_category: string | null
   not_booked_reason_subcategory: string | null
@@ -335,6 +334,7 @@ export type CallAnalyticsSummary = {
 }
 
 export type CallListItem = {
+  outcome: CallOutcomeFilter
   id: string
   provider_call_id: string
   hotel_id: string | null
@@ -349,6 +349,11 @@ export type CallListItem = {
   analytics: CallAnalyticsSummary | null
   // Server-derived: a PMS reservation was attributed to this call's link send.
   booked: boolean
+  // Orthogonal to `outcome`: the call ended forwarded to a human. The
+  // department name is a write-time snapshot; null when the destination
+  // matched no configured department (the row still reads as transferred).
+  transferred: boolean
+  transfer_department_name: string | null
   created_at: string
   updated_at: string
 }
@@ -396,6 +401,21 @@ export type SalesInquiry = {
   created_at: string
 }
 
+// Aggregate counts behind the call-log stat tiles. Outcome buckets sum to
+// total_calls; `transferred` is orthogonal. Mirrors CallStats in the backend's
+// schemas/call_records.py.
+export type CallStats = {
+  total_calls: number
+  booked: number
+  link_sent: number
+  not_booked: number
+  not_bookable: number
+  pending: number
+  transferred: number
+  // Mean over calls with a recorded duration; null when there are none.
+  avg_duration_seconds: number | null
+}
+
 export type CallDetail = {
   id: string
   provider_call_id: string
@@ -412,6 +432,9 @@ export type CallDetail = {
   // Sales-line calls only; null on reservations calls and on sales calls that
   // ended before the inquiry was submitted.
   sales_inquiry: SalesInquiry | null
+  // Orthogonal to `outcome`: the call ended forwarded to a human.
+  transferred: boolean
+  transfer_department_name: string | null
   created_at: string
   updated_at: string
 }
@@ -900,10 +923,22 @@ export function fetchCalls(
     date_to?: string
     call_id?: string
     line?: CallLine
+    // Narrows within whatever outcome filter is set (a transferred call keeps
+    // its own outcome bucket); omit for both.
+    transferred?: boolean
   },
   opts: Pick<Options, "signal"> = {},
 ) {
   return api<CallListPage>(withQuery("/api/v1/calls", params), opts)
+}
+
+// Honors hotel + date range only: the backend ignores outcome / transfer /
+// reason filters so a rate never collapses to 100% when its bucket is selected.
+export function fetchCallStats(
+  params: { hotel_id: string; date_from?: string; date_to?: string },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<CallStats>(withQuery("/api/v1/calls/stats", params), opts)
 }
 
 export function fetchCallDetail(callId: string, opts: Pick<Options, "signal"> = {}) {
