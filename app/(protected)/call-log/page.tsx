@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, Fragment } from "react"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Loader2, Phone, PhoneForwarded, Search, X } from "lucide-react"
+import { BadgeCheck, CalendarCheck, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Link2, Loader2, Phone, PhoneForwarded, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import {
   AlertDialog,
@@ -37,6 +37,7 @@ import {
   deleteCall,
   fetchCallDetail,
   fetchCallRecording,
+  fetchCallStats,
   fetchCalls,
   fetchNotBookedTaxonomy,
 } from "@/lib/api"
@@ -175,6 +176,46 @@ function parseUtc(value: string): Date {
 function formatDuration(seconds: number | null): string {
   if (seconds === null || seconds === undefined) return "—"
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+// Whole-percent share; "—" when there's nothing to divide by.
+function formatRate(count: number, denominator: number): string {
+  if (denominator <= 0) return "—"
+  return `${Math.round((count / denominator) * 100)}%`
+}
+
+function StatTile({
+  icon: Icon,
+  value,
+  label,
+  detail,
+}: {
+  icon: typeof Phone
+  value: string
+  label: string
+  // Small line under the label, e.g. the raw count behind a percentage.
+  detail?: string
+}) {
+  return (
+    <Card className="border-border flex-shrink-0">
+      <CardContent className="p-4 pr-8">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
+            <Icon className="w-5 h-5 text-[#6b7a4a]" />
+          </div>
+          <div>
+            {/* Label leads so the number reads in context, but stays a quiet
+                eyebrow (tiny, muted, tracked caps) beneath the page header. */}
+            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              {label}
+            </p>
+            <p className="text-2xl font-semibold leading-tight text-card-foreground">{value}</p>
+            {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 // Caller ID is stored E.164. Pretty-print US/Canada (+1) numbers as
@@ -386,11 +427,20 @@ function CallLogPageInner() {
   )
   const error = errorRaw ? describeError(errorRaw) : null
 
+  // Tiles describe the whole period (hotel + date range only), so they don't
+  // move when the outcome / reason / call-id filters change. Non-fatal: on
+  // failure the rate tiles just show "—".
+  const { data: stats, mutate: refreshStats } = useSWR(
+    hotelId ? (["call-log-stats", hotelId, dateFrom, dateTo] as const) : null,
+    ([, hid, from, to]) =>
+      fetchCallStats({ hotel_id: hid, date_from: from || undefined, date_to: to || undefined }),
+  )
+
   const [refreshing, setRefreshing] = useState(false)
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      await refreshCalls()
+      await Promise.all([refreshCalls(), refreshStats()])
     } finally {
       setRefreshing(false)
     }
@@ -451,6 +501,12 @@ function CallLogPageInner() {
     dateTo !== "" ||
     callIdSearch.trim() !== ""
 
+  const statsTotal = stats?.total_calls ?? 0
+  // Bookable = every call that had a verdict other than not_bookable. Pending
+  // calls have no verdict yet, so they're left out of the denominator.
+  const bookableCount = stats ? stats.booked + stats.link_sent + stats.not_booked : 0
+  const decidedCount = stats ? statsTotal - stats.pending : 0
+
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
@@ -469,21 +525,39 @@ function CallLogPageInner() {
 
         {/* Stats Summary */}
         <div className="flex flex-wrap gap-4 mb-6">
-          <Card className="border-border flex-shrink-0">
-            <CardContent className="p-4 pr-8">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                  <Phone className="w-5 h-5 text-[#6b7a4a]" />
-                </div>
-                <div>
-                  <p className="text-2xl font-semibold text-card-foreground">{total}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {hasFilters ? "Matching Calls" : "Total Calls"}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StatTile
+            icon={Phone}
+            value={String(total)}
+            label={hasFilters ? "Matching Calls" : "Total Calls"}
+          />
+          <StatTile
+            icon={Link2}
+            value={formatRate(stats?.link_sent ?? 0, statsTotal)}
+            label="Link Sent"
+            detail={stats ? `${stats.link_sent} of ${statsTotal} calls` : undefined}
+          />
+          <StatTile
+            icon={PhoneForwarded}
+            value={formatRate(stats?.transferred ?? 0, statsTotal)}
+            label="Transferred"
+            detail={stats ? `${stats.transferred} of ${statsTotal} calls` : undefined}
+          />
+          <StatTile
+            icon={CalendarCheck}
+            value={formatRate(bookableCount, decidedCount)}
+            label="Bookable"
+            detail={stats ? `${bookableCount} of ${decidedCount} assessed` : undefined}
+          />
+          {/* Hidden until the first attributed booking so an empty 0% tile
+              doesn't sit on the page while PMS attribution is new. */}
+          {stats && stats.booked >= 1 && (
+            <StatTile
+              icon={BadgeCheck}
+              value={formatRate(stats.booked, statsTotal)}
+              label="Booked"
+              detail={`${stats.booked} of ${statsTotal} calls`}
+            />
+          )}
         </div>
 
         {/* Filters */}

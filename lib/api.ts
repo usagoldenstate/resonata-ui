@@ -371,6 +371,21 @@ export type CallOutcomeFilter =
   | "not_bookable"
   | "pending"
 
+// Aggregate counts behind the call-log stat tiles. Outcome buckets sum to
+// total_calls; `transferred` is orthogonal. Mirrors CallStats in the backend's
+// schemas/call_records.py.
+export type CallStats = {
+  total_calls: number
+  booked: number
+  link_sent: number
+  not_booked: number
+  not_bookable: number
+  pending: number
+  transferred: number
+  // Mean over calls with a recorded duration; null when there are none.
+  avg_duration_seconds: number | null
+}
+
 export type CallDetail = {
   id: string
   provider_call_id: string
@@ -872,6 +887,15 @@ export function fetchCalls(
   opts: Pick<Options, "signal"> = {},
 ) {
   return api<CallListPage>(withQuery("/api/v1/calls", params), opts)
+}
+
+// Honors hotel + date range only: the backend ignores outcome / transfer /
+// reason filters so a rate never collapses to 100% when its bucket is selected.
+export function fetchCallStats(
+  params: { hotel_id: string; date_from?: string; date_to?: string },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<CallStats>(withQuery("/api/v1/calls/stats", params), opts)
 }
 
 export function fetchCallDetail(callId: string, opts: Pick<Options, "signal"> = {}) {
