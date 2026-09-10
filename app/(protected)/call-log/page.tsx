@@ -531,10 +531,10 @@ function CallLogPageInner() {
             label={hasFilters ? "Matching Calls" : "Total Calls"}
           />
           <StatTile
-            icon={Link2}
-            value={formatRate(stats?.link_sent ?? 0, statsTotal)}
-            label="Link Sent"
-            detail={stats ? `${stats.link_sent} of ${statsTotal} calls` : undefined}
+            icon={CalendarCheck}
+            value={formatRate(bookableCount, decidedCount)}
+            label="Bookable"
+            detail={stats ? `${bookableCount} of ${decidedCount} assessed` : undefined}
           />
           <StatTile
             icon={PhoneForwarded}
@@ -543,10 +543,10 @@ function CallLogPageInner() {
             detail={stats ? `${stats.transferred} of ${statsTotal} calls` : undefined}
           />
           <StatTile
-            icon={CalendarCheck}
-            value={formatRate(bookableCount, decidedCount)}
-            label="Bookable"
-            detail={stats ? `${bookableCount} of ${decidedCount} assessed` : undefined}
+            icon={Link2}
+            value={formatRate(stats?.link_sent ?? 0, statsTotal)}
+            label="Link Sent"
+            detail={stats ? `${stats.link_sent} of ${statsTotal} calls` : undefined}
           />
           {/* Hidden until the first attributed booking so an empty 0% tile
               doesn't sit on the page while PMS attribution is new. */}
