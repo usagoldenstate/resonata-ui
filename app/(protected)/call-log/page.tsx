@@ -22,6 +22,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -47,29 +48,42 @@ const PAGE_SIZE = 50
 
 // "All time" is the default: the call log lists every call unless a window is
 // chosen, unlike the reporting pages' rolling 30-day default.
-const datePresets = makePresets(["all", "7", "30", "90"])
+const datePresets = makePresets(["all", "7", "14", "30", "90"])
 
-const outcomeFilterOptions: Array<{ value: "all" | CallOutcomeFilter; label: string }> = [
+// The outcome dropdown filters on two dimensions. The first six entries are the
+// server-derived outcome buckets; the last two filter on transfer instead, which
+// is orthogonal (a transferred call still lands in booked / link_sent / …), so
+// picking one of them clears the outcome narrowing and vice versa.
+type TransferChoice = "transferred" | "not_transferred"
+type OutcomeFilter = "all" | CallOutcomeFilter | TransferChoice
+
+const outcomeFilterOptions: Array<{ value: OutcomeFilter; label: string }> = [
   { value: "all", label: "All outcomes" },
   { value: "booked", label: "Booked" },
   { value: "link_sent", label: "Link Sent" },
   { value: "not_booked", label: "Not Booked" },
   { value: "not_bookable", label: "Not Bookable" },
   { value: "pending", label: "Pending" },
+  { value: "transferred", label: "Transferred" },
+  { value: "not_transferred", label: "Not transferred" },
 ]
 
-const outcomeFilterValues = new Set(outcomeFilterOptions.map((o) => o.value))
+const outcomeFilterValues = new Set<string>(outcomeFilterOptions.map((o) => o.value))
 
-// Transfer is a second dimension, not an outcome bucket — a transferred call
-// still lands in booked / link_sent / not_bookable / … — so it gets its own
-// filter rather than an entry in the outcome list.
-type TransferFilter = "all" | "yes" | "no"
-const transferFilterOptions: Array<{ value: TransferFilter; label: string }> = [
-  { value: "all", label: "Transferred or not" },
-  { value: "yes", label: "Transferred" },
-  { value: "no", label: "Not transferred" },
-]
-const transferFilterValues = new Set<string>(transferFilterOptions.map((o) => o.value))
+// The dropdown draws a divider above this entry: everything from here down
+// filters on transfer rather than on the outcome bucket.
+const firstTransferChoice: OutcomeFilter = "transferred"
+
+// Splits the single dropdown value back into the two backend query params.
+function outcomeFilterParams(filter: OutcomeFilter): {
+  outcome?: CallOutcomeFilter
+  transferred?: boolean
+} {
+  if (filter === "all") return {}
+  if (filter === "transferred") return { transferred: true }
+  if (filter === "not_transferred") return { transferred: false }
+  return { outcome: filter }
+}
 
 // Mirrors the backend's not-booked taxonomy categories.
 const notBookedReasonOptions = ["Price", "Availability", "Amenities", "Policy", "Other"]
@@ -267,11 +281,15 @@ function CallLogPageInner() {
   // Filters can arrive via URL params (drill-through from the Not Booked
   // Reasons page); they seed the initial state only.
   const searchParams = useSearchParams()
-  const [outcomeFilter, setOutcomeFilter] = useState<"all" | CallOutcomeFilter>(() => {
+  const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>(() => {
     const param = searchParams.get("outcome")
-    return param && outcomeFilterValues.has(param as CallOutcomeFilter)
-      ? (param as CallOutcomeFilter)
-      : "all"
+    if (param && outcomeFilterValues.has(param)) return param as OutcomeFilter
+    // Older links narrowed on transfer through its own param, back when it was
+    // a separate dropdown; those still land on the merged entries.
+    const transferred = searchParams.get("transferred")
+    if (transferred === "yes" || transferred === "true") return "transferred"
+    if (transferred === "no" || transferred === "false") return "not_transferred"
+    return "all"
   })
   const [notBookedReasonFilter, setNotBookedReasonFilter] = useState(
     () => searchParams.get("not_booked_reason") ?? "all",
@@ -279,10 +297,6 @@ function CallLogPageInner() {
   const [notBookedSubcategoryFilter, setNotBookedSubcategoryFilter] = useState(
     () => searchParams.get("not_booked_subcategory") ?? "all",
   )
-  const [transferFilter, setTransferFilter] = useState<TransferFilter>(() => {
-    const param = searchParams.get("transferred")
-    return param && transferFilterValues.has(param) ? (param as TransferFilter) : "all"
-  })
   const [dateFrom, setDateFrom] = useState(() => searchParams.get("date_from") ?? "")
   const [dateTo, setDateTo] = useState(() => searchParams.get("date_to") ?? "")
   // Drill-through URLs carry explicit dates, so they land in custom mode;
@@ -337,7 +351,7 @@ function CallLogPageInner() {
   useEffect(() => {
     setOffset(0)
     setExpandedRow(null)
-  }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, transferFilter, dateFrom, dateTo, debouncedCallId])
+  }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId])
 
   const listKey = hotelId
     ? ([
@@ -347,7 +361,6 @@ function CallLogPageInner() {
         outcomeFilter,
         notBookedReasonFilter,
         notBookedSubcategoryFilter,
-        transferFilter,
         dateFrom,
         dateTo,
         debouncedCallId,
@@ -358,15 +371,14 @@ function CallLogPageInner() {
     isValidating: loading,
     error: errorRaw,
     mutate: refreshCalls,
-  } = useSWR(listKey, ([, hid, off, outcome, reason, subcategory, transferred, from, to, callId]) =>
+  } = useSWR(listKey, ([, hid, off, filter, reason, subcategory, from, to, callId]) =>
     fetchCalls({
       hotel_id: hid,
       limit: PAGE_SIZE,
       offset: off,
-      outcome: outcome === "all" ? undefined : outcome,
+      ...outcomeFilterParams(filter),
       not_booked_reason: reason === "all" ? undefined : reason,
       not_booked_subcategory: subcategory === "all" ? undefined : subcategory,
-      transferred: transferred === "all" ? undefined : transferred === "yes",
       date_from: from || undefined,
       date_to: to || undefined,
       call_id: callId.trim() || undefined,
@@ -435,7 +447,6 @@ function CallLogPageInner() {
     outcomeFilter !== "all" ||
     notBookedReasonFilter !== "all" ||
     notBookedSubcategoryFilter !== "all" ||
-    transferFilter !== "all" ||
     dateFrom !== "" ||
     dateTo !== "" ||
     callIdSearch.trim() !== ""
@@ -499,16 +510,17 @@ function CallLogPageInner() {
           </div>
           <Select
             value={outcomeFilter}
-            onValueChange={(value) => setOutcomeFilter(value as "all" | CallOutcomeFilter)}
+            onValueChange={(value) => setOutcomeFilter(value as OutcomeFilter)}
           >
             <SelectTrigger className="w-44 bg-card border-border">
               <SelectValue placeholder="All outcomes" />
             </SelectTrigger>
             <SelectContent>
               {outcomeFilterOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
+                <Fragment key={option.value}>
+                  {option.value === firstTransferChoice && <SelectSeparator />}
+                  <SelectItem value={option.value}>{option.label}</SelectItem>
+                </Fragment>
               ))}
             </SelectContent>
           </Select>
@@ -550,22 +562,6 @@ function CallLogPageInner() {
             </Select>
           )}
 
-          <Select
-            value={transferFilter}
-            onValueChange={(value) => setTransferFilter(value as TransferFilter)}
-          >
-            <SelectTrigger className="w-44 bg-card border-border">
-              <SelectValue placeholder="Transferred or not" />
-            </SelectTrigger>
-            <SelectContent>
-              {transferFilterOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
           {/* Call-date range */}
           <DateRangeFilter
             variant="toolbar"
@@ -589,7 +585,6 @@ function CallLogPageInner() {
                 setOutcomeFilter("all")
                 setNotBookedReasonFilter("all")
                 setNotBookedSubcategoryFilter("all")
-                setTransferFilter("all")
                 setDateFrom("")
                 setDateTo("")
                 setDateTimespan("all")
