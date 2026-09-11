@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
 import { AlertTriangle, ArrowUpRight, CheckCircle2, ChevronLeft, ChevronRight, Inbox, Loader2, Mail, Phone, RefreshCw, Search, Users, CalendarDays, BedDouble, MessageSquareText, Clock3, UserRound, Sparkles, Send, History, X } from "lucide-react"
 import { toast } from "sonner"
-import { GmailConnectionPanel, GmailConversationPanel } from "@/components/gmail-pilot"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -124,7 +123,6 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
       <Button variant="outline" size="sm" disabled={isValidating} onClick={() => { void mutate(); void staff.mutate(); void detail.mutate() }}><RefreshCw className={`size-4 ${isValidating ? "animate-spin" : ""}`} />Refresh</Button>
     </header>
     <div className="space-y-6 p-6 lg:p-8">
-      <GmailConnectionPanel hotelId={hotelId} />
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{cards.map(card => <div key={card.label} className="rounded-xl border bg-card p-5 shadow-sm"><div className="flex items-center justify-between text-sm text-muted-foreground">{card.label}<card.icon className={`size-4 ${card.color}`} /></div><p className="mt-3 text-3xl font-semibold tabular-nums">{!data || error || invalidDates ? "—" : card.value}</p></div>)}</div>
       <section className="overflow-hidden rounded-xl border bg-card shadow-sm" aria-label="Sales inquiries">
         <div className="space-y-4 border-b p-5">
@@ -228,8 +226,6 @@ function InquiryPanel({ row, timezone, hotelId, employees, staffReady, busy, sav
       </div>
       {row.email_status === "failed" && <p className="mt-3 rounded-lg bg-destructive/5 p-3 text-xs leading-relaxed text-destructive">The notification could not be sent. The inquiry is saved here so your team can follow up.</p>}
     </section>
-
-    <GmailConversationPanel hotelId={hotelId} inquiryId={row.id} />
 
     <section className="overflow-hidden rounded-2xl border border-brand-insights/25 bg-card shadow-sm">
       <div className="flex items-center justify-between border-b border-brand-insights/15 bg-brand-insights/5 px-5 py-4"><div className="flex items-center gap-2"><Phone className="size-4 text-brand-insights" /><h3 className="text-sm font-semibold">Follow-up</h3></div><span className="text-[11px] text-muted-foreground">Keep your team in the loop</span></div>
