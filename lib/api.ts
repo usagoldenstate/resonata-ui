@@ -1225,3 +1225,37 @@ export function refreshHotelRoomTypes(hotelId: string) {
     method: "POST",
   })
 }
+
+// Automatically captured sales inquiries and shared follow-up tracking.
+export type SalesFollowUpStatus = "new" | "call_attempted" | "contacted" | "booked" | "closed"
+export type SalesInquiryItem = SalesInquiry & {
+  provider_call_id: string | null
+  follow_up_status: SalesFollowUpStatus
+  assigned_user_id: string | null
+  assigned_user_label: string | null
+  version: number
+}
+export type SalesInquiryDetail = SalesInquiryItem & {
+  activity: Array<{ id: string; at: string; actor: string; kind: "status" | "assignment" | "note" | "call_attempt"; text: string }>
+}
+export type SalesAssignee = { id: string; label: string }
+export type SalesInquiryPage = { items: SalesInquiryItem[]; total: number; counts: Partial<Record<SalesFollowUpStatus, number>> }
+export type SalesInquiryPatch = {
+  version: number
+  follow_up_status?: SalesFollowUpStatus
+  assigned_user_id?: string | null
+  note?: string
+  log_call_attempt?: boolean
+}
+export function fetchSalesInquiries(hotelId: string, filters: Record<string, QueryValue>) {
+  return api<SalesInquiryPage>(withQuery("/api/v1/sales-inquiries", { hotel_id: hotelId, ...filters }))
+}
+export function fetchSalesAssignees(hotelId: string) {
+  return api<SalesAssignee[]>(withQuery("/api/v1/sales-inquiries/assignees", { hotel_id: hotelId }))
+}
+export function fetchSalesInquiry(hotelId: string, id: string) {
+  return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }))
+}
+export function updateSalesInquiry(hotelId: string, id: string, body: SalesInquiryPatch) {
+  return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }), { method: "PATCH", body })
+}
