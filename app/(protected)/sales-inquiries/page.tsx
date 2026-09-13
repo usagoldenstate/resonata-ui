@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
-import { AlertTriangle, ArrowUpRight, CheckCircle2, ChevronLeft, ChevronRight, Inbox, Loader2, Mail, Phone, RefreshCw, Search, Users, CalendarDays, BedDouble, MessageSquareText, Clock3, UserRound, Sparkles, Send, History, X } from "lucide-react"
+import { AlertTriangle, ArrowUpRight, CheckCircle2, ChevronLeft, ChevronRight, Inbox, Link2, Loader2, Mail, Phone, RefreshCw, Search, Users, CalendarDays, BedDouble, MessageSquareText, Clock3, UserRound, Sparkles, Send, History, Wallet, X } from "lucide-react"
 import { toast } from "sonner"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
@@ -15,9 +15,9 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetCl
 import { useHotel } from "@/lib/hotel-context"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { confirmDiscardUnsaved, registerUnsavedGuard } from "@/lib/unsaved-guard"
-import { ApiError, fetchSalesAssignees, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesAssignee, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
+import { ApiError, fetchSalesAssignees, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
 
-const statuses: Record<SalesFollowUpStatus, string> = { new: "New", call_attempted: "Call attempted", contacted: "Contacted", booked: "Booked", closed: "Closed / Not booked" }
+const statuses: Record<SalesFollowUpStatus, string> = { new: "New", call_attempted: "Call attempted", contacted: "Spoke with caller", booked: "Booked / Won", closed: "Closed / Not proceeding" }
 const statusStyle: Record<SalesFollowUpStatus, string> = {
   new: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-200",
   call_attempted: "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-200",
@@ -38,6 +38,14 @@ function dates(row: SalesInquiryItem) {
   const parts = row.event_dates_text || [row.event_start_date, row.event_end_date !== row.event_start_date ? row.event_end_date : null].filter(Boolean).join(" – ") || "Dates not provided"
   return `${parts}${row.dates_flexible ? " · Flexible" : ""}`
 }
+// The caller's words lead; the parsed figure rides in parentheses when it adds
+// something. Most callers hedge ("we're flexible"), so text-only is normal.
+function budget(row: { budget_text: string | null; budget_amount: string | null }): string | null {
+  const amount =
+    row.budget_amount === null ? null : Number(row.budget_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })
+  if (!amount) return row.budget_text
+  return row.budget_text ? `${row.budget_text} (${amount})` : amount
+}
 function EmailBadge({ status }: { status: SalesInquiryItem["email_status"] }) {
   return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${status === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
     {status === "failed" ? <AlertTriangle className="size-3.5" /> : <Mail className="size-3.5" />}
@@ -49,11 +57,14 @@ function StatusSelect({ row, disabled, onChange }: { row: SalesInquiryItem; disa
     {Object.entries(statuses).map(([value, label]) => <option className="bg-background text-foreground" key={value} value={value}>{label}</option>)}
   </select>
 }
-function OwnerSelect({ row, employees, disabled, onChange }: { row: SalesInquiryItem; employees: SalesAssignee[]; disabled: boolean; onChange: (id: string | null) => void }) {
-  return <select aria-label={`Assigned employee for ${row.caller_name || "inquiry"}`} className={`${selectClass} w-44`} value={row.assigned_user_id || ""} disabled={disabled} onChange={e => onChange(e.target.value || null)}>
+function OwnerSelect({ row, reps, disabled, onChange }: { row: SalesInquiryItem; reps: string[]; disabled: boolean; onChange: (name: string | null) => void }) {
+  // Names come from the hotel's sales-team roster (Settings), not user
+  // accounts. A name since removed from the roster still shows on the rows it
+  // was saved against — history is never rewritten by a roster edit.
+  return <select aria-label={`Assigned salesperson for ${row.caller_name || "inquiry"}`} className={`${selectClass} w-44`} value={row.assigned_rep || ""} disabled={disabled} onChange={e => onChange(e.target.value || null)}>
     <option value="">Unassigned</option>
-    {row.assigned_user_id && !employees.some(u => u.id === row.assigned_user_id) && <option value={row.assigned_user_id}>{row.assigned_user_label || "Former employee"} (unavailable)</option>}
-    {employees.map(u => <option key={u.id} value={u.id}>{u.label}</option>)}
+    {row.assigned_rep && !reps.includes(row.assigned_rep) && <option value={row.assigned_rep}>{row.assigned_rep} (no longer on the team)</option>}
+    {reps.map(name => <option key={name} value={name}>{name}</option>)}
   </select>
 }
 
@@ -84,12 +95,12 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
   const q = useDebouncedValue(search, 300)
   const event = useDebouncedValue(eventType, 300)
   const invalidDates = !!(dateFrom && dateTo && dateFrom > dateTo)
-  const filters = { q, event_type: event, status, assigned_user_id: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", email_status: email, date_from: dateFrom, date_to: dateTo, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+  const filters = { q, event_type: event, status, assigned_rep: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", email_status: email, date_from: dateFrom, date_to: dateTo, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
   const { data, error, isLoading, isValidating, mutate } = useSWR(invalidDates ? null : ["sales-inquiries", hotelId, filters], () => fetchSalesInquiries(hotelId, filters), { refreshInterval: 30000 })
   const staff = useSWR(["sales-assignees", hotelId], () => fetchSalesAssignees(hotelId))
   const selectedId = selected || (!dismissed && callId ? data?.items[0]?.id : null)
   const detail = useSWR(selectedId ? ["sales-inquiry", hotelId, selectedId] : null, () => fetchSalesInquiry(hotelId, selectedId!), { refreshInterval: 30000 })
-  const employees = staff.data || []
+  const reps = staff.data || []
   async function save(row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) {
     if (saving.current) return false
     saving.current = true
@@ -130,7 +141,7 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
           <div className="flex flex-wrap gap-3">
             <label className="relative min-w-60 flex-1"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Search inquiries" placeholder="Search name, phone, email, or request…" value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-9" /></label>
             <select aria-label="Filter by status" className={selectClass} value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}><option value="">All statuses</option>{Object.entries(statuses).map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select>
-            <select aria-label="Filter by employee" className={selectClass} value={owner} onChange={e => { setOwner(e.target.value); setPage(0) }}><option value="">All employees</option><option value="unassigned">Unassigned</option>{employees.map(u => <option key={u.id} value={u.id}>{u.label}</option>)}</select>
+            <select aria-label="Filter by salesperson" className={selectClass} value={owner} onChange={e => { setOwner(e.target.value); setPage(0) }}><option value="">All salespeople</option><option value="unassigned">Unassigned</option>{reps.map(name => <option key={name} value={name}>{name}</option>)}</select>
             <select aria-label="Filter by email send status" className={selectClass} value={email} onChange={e => { setEmail(e.target.value); setPage(0) }}><option value="">All email statuses</option><option value="sent">Sent</option><option value="sending">Sending</option><option value="failed">Send failed</option></select>
           </div>
           <div className="flex flex-wrap items-end gap-3 text-xs text-muted-foreground">
@@ -148,7 +159,7 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
               <td className="px-5 py-5"><button className="text-left font-medium hover:underline focus-visible:outline-ring" onClick={() => setSelected(row.id)}>{row.caller_name || "Name not provided"}</button><p className="mt-1 text-xs text-muted-foreground">{row.callback_phone_e164 || row.email || "No contact provided"}</p></td>
               <td className="max-w-64 px-5 py-5"><p className="font-medium">{row.event_type}{row.headcount !== null ? ` · ${row.headcount} guests` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{dates(row)}</p></td>
               <td className="px-5 py-5" onClick={e => e.stopPropagation()}><StatusSelect row={row} disabled={!!busy} onChange={v => void save(row, { follow_up_status: v })} /></td>
-              <td className="px-5 py-5" onClick={e => e.stopPropagation()}><OwnerSelect row={row} employees={employees} disabled={!!busy || !staff.data} onChange={id => void save(row, { assigned_user_id: id })} /></td>
+              <td className="px-5 py-5" onClick={e => e.stopPropagation()}><OwnerSelect row={row} reps={reps} disabled={!!busy || !staff.data} onChange={name => void save(row, { assigned_rep: name })} /></td>
               <td className="px-5 py-5"><EmailBadge status={row.email_status} /></td>
             </tr>)}</tbody></table></div>
           <div className="flex items-center justify-between border-t px-5 py-4 text-xs text-muted-foreground"><span>{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, data.total)} of {data.total} inquiries</span><div className="flex items-center gap-2"><Button aria-label="Previous page" variant="outline" size="icon" disabled={!page} onClick={() => setPage(p => p - 1)}><ChevronLeft className="size-4" /></Button><Button aria-label="Next page" variant="outline" size="icon" disabled={(page + 1) * PAGE_SIZE >= data.total} onClick={() => setPage(p => p + 1)}><ChevronRight className="size-4" /></Button></div></div>
@@ -165,13 +176,13 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
             <SheetClose asChild><button aria-label="Close inquiry" className="absolute right-4 top-5 flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><X className="size-4" /></button></SheetClose>
           </div>
         </SheetHeader>
-        {detail.error && !detail.data ? <div role="alert" className="p-6">Could not load this inquiry. <button className="underline" onClick={() => void detail.mutate()}>Retry</button></div> : !detail.data ? <div className="p-6" role="status">Loading inquiry…</div> : <InquiryPanel key={detail.data.id} row={detail.data} timezone={timezone} hotelId={hotelId} employees={employees} staffReady={!!staff.data} busy={!!busy} save={save} />}
+        {detail.error && !detail.data ? <div role="alert" className="p-6">Could not load this inquiry. <button className="underline" onClick={() => void detail.mutate()}>Retry</button></div> : !detail.data ? <div className="p-6" role="status">Loading inquiry…</div> : <InquiryPanel key={detail.data.id} row={detail.data} timezone={timezone} hotelId={hotelId} reps={reps} staffReady={!!staff.data} busy={!!busy} save={save} />}
       </SheetContent>
     </Sheet>
   </>
 }
 
-function InquiryPanel({ row, timezone, hotelId, employees, staffReady, busy, save }: { row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelId: string; employees: SalesAssignee[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean> }) {
+function InquiryPanel({ row, timezone, hotelId, reps, staffReady, busy, save }: { row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelId: string; reps: string[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean> }) {
   const [note, setNote] = useState("")
   useEffect(() => {
     if (!note.trim()) return
@@ -185,6 +196,7 @@ function InquiryPanel({ row, timezone, hotelId, employees, staffReady, busy, sav
     { label: "Request", value: row.event_type, icon: Sparkles },
     { label: "Event dates", value: dates(row), icon: CalendarDays },
     { label: "Party size", value: row.headcount !== null ? `${row.headcount} guests` : "Not provided", icon: Users },
+    { label: "Budget", value: budget(row) ?? "Not provided", icon: Wallet },
     { label: "Guest rooms", value: row.needs_guest_rooms === null ? "Not provided" : row.needs_guest_rooms ? "Rooms needed" : "Not needed", icon: BedDouble },
   ]
   const panelControl = "h-11! w-full min-w-0 rounded-lg border-border bg-card text-sm shadow-xs focus-visible:ring-brand-insights/20"
@@ -238,13 +250,13 @@ function InquiryPanel({ row, timezone, hotelId, employees, staffReady, busy, sav
             </Select>
           </div>
           <div className="min-w-0"><p className="mb-2 text-xs font-medium text-muted-foreground">Assigned to</p>
-            <Select value={row.assigned_user_id || "unassigned"} disabled={busy || !staffReady} onValueChange={id => void save(row, { assigned_user_id: id === "unassigned" ? null : id })}>
-              <SelectTrigger aria-label={`Assigned employee for ${row.caller_name || "inquiry"}`} className={panelControl}><span className="flex min-w-0 items-center gap-2"><UserRound className="size-3.5 shrink-0 text-muted-foreground" /><SelectValue /></span></SelectTrigger>
-              <SelectContent><SelectItem value="unassigned">Unassigned</SelectItem>{row.assigned_user_id && !employees.some(u => u.id === row.assigned_user_id) && <SelectItem value={row.assigned_user_id}>{row.assigned_user_label || "Former employee"} (unavailable)</SelectItem>}{employees.map(u => <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>)}</SelectContent>
+            <Select value={row.assigned_rep || "unassigned"} disabled={busy || !staffReady} onValueChange={name => void save(row, { assigned_rep: name === "unassigned" ? null : name })}>
+              <SelectTrigger aria-label={`Assigned salesperson for ${row.caller_name || "inquiry"}`} className={panelControl}><span className="flex min-w-0 items-center gap-2"><UserRound className="size-3.5 shrink-0 text-muted-foreground" /><SelectValue /></span></SelectTrigger>
+              <SelectContent><SelectItem value="unassigned">Unassigned</SelectItem>{row.assigned_rep && !reps.includes(row.assigned_rep) && <SelectItem value={row.assigned_rep}>{row.assigned_rep} (no longer on the team)</SelectItem>}{reps.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
-        <Button variant="outline" className="h-10 w-full rounded-lg border-brand-insights/25 bg-brand-insights/5 text-brand-insights shadow-none hover:bg-brand-insights/10 hover:text-brand-insights" disabled={busy} onClick={() => void save(row, { log_call_attempt: true })}><Phone className="size-3.5" />Log call attempt</Button>
+        <Button variant="outline" className="h-10 w-full rounded-lg border-brand-insights/25 bg-brand-insights/5 text-brand-insights shadow-none hover:bg-brand-insights/10 hover:text-brand-insights" disabled={busy} onClick={() => void save(row, { follow_up_status: "call_attempted" })}><Phone className="size-3.5" />Log call attempt</Button>
         <div className="border-t pt-4"><label htmlFor="follow-up-note" className="flex items-center gap-2 text-xs font-medium"><MessageSquareText className="size-3.5 text-muted-foreground" />Internal note</label>
           <div className="mt-2.5 overflow-hidden rounded-xl border bg-background/50 transition-shadow focus-within:border-brand-insights/50 focus-within:ring-2 focus-within:ring-brand-insights/10">
             <Textarea id="follow-up-note" className="min-h-24 resize-y rounded-none border-0 bg-transparent px-3.5 py-3 text-sm shadow-none placeholder:text-muted-foreground/75 focus-visible:ring-0 dark:bg-transparent" placeholder="Add a conversation update or next step…" maxLength={4000} value={note} disabled={busy} onChange={e => setNote(e.target.value)} />
@@ -255,8 +267,19 @@ function InquiryPanel({ row, timezone, hotelId, employees, staffReady, busy, sav
     </section>
 
     <section className="px-1 pt-1"><div className="mb-4 flex items-center gap-2"><History className="size-4 text-muted-foreground" /><h3 className="text-sm font-semibold">Activity</h3><span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{row.activity.length}</span></div>
-      {!row.activity.length ? <div className="rounded-xl border border-dashed px-5 py-6 text-center"><MessageSquareText className="mx-auto mb-2 size-5 text-brand-insights/60" /><p className="text-sm font-medium">Ready for the first follow-up</p><p className="mt-1 text-xs text-muted-foreground">Call attempts, notes, and updates will appear here.</p></div> : <ol className="ml-3 border-l border-brand-insights/20">{[...row.activity].reverse().map(item => <li key={item.id} className="relative pb-5 pl-6 last:pb-0"><span className="absolute -left-3 flex size-6 items-center justify-center rounded-full border border-brand-insights/20 bg-card text-brand-insights">{item.kind === "note" ? <MessageSquareText className="size-3" /> : item.kind === "assignment" ? <UserRound className="size-3" /> : item.kind === "call_attempt" ? <Phone className="size-3" /> : <CheckCircle2 className="size-3" />}</span><div className="rounded-xl border bg-card p-3.5 shadow-xs"><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{item.kind === "status" ? item.text.split(" → ").map(s => statuses[s as SalesFollowUpStatus] || s).join(" → ") : item.text}</p><p className="mt-2 break-all text-[11px] text-muted-foreground">{item.actor}<span className="mx-1.5">·</span>{timestamp(item.at, timezone)}</p></div></li>)}</ol>}
+      {!row.activity.length ? <div className="rounded-xl border border-dashed px-5 py-6 text-center"><MessageSquareText className="mx-auto mb-2 size-5 text-brand-insights/60" /><p className="text-sm font-medium">Ready for the first follow-up</p><p className="mt-1 text-xs text-muted-foreground">Call attempts, notes, and updates will appear here.</p></div> : <ol className="ml-3 border-l border-brand-insights/20">{[...row.activity].reverse().map(item => <li key={item.id} className="relative pb-5 pl-6 last:pb-0"><span className="absolute -left-3 flex size-6 items-center justify-center rounded-full border border-brand-insights/20 bg-card text-brand-insights">{item.kind === "note" ? <MessageSquareText className="size-3" /> : item.kind === "assignment" ? <UserRound className="size-3" /> : <CheckCircle2 className="size-3" />}</span><div className="rounded-xl border bg-card p-3.5 shadow-xs"><p className="break-words text-sm font-medium leading-relaxed">{item.text}</p>{item.note && <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">{item.note}</p>}<p className="mt-2 break-all text-[11px] text-muted-foreground">{item.actor}<span className="mx-1.5">·</span>{timestamp(item.at, timezone)}{item.source === "email_link" && <><span className="mx-1.5">·</span>via email link</>}</p></div></li>)}</ol>}
     </section>
+    {/* The same no-login link the notification email carried, re-derived
+        server-side — for when that email was lost or the inquiry needs to go
+        to someone who wasn't on it. */}
+    {row.follow_up_url && <Button variant="outline" className="h-11 w-full rounded-xl bg-card text-sm" onClick={async () => {
+      try {
+        await navigator.clipboard.writeText(row.follow_up_url!)
+        toast.success("Update link copied", { description: "Anyone with this link can log follow-up on this inquiry — no sign-in needed." })
+      } catch {
+        toast.error("Could not copy the link", { description: "Your browser blocked clipboard access." })
+      }
+    }}><Link2 className="size-4 text-brand-insights" />Copy update link<ArrowUpRight className="ml-auto size-4 text-muted-foreground" /></Button>}
     {row.provider_call_id && <Button variant="outline" className="h-11 w-full rounded-xl bg-card text-sm" asChild><Link onClick={e => { if (!confirmDiscardUnsaved()) e.preventDefault() }} href={`/call-log?${new URLSearchParams({ hotel_id: hotelId, call_id: row.provider_call_id, line: "sales" })}`}><Phone className="size-4 text-brand-insights" />View original call<ArrowUpRight className="ml-auto size-4 text-muted-foreground" /></Link></Button>}
   </div>
 }
