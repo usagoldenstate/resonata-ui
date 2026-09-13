@@ -74,7 +74,7 @@ export default function SalesInquiriesPage() {
 function SalesPage() {
   const { hotelId, hotelTimezone, loading, error } = useHotel()
   const params = useSearchParams()
-  return <div className="flex h-screen bg-background"><Sidebar /><main className="min-w-0 flex-1 overflow-auto">
+  return <div className="flex h-screen bg-background"><Sidebar /><main className="app-content min-w-0 flex-1 overflow-auto">
     {hotelId ? <Workspace key={`${hotelId}:${params.toString()}`} hotelId={hotelId} timezone={hotelTimezone || "UTC"} initialInquiry={params.get("inquiry_id")} initialCall={params.get("call_id")} /> : <div className="p-8 text-muted-foreground">{loading ? "Loading hotel…" : error || "Select a hotel to view sales inquiries."}</div>}
   </main></div>
 }
@@ -134,7 +134,7 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
       <Button variant="outline" size="sm" disabled={isValidating} onClick={() => { void mutate(); void staff.mutate(); void detail.mutate() }}><RefreshCw className={`size-4 ${isValidating ? "animate-spin" : ""}`} />Refresh</Button>
     </header>
     <div className="space-y-6 p-6 lg:p-8">
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{cards.map(card => <div key={card.label} className="rounded-xl border bg-card p-5 shadow-sm"><div className="flex items-center justify-between text-sm text-muted-foreground">{card.label}<card.icon className={`size-4 ${card.color}`} /></div><p className="mt-3 text-3xl font-semibold tabular-nums">{!data || error || invalidDates ? "—" : card.value}</p></div>)}</div>
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{cards.map(card => <div key={card.label} className="metric-card rounded-2xl border border-border/80 bg-card p-5 shadow-xs"><div className="flex items-center justify-between text-sm text-muted-foreground">{card.label}<card.icon className={`size-4 ${card.color}`} /></div><p className="metric-value mt-3 text-3xl font-semibold tabular-nums">{!data || error || invalidDates ? "—" : card.value}</p></div>)}</div>
       <section className="overflow-hidden rounded-xl border bg-card shadow-sm" aria-label="Sales inquiries">
         <div className="space-y-4 border-b p-5">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">Incoming inquiries</h2><p className="mt-1 text-xs text-muted-foreground">Automatically captured by your voice agent · Received times in {timezone}</p></div><Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button></div>

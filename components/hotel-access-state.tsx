@@ -20,7 +20,7 @@ const SUPPORT_CONTACT: { label: string; href: string } | null = {
 
 export function NoHotelAccess() {
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
+    <div className="app-content flex-1 flex items-center justify-center p-8">
       <div className="max-w-sm text-center">
         <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-muted">
           <Building2 className="h-5 w-5 text-muted-foreground" />
@@ -44,7 +44,7 @@ export function NoHotelAccess() {
 
 export function HotelLoadError({ onRetry }: { onRetry?: () => void }) {
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
+    <div className="app-content flex-1 flex items-center justify-center p-8">
       <div className="max-w-sm text-center">
         <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-muted">
           <AlertCircle className="h-5 w-5 text-muted-foreground" />

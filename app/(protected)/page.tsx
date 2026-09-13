@@ -300,12 +300,12 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
-      <main className="flex-1 p-8">
+      <main className="app-content flex-1 p-8">
         {/* Header */}
-        <div className="flex items-start justify-between mb-6">
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
           <div>
             <h2 className="text-2xl font-semibold text-foreground">Dashboard</h2>
-            <p className="text-sm text-muted-foreground">Click any section to view detailed analytics</p>
+            <p className="text-sm text-muted-foreground">Your hotel’s performance, at a glance.</p>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <DateRangeFilter
                 variant="header"
@@ -344,6 +344,7 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-3">
             <Button
+              aria-pressed={showComparison}
               variant={showComparison ? "default" : "outline"}
               onClick={handleToggleComparison}
               className={showComparison ? "bg-[#6b7a4a] hover:bg-[#5a6940]" : "border-border"}
@@ -373,11 +374,11 @@ export default function Dashboard() {
         ) : null}
 
         {/* Main Grid - 2x2 */}
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           {/* Call Volume Section */}
-          <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all group h-full">
+          <Card className="metric-card border-border hover:border-primary/35 hover:shadow-md transition-[border-color,box-shadow] duration-200 group h-full py-0">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <Link href="/reporting/call-volume" className="flex-1">
                   <h3 className="text-lg font-semibold text-card-foreground">Call Volume</h3>
                   <p className="text-xs text-muted-foreground">Daily call trends and patterns</p>
@@ -385,6 +386,7 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2">
                   <div className="flex items-center bg-muted rounded-lg p-0.5 border border-border" onClick={(e) => e.preventDefault()}>
                     <button
+                      aria-pressed={callVolumeType === "bookable"}
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCallVolumeType("bookable") }}
                       className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                         callVolumeType === "bookable"
@@ -395,6 +397,7 @@ export default function Dashboard() {
                       Bookable Calls
                     </button>
                     <button
+                      aria-pressed={callVolumeType === "total"}
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCallVolumeType("total") }}
                       className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                         callVolumeType === "total"
@@ -405,7 +408,7 @@ export default function Dashboard() {
                       Total Calls
                     </button>
                   </div>
-                  <Link href="/reporting/call-volume">
+                  <Link href="/reporting/call-volume" aria-label="View call volume report">
                     <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
                   </Link>
                 </div>
@@ -413,7 +416,7 @@ export default function Dashboard() {
 
               <Link href="/reporting/call-volume" className="block">
                 <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-3xl font-semibold text-card-foreground">
+                  <span className="metric-value text-4xl font-semibold text-card-foreground">
                     {primary.loading ? "..." : formatNumber(callVolume)}
                   </span>
                   <span className="text-sm text-muted-foreground">
@@ -448,9 +451,9 @@ export default function Dashboard() {
 
           {/* Conversion Rate Section */}
           <Link href="/reporting/revenue" className="block">
-            <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all cursor-pointer group h-full">
+            <Card className="metric-card border-border hover:border-primary/35 hover:shadow-md transition-[border-color,box-shadow] duration-200 cursor-pointer group h-full py-0">
               <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <div>
                     <h3 className="text-lg font-semibold text-card-foreground">Conversion Rate</h3>
                     <p className="text-xs text-muted-foreground">Booking success metrics</p>
@@ -459,7 +462,7 @@ export default function Dashboard() {
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-3xl font-semibold text-card-foreground">
+                  <span className="metric-value text-4xl font-semibold text-card-foreground">
                     {primary.loading ? "..." : formatPercent(avgRate)}
                   </span>
                   <span className="text-sm text-muted-foreground">avg rate</span>
@@ -500,9 +503,9 @@ export default function Dashboard() {
 
           {/* Not Booked Reasons Section */}
           <Link href="/reporting/not-booked" className="block">
-            <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all cursor-pointer group h-full">
+            <Card className="metric-card border-border hover:border-primary/35 hover:shadow-md transition-[border-color,box-shadow] duration-200 cursor-pointer group h-full py-0">
               <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <div>
                     <h3 className="text-lg font-semibold text-card-foreground">Not Booked Reasons</h3>
                     <p className="text-xs text-muted-foreground">Why guests did not book</p>
@@ -511,7 +514,7 @@ export default function Dashboard() {
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-3xl font-semibold text-card-foreground">
+                  <span className="metric-value text-4xl font-semibold text-card-foreground">
                     {primary.loading ? "..." : formatNumber(totalNotBooked)}
                   </span>
                   <span className="text-sm text-muted-foreground">total not booked</span>
@@ -548,9 +551,9 @@ export default function Dashboard() {
 
           {/* Projected Revenue Section */}
           <Link href="/reporting/revenue" className="block">
-            <Card className="border-border hover:border-[#6b7a4a]/50 hover:shadow-md transition-all cursor-pointer group h-full">
+            <Card className="metric-card border-border hover:border-primary/35 hover:shadow-md transition-[border-color,box-shadow] duration-200 cursor-pointer group h-full py-0">
               <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <div>
                     <h3 className="text-lg font-semibold text-card-foreground">Projected Revenue</h3>
                     <p className="text-xs text-muted-foreground">Projected room revenue from bookings</p>
@@ -559,7 +562,7 @@ export default function Dashboard() {
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-3xl font-semibold text-card-foreground">
+                  <span className="metric-value text-4xl font-semibold text-card-foreground">
                     {primary.loading ? "..." : formatMoney(revenueCents, currency)}
                   </span>
                   <span className="text-sm text-muted-foreground">total revenue</span>

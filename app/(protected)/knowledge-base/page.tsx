@@ -212,7 +212,7 @@ export default function KnowledgeBasePage() {
     return (
       <div className="flex min-h-screen bg-background">
         <Sidebar />
-        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+        <div className="app-content flex-1 flex items-center justify-center text-sm text-muted-foreground">
           Loading hotels…
         </div>
       </div>
@@ -239,9 +239,9 @@ export default function KnowledgeBasePage() {
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="app-content flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="bg-card border-b border-border px-8 py-4 flex items-center justify-between shrink-0">
+        <div className="bg-background border-b border-border px-6 py-6 flex flex-wrap gap-4 items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-bold text-foreground">
               {hotel?.display_name ?? data.pName ?? "Knowledge Base"}

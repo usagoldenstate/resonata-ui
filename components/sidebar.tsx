@@ -1,6 +1,6 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useClerk } from "@clerk/nextjs"
@@ -20,6 +20,8 @@ import {
   Wrench,
   FlaskConical,
   LogOut,
+  Menu,
+  AudioLines,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -27,6 +29,9 @@ import { useCurrentUser } from "@/lib/current-user-context"
 import { featureFlags } from "@/lib/env"
 import { useHotel } from "@/lib/hotel-context"
 import { confirmDiscardUnsaved } from "@/lib/unsaved-guard"
+
+import { Button } from "@/components/ui/button"
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 
 type Accent = "insights" | "agent"
 
@@ -83,29 +88,34 @@ const ACCENT: Record<Accent, { label: string; activeText: string; activeBg: stri
 }
 
 export function Sidebar() {
+  const [mobileOpen, setMobileOpen] = useState(false)
   const pathname = usePathname()
   const { hotels, hotelId, setHotelId, loading, accessState } = useHotel()
   const { isPlatformAdmin } = useCurrentUser()
   const { signOut } = useClerk()
+  const currentPageLabel = sections.flatMap(section => section.items).find(item => item.href === pathname)?.label
+    ?? ({ "/settings": "Settings", "/demo-hotels": "Demo Hotels", "/dev-pages": "Dev Pages" }[pathname])
+    ?? "Workspace"
 
   // Block in-app navigation when the current page reports unsaved edits.
   // Used on every <Link> click and the hotel <select> change handler.
   const guardedNav = (e: React.MouseEvent) => {
     if (!confirmDiscardUnsaved()) {
       e.preventDefault()
+    } else {
+      setMobileOpen(false)
     }
   }
 
-  return (
-    <aside className="w-52 bg-sidebar border-r border-sidebar-border flex flex-col">
-      <div className="p-6">
-        <h1 className="text-xl font-semibold text-sidebar-foreground">
-          Resona<span className="text-[#6b7a4a]">ta</span>
-        </h1>
+  const navigation = (hotelSelectId: string) => (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center gap-2.5 px-5 py-7">
+        <span className="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs"><AudioLines className="size-4" aria-hidden="true" /></span>
+        <span className="text-xl font-semibold tracking-tight text-sidebar-foreground">Resona<span className="text-primary">ta</span></span>
       </div>
 
-      <div className="px-4 pb-4">
-        <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1.5">
+      <div className="mx-3 mb-6 rounded-xl border border-sidebar-border/70 bg-muted/40 p-3">
+        <label htmlFor={hotelSelectId} className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1.5">
           Hotel
         </label>
         {loading ? (
@@ -116,6 +126,7 @@ export function Sidebar() {
           <div className="text-xs text-muted-foreground">No hotels assigned</div>
         ) : (
           <select
+            id={hotelSelectId}
             value={hotelId ?? ""}
             onChange={(e) => {
               if (e.target.value === hotelId) return
@@ -128,7 +139,7 @@ export function Sidebar() {
               }
               setHotelId(e.target.value)
             }}
-            className="w-full text-sm rounded-md border border-sidebar-border bg-background px-2 py-1.5"
+            className="w-full text-sm rounded-lg border border-sidebar-border bg-card px-2.5 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
           >
             {hotels.map((h) => (
               <option key={h.hotel_id} value={h.hotel_id}>
@@ -139,7 +150,7 @@ export function Sidebar() {
         )}
       </div>
 
-      <nav className="flex-1 px-3 pb-2 overflow-y-auto">
+      <nav aria-label="Main navigation" className="flex-1 px-3 pb-2 overflow-y-auto">
         {sections.map((section) => {
           const items = section.items.filter((item) => item.visible)
           if (items.length === 0) return null
@@ -154,16 +165,17 @@ export function Sidebar() {
               >
                 {section.label}
               </div>
-              <ul className="space-y-0.5">
+              <ul className="space-y-1">
                 {items.map((item) => {
                   const isActive = pathname === item.href
                   return (
                     <li key={item.href}>
                       <Link
                         href={item.href}
+                        aria-current={isActive ? "page" : undefined}
                         onClick={guardedNav}
                         className={cn(
-                          "relative w-full flex items-center gap-2.5 pl-4 pr-3 py-2 rounded-lg text-sm transition-colors",
+                          "app-nav-link relative w-full flex items-center gap-2.5 pl-4 pr-3 py-2.5 rounded-xl text-[13px] transition-colors",
                           isActive
                             ? cn(accent.activeBg, accent.activeText, "font-medium")
                             : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
@@ -199,9 +211,10 @@ export function Sidebar() {
       <div className="p-3 border-t border-sidebar-border space-y-0.5">
         <Link
           href="/settings"
+          aria-current={pathname === "/settings" ? "page" : undefined}
           onClick={guardedNav}
           className={cn(
-            "w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm transition-colors",
+            "w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[13px] transition-colors",
             pathname === "/settings"
               ? "bg-muted/60 text-sidebar-foreground font-medium"
               : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
@@ -213,9 +226,10 @@ export function Sidebar() {
         {isPlatformAdmin ? (
           <Link
             href="/demo-hotels"
+            aria-current={pathname === "/demo-hotels" ? "page" : undefined}
             onClick={guardedNav}
             className={cn(
-              "w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm transition-colors",
+              "w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[13px] transition-colors",
               pathname === "/demo-hotels"
                 ? "bg-muted/60 text-sidebar-foreground font-medium"
                 : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
@@ -228,9 +242,10 @@ export function Sidebar() {
         {isPlatformAdmin ? (
           <Link
             href="/dev-pages"
+            aria-current={pathname === "/dev-pages" ? "page" : undefined}
             onClick={guardedNav}
             className={cn(
-              "w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm transition-colors",
+              "w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[13px] transition-colors",
               pathname === "/dev-pages"
                 ? "bg-muted/60 text-sidebar-foreground font-medium"
                 : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
@@ -252,6 +267,27 @@ export function Sidebar() {
           Sign out
         </button>
       </div>
-    </aside>
+    </div>
+  )
+
+  return (
+    <>
+      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-sidebar-border/80 bg-sidebar md:flex">
+        {navigation("desktop-hotel")}
+      </aside>
+      <div className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b bg-sidebar px-4 md:hidden">
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon" aria-label="Open navigation"><Menu /></Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-72 gap-0 bg-sidebar" aria-describedby={undefined}>
+            <SheetTitle className="sr-only">Navigation</SheetTitle>
+            {navigation("mobile-hotel")}
+          </SheetContent>
+        </Sheet>
+        <span className="text-lg font-semibold tracking-tight">Resonata</span>
+        <span className="ml-auto truncate text-xs text-muted-foreground">{currentPageLabel}</span>
+      </div>
+    </>
   )
 }

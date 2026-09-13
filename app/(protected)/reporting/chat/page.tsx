@@ -11,7 +11,7 @@ export default function ReportingChatPage() {
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
-      <main className="flex h-screen flex-1 flex-col p-8">
+      <main className="app-content flex h-screen flex-1 flex-col p-8">
         <div className="mb-4">
           <h1 className="text-2xl font-semibold">Ask Insights</h1>
           <p className="text-sm text-muted-foreground">

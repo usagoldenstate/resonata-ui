@@ -346,22 +346,14 @@ function StatTile({
   detail?: string
 }) {
   return (
-    <Card className="border-border flex-shrink-0">
-      <CardContent className="py-2.5 px-4 pr-8">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-            <Icon className="w-4 h-4 text-[#6b7a4a]" />
-          </div>
-          <div>
-            {/* Label leads so the number reads in context, but stays a quiet
-                eyebrow (tiny, muted, tracked caps) beneath the page header. */}
-            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-              {label}
-            </p>
-            <p className="text-2xl font-semibold leading-tight text-card-foreground">{value}</p>
-            {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
-          </div>
+    <Card className="metric-card border-border/80 flex-1 min-w-40 py-4">
+      <CardContent className="px-4">
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <Icon className="size-4 shrink-0 text-primary" aria-hidden="true" />
         </div>
+        <p className="metric-value text-3xl font-semibold leading-tight text-card-foreground">{value}</p>
+        {detail && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{detail}</p>}
       </CardContent>
     </Card>
   )
@@ -670,7 +662,7 @@ function CallLogPageInner() {
     <div className="flex min-h-screen bg-background">
       <Sidebar />
 
-      <main className="flex-1 p-8">
+      <main className="app-content flex-1 p-8">
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
@@ -847,7 +839,7 @@ function CallLogPageInner() {
 
         {/* Calls Table */}
         <Card className="border-border">
-          <CardContent className="p-0">
+          <CardContent className="overflow-x-auto p-0">
             <table className="w-full">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
@@ -1042,7 +1034,7 @@ function CallLogPageInner() {
         </Card>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+        <div className="flex flex-wrap gap-3 items-center justify-between mt-4 text-sm text-muted-foreground">
           <span>
             {total > 0
               ? `Showing ${offset + 1}–${offset + items.length} of ${total} calls`
