@@ -20,7 +20,6 @@ import {
   DateRangeFilter,
   DateRangeInputs,
   MonthRangeInputs,
-  makePresets,
 } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
@@ -46,9 +45,11 @@ import {
 } from "@/lib/api"
 import {
   dateRangeError,
+  isAllTime,
   monthRangeError,
   rangeForLastDays,
   rangeForLastMonths,
+  rangeForTimespan,
 } from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
 
@@ -60,10 +61,11 @@ type LoadState<T> = {
   error: string | null
 }
 
-const summaryPresets = makePresets(["7", "14", "30"])
-
 // Backend caps (see api/reporting.py validators). Checking them client-side
-// keeps mid-edit and out-of-range inputs from ever hitting the network.
+// keeps mid-edit and out-of-range inputs from ever hitting the network. The
+// summary accepts explicit ranges up to 366 days and no dates at all for all
+// time; the daily volume chart keeps its own tighter cap.
+const SUMMARY_RANGE_CAP_DAYS = 366
 const DAILY_RANGE_CAP_DAYS = 183
 const MONTHLY_RANGE_CAP_MONTHS = 24
 // Date/number inputs fire onChange per keystroke; the SWR key is derived from
@@ -90,7 +92,9 @@ export default function CallMetricsReportingPage() {
   // Immediate values drive input validation messages so typos are flagged
   // right away; debounced values drive the SWR keys below so a fetch only
   // fires once the user pauses.
-  const summaryRangeError = dateRangeError(summaryStart, summaryEnd, DAILY_RANGE_CAP_DAYS)
+  const summaryRangeError = isAllTime(summaryPreset)
+    ? null
+    : dateRangeError(summaryStart, summaryEnd, SUMMARY_RANGE_CAP_DAYS)
   const dailyChartRangeError = dateRangeError(dailyStart, dailyEnd, DAILY_RANGE_CAP_DAYS)
   const monthlyChartRangeError = monthRangeError(monthlyStart, monthlyEnd, MONTHLY_RANGE_CAP_MONTHS)
 
@@ -105,13 +109,20 @@ export default function CallMetricsReportingPage() {
   // backend buckets calls), so recompute when the preset or hotel changes.
   useEffect(() => {
     if (summaryPreset === "custom") return
-    const range = rangeForLastDays(Number(summaryPreset), hotelTimezone)
+    // "All time" resolves to empty start/end, which the request omits.
+    const range = rangeForTimespan(summaryPreset, hotelTimezone)
     setSummaryStart(range.start)
     setSummaryEnd(range.end)
   }, [hotelTimezone, summaryPreset])
 
+  // All time is only "settled" once the debounced inputs have caught up with
+  // the cleared dates, so the key never fires an unbounded fetch mid-edit.
+  const summaryAllTime =
+    isAllTime(summaryPreset) && debouncedSummaryStart === "" && debouncedSummaryEnd === ""
   const summaryKey =
-    hotelId && !dateRangeError(debouncedSummaryStart, debouncedSummaryEnd, DAILY_RANGE_CAP_DAYS)
+    hotelId &&
+    (summaryAllTime ||
+      !dateRangeError(debouncedSummaryStart, debouncedSummaryEnd, SUMMARY_RANGE_CAP_DAYS))
       ? (["call-metrics-summary", hotelId, debouncedSummaryStart, debouncedSummaryEnd] as const)
       : null
   const {
@@ -251,7 +262,6 @@ export default function CallMetricsReportingPage() {
             </div>
             <DateRangeFilter
               variant="toolbar"
-              presets={summaryPresets}
               timespan={summaryPreset}
               range={{ start: summaryStart, end: summaryEnd }}
               customStart={summaryStart}

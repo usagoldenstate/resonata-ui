@@ -6,7 +6,9 @@ import { CalendarDays, Check, ChevronDown } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
+  ALL_TIME,
   type DateRange,
+  TIMESPAN_PRESET_VALUES,
   formatShortDate,
   todayInTimeZone,
   toDateInput,
@@ -16,15 +18,22 @@ import {
 // trigger; `pill` labels the compact button inside the popover.
 export type TimespanPreset = { value: string; label: string; pill: string }
 
-// Builds the preset list from short values: numeric day counts ("7", "30"),
-// "year" (year to date), and "all" (no date filter).
+// Builds a preset list from short values: numeric day counts ("7", "30"),
+// "year" (year to date), and "all" (no date filter). Pages should not call
+// this for their main filter — they get DATE_RANGE_PRESETS by default — it
+// exists for pickers with a different meaning (e.g. the dashboard's
+// comparison windows).
 export function makePresets(values: readonly string[]): TimespanPreset[] {
   return values.map((value) => {
     if (value === "year") return { value, label: "This year", pill: "This year" }
-    if (value === "all") return { value, label: "All dates", pill: "All time" }
+    if (value === ALL_TIME) return { value, label: "All time", pill: "All time" }
     return { value, label: `Last ${value} days`, pill: `${value} days` }
   })
 }
+
+// The single preset list every date-range filter shows. Change
+// TIMESPAN_PRESET_VALUES in lib/date-range.ts to change every filter at once.
+export const DATE_RANGE_PRESETS: readonly TimespanPreset[] = makePresets(TIMESPAN_PRESET_VALUES)
 
 // The label shown on the trigger: the preset name, or a formatted span for a
 // custom range.
@@ -47,7 +56,7 @@ export function timespanLabel(
 // neighboring filters in a toolbar.
 export function DateRangeFilter({
   variant,
-  presets,
+  presets = DATE_RANGE_PRESETS,
   timespan,
   range,
   customStart,
@@ -60,7 +69,9 @@ export function DateRangeFilter({
   label,
 }: {
   variant: "header" | "toolbar"
-  presets: readonly TimespanPreset[]
+  // Defaults to the app-wide DATE_RANGE_PRESETS; override only for pickers
+  // whose options mean something else.
+  presets?: readonly TimespanPreset[]
   timespan: string
   range: DateRange
   customStart?: string

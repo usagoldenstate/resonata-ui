@@ -26,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
+import { DateRangeFilter } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
@@ -42,14 +42,14 @@ import {
   fetchNotBookedTaxonomy,
 } from "@/lib/api"
 import { useCurrentUser } from "@/lib/current-user-context"
-import { dateRangeError, formatShortDate, rangeForLastDays } from "@/lib/date-range"
+import { dateRangeError, formatShortDate, rangeForTimespan } from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
 
 const PAGE_SIZE = 50
 
 // "All time" is the default: the call log lists every call unless a window is
-// chosen, unlike the reporting pages' rolling 30-day default.
-const datePresets = makePresets(["all", "7", "14", "30", "90"])
+// chosen, unlike the reporting pages' rolling 30-day default. The picker
+// itself shows the app-wide DATE_RANGE_PRESETS.
 
 // The outcome dropdown filters on two dimensions. The first six entries are the
 // server-derived outcome buckets; the last two filter on transfer instead, which
@@ -352,11 +352,10 @@ function CallLogPageInner() {
   const debouncedCallId = useDebouncedValue(callIdSearch, 300)
 
   const selectDateTimespan = (value: string) => {
-    if (value === "all") {
-      setDateFrom("")
-      setDateTo("")
-    } else if (value !== "custom") {
-      const range = rangeForLastDays(Number(value), hotelTimezone)
+    // Presets resolve to concrete dates ("All time" to empty ones, which the
+    // request omits); custom keeps whatever the inputs hold.
+    if (value !== "custom") {
+      const range = rangeForTimespan(value, hotelTimezone)
       setDateFrom(range.start)
       setDateTo(range.end)
     }
@@ -639,7 +638,6 @@ function CallLogPageInner() {
           {/* Call-date range */}
           <DateRangeFilter
             variant="toolbar"
-            presets={datePresets}
             timespan={dateTimespan}
             range={{ start: dateFrom, end: dateTo }}
             customStart={dateFrom}

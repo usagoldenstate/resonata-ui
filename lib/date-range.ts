@@ -6,6 +6,20 @@
 
 export type DateRange = { start: string; end: string }
 
+// The "All time" preset value. It resolves to ALL_TIME_RANGE — empty start and
+// end — which `withQuery` in lib/api.ts drops from the request, and the
+// reporting endpoints treat omitted dates as unbounded.
+export const ALL_TIME = "all"
+export const ALL_TIME_RANGE: DateRange = { start: "", end: "" }
+
+export function isAllTime(timespan: string): boolean {
+  return timespan === ALL_TIME
+}
+
+// The one preset list every date-range filter in the app shows, in menu
+// order. Numeric values are trailing day counts; see rangeForTimespan.
+export const TIMESPAN_PRESET_VALUES = ["7", "14", "30", "90", "year", ALL_TIME] as const
+
 // "Today" as a UTC-anchored Date for the given IANA zone (falls back to the
 // browser zone when the hotel list hasn't loaded yet or the zone is unknown
 // to Intl). UTC anchoring keeps the day arithmetic below immune to browser
@@ -44,12 +58,14 @@ export function rangeForLastMonths(
   return { start: toMonthInput(start), end: toMonthInput(end) }
 }
 
-// Resolves a preset value ("7", "90", "year", ...) to a concrete range.
-// Unknown/invalid values fall back to the last 30 days.
+// Resolves a preset value ("7", "90", "year", "all", ...) to a concrete range.
+// "all" resolves to ALL_TIME_RANGE (no bounds). Unknown/invalid values fall
+// back to the last 30 days.
 export function rangeForTimespan(
   timespan: string,
   timeZone: string | null = null,
 ): DateRange {
+  if (isAllTime(timespan)) return ALL_TIME_RANGE
   if (timespan === "year") {
     const today = todayInTimeZone(timeZone)
     const start = new Date(Date.UTC(today.getUTCFullYear(), 0, 1))

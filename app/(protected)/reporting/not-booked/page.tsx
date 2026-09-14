@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import { AlertTriangle, ChevronLeft, Loader2, TrendingDown, TrendingUp } from "lucide-react"
 
-import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
+import { DateRangeFilter } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -32,10 +32,9 @@ const COLOR_BY_CATEGORY: Record<string, string> = {
 }
 const DEFAULT_COLOR = "bg-[#9ca3af]"
 
-const timespanOptions = makePresets(["7", "14", "30", "90", "year"])
-
-// Matches the backend's breakdown range cap so a too-wide custom range is
-// rejected client-side before it ever hits the network.
+// Matches the backend's cap for explicit ranges so a too-wide custom range is
+// rejected client-side before it ever hits the network. "All time" sends no
+// dates and is uncapped.
 const RANGE_CAP_DAYS = 366
 // Date inputs fire onChange per keystroke; the SWR key reads the debounced
 // value so only a settled range triggers a fetch.
@@ -235,7 +234,6 @@ export default function NotBookedReportingPage() {
             <div className="mt-1">
               <DateRangeFilter
                 variant="header"
-                presets={timespanOptions}
                 timespan={timespan}
                 range={range}
                 customStart={customRange.start}

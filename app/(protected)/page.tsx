@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import useSWR from "swr"
-import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
+import { DateRangeFilter } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -30,8 +30,10 @@ import {
 import {
   type DateRange,
   dateRangeError,
+  isAllTime,
   precedingRange,
   rangeForLastDays,
+  rangeForTimespan,
   shiftDateInput,
 } from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
@@ -48,18 +50,18 @@ const COLOR_BY_CATEGORY: Record<string, string> = {
 }
 const DEFAULT_COLOR = "bg-[#9ca3af]"
 
-const primaryPresets = makePresets(["7", "14", "30"])
-// Comparison presets are windows immediately preceding the primary range, not
-// windows ending today, so their labels say so.
+// The primary picker uses the app-wide DATE_RANGE_PRESETS. Comparison presets
+// are windows immediately preceding the primary range, not windows ending
+// today, so they're a separate list and their labels say so.
 const comparisonPresets = [
   { value: "7", label: "7 days prior", pill: "7 days prior" },
   { value: "14", label: "14 days prior", pill: "14 days prior" },
   { value: "30", label: "30 days prior", pill: "30 days prior" },
 ]
 
-// Revenue and call-metrics summaries cap at 183 inclusive days server-side,
-// so the tighter cap governs the dashboard's custom ranges too.
-const MAX_RANGE_DAYS = 183
+// The summary endpoints cap explicit ranges at 366 inclusive days server-side
+// (all time sends no dates and is uncapped), so custom ranges check the same.
+const MAX_RANGE_DAYS = 366
 const FETCH_DEBOUNCE_MS = 400
 
 // The three reporting endpoints that power the overview tiles. Each may be null
@@ -159,9 +161,11 @@ export default function Dashboard() {
     () =>
       primaryTimespan === "custom"
         ? { start: debouncedPrimaryStart, end: debouncedPrimaryEnd }
-        : rangeForLastDays(Number(primaryTimespan), hotelTimezone),
+        : rangeForTimespan(primaryTimespan, hotelTimezone),
     [primaryTimespan, debouncedPrimaryStart, debouncedPrimaryEnd, hotelTimezone],
   )
+  // All time has no preceding window to compare against.
+  const comparisonAvailable = !isAllTime(primaryTimespan)
 
   // Comparison presets are the `days`-long window ending the day before the
   // primary window starts, derived per render so they track the primary range.
@@ -198,6 +202,7 @@ export default function Dashboard() {
     if (value === "custom" && primaryTimespan !== "custom") {
       setPrimaryCustom(primaryRange)
     }
+    if (isAllTime(value)) setShowComparison(false)
     setPrimaryTimespan(value)
   }
 
@@ -309,7 +314,6 @@ export default function Dashboard() {
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <DateRangeFilter
                 variant="header"
-                presets={primaryPresets}
                 timespan={primaryTimespan}
                 range={primaryRange}
                 customStart={primaryCustom.start}
@@ -346,6 +350,8 @@ export default function Dashboard() {
             <Button
               variant={showComparison ? "default" : "outline"}
               onClick={handleToggleComparison}
+              disabled={!comparisonAvailable}
+              title={comparisonAvailable ? undefined : "Pick a dated range to compare periods"}
               className={showComparison ? "bg-[#6b7a4a] hover:bg-[#5a6940]" : "border-border"}
             >
               <GitCompareArrows className="w-4 h-4 mr-2" />

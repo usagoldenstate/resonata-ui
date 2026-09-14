@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts"
 
-import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
+import { DateRangeFilter } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
@@ -31,17 +31,14 @@ import {
   fetchNotBookedBreakdown,
   fetchRevenueSummary,
 } from "@/lib/api"
-import { dateRangeError, rangeForLastDays } from "@/lib/date-range"
+import { dateRangeError, rangeForLastDays, rangeForTimespan } from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
 
 type CallBasis = "bookable" | "total"
 
-const summaryPresets = makePresets(["7", "14", "30"])
-
-// Revenue summary and call-metrics summary both cap at 183 inclusive days
-// server-side; not-booked breakdown allows more, so the tighter cap governs
-// since all three are fetched together.
-const MAX_DAILY_RANGE_DAYS = 183
+// The three summary endpoints fetched here all cap explicit ranges at 366
+// inclusive days server-side; "All time" sends no dates and is uncapped.
+const MAX_RANGE_DAYS = 366
 
 type LoadState<T> = {
   loading: boolean
@@ -77,10 +74,11 @@ export default function RevenueReportingPage() {
   // backend buckets records in hotel-local time, so browser-local presets can
   // be a day off for hotels ahead of the viewer).
   const [customRange, setCustomRange] = useState(() => rangeForLastDays(30))
-  const range =
-    preset === "custom" ? customRange : rangeForLastDays(Number(preset), hotelTimezone)
+  const range = preset === "custom" ? customRange : rangeForTimespan(preset, hotelTimezone)
   const { start, end } = range
-  const rangeError = dateRangeError(start, end, MAX_DAILY_RANGE_DAYS)
+  // Presets are always valid ("All time" is empty start/end, sent as no dates);
+  // only a hand-edited custom range needs checking.
+  const rangeError = preset === "custom" ? dateRangeError(start, end, MAX_RANGE_DAYS) : null
 
   const sharedKey = hotelId && !rangeError ? ([hotelId, start, end] as const) : null
 
@@ -211,12 +209,11 @@ export default function RevenueReportingPage() {
             <div className="mt-1 flex items-center gap-1.5">
               <DateRangeFilter
                 variant="header"
-                presets={summaryPresets}
                 timespan={preset}
                 range={range}
                 customStart={customRange.start}
                 customEnd={customRange.end}
-                rangeError={preset === "custom" ? rangeError : null}
+                rangeError={rangeError}
                 onSelectTimespan={onPresetChange}
                 onCustomStart={(value) => setCustomRange((prev) => ({ ...prev, start: value }))}
                 onCustomEnd={(value) => setCustomRange((prev) => ({ ...prev, end: value }))}
@@ -416,11 +413,14 @@ function RevenueTrendChart({
     return <ChartState message="No attributed bookings in this date range." />
   }
 
+  const monthly = state.data.trend_bucket === "month"
   const data = state.data.trend.map((row) => ({
     date: row.date,
     revenue: row.revenue_cents / 100,
     bookings: row.booking_count,
   }))
+  const formatTick = monthly ? formatMonthTick : formatDateTick
+  const formatLabel = monthly ? formatMonthLabel : formatDateLabel
 
   return (
     <div className="h-80">
@@ -431,7 +431,7 @@ function RevenueTrendChart({
             dataKey="date"
             tickLine={false}
             axisLine={false}
-            tickFormatter={formatDateTick}
+            tickFormatter={formatTick}
             minTickGap={20}
           />
           <YAxis
@@ -442,7 +442,7 @@ function RevenueTrendChart({
           />
           <Tooltip
             formatter={(value) => [formatMoney(Number(value) * 100, currency), "Projected revenue"]}
-            labelFormatter={(label) => formatDateLabel(String(label))}
+            labelFormatter={(label) => formatLabel(String(label))}
           />
           <Bar dataKey="revenue" name="Projected revenue" fill="#6b7a4a" radius={[4, 4, 0, 0]} />
         </BarChart>
@@ -658,6 +658,20 @@ function formatDateLabel(value: string): string {
   return new Date(year, month - 1, day).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
+    year: "numeric",
+  })
+}
+
+// Monthly trend rows carry the month's first day; show "Jan" / "Jan 2026".
+function formatMonthTick(value: string): string {
+  const [year, month] = value.split("-").map(Number)
+  return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "short" })
+}
+
+function formatMonthLabel(value: string): string {
+  const [year, month] = value.split("-").map(Number)
+  return new Date(year, month - 1, 1).toLocaleDateString(undefined, {
+    month: "short",
     year: "numeric",
   })
 }

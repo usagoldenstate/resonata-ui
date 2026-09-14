@@ -17,7 +17,7 @@ import {
   TrendingUp,
 } from "lucide-react"
 
-import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
+import { DateRangeFilter } from "@/components/date-range-filter"
 import { RefreshButton } from "@/components/refresh-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -34,10 +34,9 @@ import { dateRangeError, rangeForTimespan } from "@/lib/date-range"
 import { useHotel } from "@/lib/hotel-context"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 
-const timespanOptions = makePresets(["7", "14", "30", "90", "year"])
-
-// Matches the backend's `_validate_breakdown_range` cap (api/reporting.py) so a
-// too-wide custom range is rejected client-side before it ever hits the network.
+// Matches the backend's cap for explicit ranges (api/reporting.py) so a
+// too-wide custom range is rejected client-side before it ever hits the
+// network. "All time" sends no dates and is uncapped.
 const FAQ_RANGE_CAP_DAYS = 366
 // Date inputs fire onChange per keystroke; the SWR key reads the debounced value
 // so only a settled range triggers a fetch.
@@ -238,7 +237,6 @@ export default function FAQsPage() {
             <div className="flex items-center gap-1.5 mt-1">
               <DateRangeFilter
                 variant="header"
-                presets={timespanOptions}
                 timespan={timespan}
                 range={range}
                 customStart={customStart}
@@ -478,7 +476,6 @@ export default function FAQsPage() {
             <div className="flex flex-wrap items-center gap-4 mb-6">
               <DateRangeFilter
                 variant="toolbar"
-                presets={timespanOptions}
                 timespan={timespan}
                 range={range}
                 customStart={customStart}

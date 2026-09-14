@@ -196,6 +196,9 @@ export type RevenueSummary = {
   // rows with revenue but no stay dates would overstate it.
   adr_cents: number | null
   attribution_last_discovered_at: string | null
+  // "day" for windows up to 183 days; "month" (date = first of month) beyond
+  // that, including all time, so the trend chart stays readable.
+  trend_bucket: "day" | "month"
   trend: RevenueTrendRow[]
 }
 
@@ -426,6 +429,14 @@ export type PersonaHistoryEntry = {
 type CallMetricsBaseParams = {
   hotel_id: string
   min_duration_seconds?: number
+}
+
+// Inclusive hotel-local date window for the summary/breakdown endpoints. Omit
+// both (or pass "" — withQuery drops it) for all time; the backend rejects a
+// window with only one end.
+type DateWindowParams = {
+  start_date?: string
+  end_date?: string
 }
 
 export function fetchCurrentUser(opts: Pick<Options, "signal"> = {}) {
@@ -939,7 +950,7 @@ export async function fetchCallRecording(
 }
 
 export function fetchCallMetricsSummary(
-  params: CallMetricsBaseParams & { start_date: string; end_date: string },
+  params: CallMetricsBaseParams & DateWindowParams,
   opts: Pick<Options, "signal"> = {},
 ) {
   return api<CallMetricsSummary>(
@@ -949,7 +960,7 @@ export function fetchCallMetricsSummary(
 }
 
 export function fetchRevenueSummary(
-  params: { hotel_id: string; start_date: string; end_date: string; basis?: RevenueBasis },
+  params: { hotel_id: string; basis?: RevenueBasis } & DateWindowParams,
   opts: Pick<Options, "signal"> = {},
 ) {
   return api<RevenueSummary>(
@@ -1009,7 +1020,7 @@ export function fetchNotBookedTaxonomy(
 }
 
 export function fetchNotBookedBreakdown(
-  params: CallMetricsBaseParams & { start_date: string; end_date: string },
+  params: CallMetricsBaseParams & DateWindowParams,
   opts: Pick<Options, "signal"> = {},
 ) {
   return api<NotBookedBreakdownResponse>(
@@ -1029,16 +1040,14 @@ export function fetchNotBookedSeasonality(
 }
 
 export function fetchFaqs(
-  params: CallMetricsBaseParams & { start_date: string; end_date: string },
+  params: CallMetricsBaseParams & DateWindowParams,
   opts: Pick<Options, "signal"> = {},
 ) {
   return api<FaqResponse>(withQuery("/api/v1/reporting/faqs", params), opts)
 }
 
 export function fetchFaqOccurrences(
-  params: CallMetricsBaseParams & {
-    start_date: string
-    end_date: string
+  params: CallMetricsBaseParams & DateWindowParams & {
     group_id: string
     variant?: string
     limit?: number

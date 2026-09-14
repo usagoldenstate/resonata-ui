@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { DateRangeFilter, makePresets } from "@/components/date-range-filter"
+import { DateRangeFilter } from "@/components/date-range-filter"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { rangeForTimespan } from "@/lib/date-range"
@@ -53,10 +53,10 @@ const statsData: Record<string, { avgLeadTime: number; avgChange: number; median
   "90": { avgLeadTime: 20, avgChange: 4, medianLeadTime: 14, medianChange: 3, sameWeek: 27, sameWeekCount: 486, sameWeekTotal: 1800, sixtyPlus: 16, sixtyPlusCount: 288, sixtyPlusTotal: 1800 },
 }
 
-const timespanOptions = makePresets(["7", "14", "30", "90"])
-
 export default function LeadTimeReportPage() {
   const [timespan, setTimespan] = useState("30")
+  // Placeholder stats exist for the day-count presets only; "This year" and
+  // "All time" fall back to the 30-day figures until this page has real data.
   const stats = statsData[timespan] || statsData["30"]
 
   return (
@@ -74,7 +74,6 @@ export default function LeadTimeReportPage() {
               {/* No custom range: this page's stats are keyed by preset windows. */}
               <DateRangeFilter
                 variant="header"
-                presets={timespanOptions}
                 timespan={timespan}
                 range={rangeForTimespan(timespan)}
                 onSelectTimespan={setTimespan}
