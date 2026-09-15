@@ -387,7 +387,11 @@ export type CallLine = "reservations" | "sales"
 export type SalesInquiry = {
   id: string
   caller_name: string | null
+  // Strictly the number the caller asked for, or null when they gave none or
+  // it couldn't be parsed. The caller id is always alongside so sales has a
+  // second number to try; the two often match.
   callback_phone_e164: string | null
+  caller_id_phone_e164: string | null
   email: string | null
   event_type: string
   event_dates_text: string | null
@@ -1302,6 +1306,7 @@ export type PublicSalesInquiry = {
   hotel_display_name: string
   caller_name: string | null
   callback_phone_e164: string | null
+  caller_id_phone_e164: string | null
   email: string | null
   event_type: string
   event_dates_text: string | null

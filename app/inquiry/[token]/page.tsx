@@ -211,6 +211,24 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
               {data.callback_phone_e164}
             </a>
           )}
+          {/* The number they called from. Secondary when a callback number
+              was given; it steps up to the big tap target when none was. */}
+          {data.caller_id_phone_e164 && data.caller_id_phone_e164 !== data.callback_phone_e164 && (
+            <a
+              href={`tel:${data.caller_id_phone_e164}`}
+              className={
+                data.callback_phone_e164
+                  ? "mt-2 flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium"
+                  : "mt-4 flex items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3 text-base font-semibold text-background"
+              }
+            >
+              <Phone className="size-4" />
+              {data.caller_id_phone_e164}
+              <span className={data.callback_phone_e164 ? "text-xs font-normal text-muted-foreground" : "text-xs font-normal opacity-70"}>
+                calling from
+              </span>
+            </a>
+          )}
 
           <div className="mt-4 space-y-2 border-t pt-4">
             <Detail icon={<CalendarDays className="size-4" />}>{stayDates(data)}</Detail>

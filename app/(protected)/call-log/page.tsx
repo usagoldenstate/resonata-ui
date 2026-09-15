@@ -184,9 +184,18 @@ function SalesInquiryPanel({ inquiry }: { inquiry: SalesInquiry | null }) {
       </div>
     )
   }
+  // The callback number is strictly what the caller asked for; the number
+  // they called from is always on the row too, and gets its own line
+  // whenever it differs (or when no usable callback number was given).
+  const callerIdDiffers =
+    !!inquiry.caller_id_phone_e164 &&
+    inquiry.caller_id_phone_e164 !== inquiry.callback_phone_e164
   const rows: Array<[string, string]> = [
     ["Caller", inquiry.caller_name ?? "—"],
     ["Callback number", formatCallerPhone(inquiry.callback_phone_e164)],
+    ...(callerIdDiffers
+      ? [["Calling from", formatCallerPhone(inquiry.caller_id_phone_e164)] as [string, string]]
+      : []),
     ["Email", inquiry.email ?? "—"],
     ["Event type", inquiry.event_type],
     ["Dates", formatInquiryDates(inquiry)],
