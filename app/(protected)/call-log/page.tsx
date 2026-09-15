@@ -3,7 +3,24 @@
 import { Suspense, useEffect, useState, Fragment } from "react"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
-import { BadgeCheck, CalendarCheck, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Link2, Loader2, Phone, PhoneForwarded, Search, X } from "lucide-react"
+import {
+  BadgeCheck,
+  CalendarCheck,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  Link2,
+  Loader2,
+  Mail,
+  Megaphone,
+  Phone,
+  PhoneForwarded,
+  Search,
+  X,
+} from "lucide-react"
 import { toast } from "sonner"
 import {
   AlertDialog,
@@ -32,8 +49,10 @@ import { Sidebar } from "@/components/sidebar"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import {
   ApiError,
+  type CallLine,
   type CallListItem,
   type CallOutcomeFilter,
+  type SalesInquiry,
   deleteCall,
   fetchCallDetail,
   fetchCallRecording,
@@ -84,6 +103,136 @@ function outcomeFilterParams(filter: OutcomeFilter): {
   if (filter === "transferred") return { transferred: true }
   if (filter === "not_transferred") return { transferred: false }
   return { outcome: filter }
+}
+
+// Which inbound line the call arrived on (CallRecord.line). Sales-line calls
+// carry a sales inquiry instead of a booking outcome.
+const lineFilterOptions: Array<{ value: "all" | CallLine; label: string }> = [
+  { value: "all", label: "All lines" },
+  { value: "reservations", label: "Reservations" },
+  { value: "sales", label: "Sales" },
+]
+const lineFilterValues = new Set(lineFilterOptions.map((o) => o.value))
+
+function LineBadge({ line }: { line: CallLine }) {
+  if (line === "sales") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#c4a84b]/15 px-2.5 py-1 text-xs font-medium text-[#8a7428]">
+        <Megaphone className="w-3 h-3" />
+        Sales
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+      <Phone className="w-3 h-3" />
+      Reservations
+    </span>
+  )
+}
+
+function EmailStatusPill({ status }: { status: SalesInquiry["email_status"] }) {
+  const styles: Record<SalesInquiry["email_status"], string> = {
+    sent: "bg-[#6b7a4a]/10 text-[#6b7a4a]",
+    sending: "bg-muted text-muted-foreground",
+    failed: "bg-destructive/10 text-destructive",
+  }
+  const labels: Record<SalesInquiry["email_status"], string> = {
+    sent: "Emailed to sales",
+    sending: "Email pending",
+    failed: "Email failed",
+  }
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${styles[status]}`}>
+      <Mail className="w-3 h-3" />
+      {labels[status]}
+    </span>
+  )
+}
+
+function formatInquiryDates(inquiry: SalesInquiry): string {
+  const parsed =
+    inquiry.event_start_date && inquiry.event_end_date && inquiry.event_start_date !== inquiry.event_end_date
+      ? `${inquiry.event_start_date} – ${inquiry.event_end_date}`
+      : inquiry.event_start_date ?? null
+  const base = inquiry.event_dates_text
+    ? parsed && parsed !== inquiry.event_dates_text
+      ? `${inquiry.event_dates_text} (${parsed})`
+      : inquiry.event_dates_text
+    : parsed ?? "—"
+  return inquiry.dates_flexible ? `${base} · flexible` : base
+}
+
+// The caller's words lead; the parsed figure rides in parentheses when it adds
+// something. Most callers hedge ("we're flexible"), so text-only is normal.
+function budget(row: { budget_text: string | null; budget_amount: string | null }): string | null {
+  const amount =
+    row.budget_amount === null ? null : Number(row.budget_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })
+  if (!amount) return row.budget_text
+  return row.budget_text ? `${row.budget_text} (${amount})` : amount
+}
+
+// The structured intake a sales-line call produced, shown above the
+// transcript. A `failed` email status is the cue for staff to forward the
+// details manually — the inquiry itself is intact in the row.
+function SalesInquiryPanel({ inquiry }: { inquiry: SalesInquiry | null }) {
+  if (!inquiry) {
+    return (
+      <div className="mb-6 rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+        No inquiry was recorded on this sales call (the caller hung up or was transferred before the
+        intake finished).
+      </div>
+    )
+  }
+  const rows: Array<[string, string]> = [
+    ["Caller", inquiry.caller_name ?? "—"],
+    ["Callback number", formatCallerPhone(inquiry.callback_phone_e164)],
+    ["Email", inquiry.email ?? "—"],
+    ["Event type", inquiry.event_type],
+    ["Dates", formatInquiryDates(inquiry)],
+    ["Party size", inquiry.headcount !== null ? String(inquiry.headcount) : "—"],
+    ["Budget", budget(inquiry) ?? "—"],
+    [
+      "Guest rooms",
+      inquiry.needs_guest_rooms === null ? "—" : inquiry.needs_guest_rooms ? "Yes" : "No",
+    ],
+  ]
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm font-semibold text-foreground">Sales Inquiry</h4>
+        <div className="flex items-center gap-2">
+          <EmailStatusPill status={inquiry.email_status} />
+          {inquiry.sent_to && (
+            <span className="text-xs text-muted-foreground">→ {inquiry.sent_to}</span>
+          )}
+        </div>
+      </div>
+      {inquiry.email_status === "failed" && (
+        <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          The inquiry email could not be delivered
+          {inquiry.email_error_class ? ` (${inquiry.email_error_class})` : ""}. Forward these details to
+          the sales team manually.
+        </p>
+      )}
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm md:grid-cols-4">
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="text-card-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {inquiry.notes && (
+        <div className="mt-3">
+          <p className="text-xs text-muted-foreground mb-1">Notes from the caller</p>
+          <p className="rounded-md border-l-2 border-border bg-muted/40 px-3 py-2 text-sm text-card-foreground whitespace-pre-line">
+            {inquiry.notes}
+          </p>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // Mirrors the backend's not-booked taxonomy categories.
@@ -197,22 +346,14 @@ function StatTile({
   detail?: string
 }) {
   return (
-    <Card className="border-border flex-shrink-0">
-      <CardContent className="py-2.5 px-4 pr-8">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-            <Icon className="w-4 h-4 text-[#6b7a4a]" />
-          </div>
-          <div>
-            {/* Label leads so the number reads in context, but stays a quiet
-                eyebrow (tiny, muted, tracked caps) beneath the page header. */}
-            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-              {label}
-            </p>
-            <p className="text-2xl font-semibold leading-tight text-card-foreground">{value}</p>
-            {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
-          </div>
+    <Card className="metric-card border-border/80 flex-1 min-w-40 py-4">
+      <CardContent className="px-4">
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <Icon className="size-4 shrink-0 text-primary" aria-hidden="true" />
         </div>
+        <p className="metric-value text-3xl font-semibold leading-tight text-card-foreground">{value}</p>
+        {detail && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{detail}</p>}
       </CardContent>
     </Card>
   )
@@ -254,6 +395,8 @@ type TranscriptState = {
   turns: TranscriptTurn[] | null
   error: string | null
   hasRecording: boolean
+  // Sales-line calls only (null otherwise, or when no inquiry was recorded).
+  salesInquiry: SalesInquiry | null
 }
 
 // Self-contained recording player: fetches the audio blob through the authed
@@ -346,6 +489,10 @@ function CallLogPageInner() {
     searchParams.get("date_from") || searchParams.get("date_to") ? "custom" : "all",
   )
   const [callIdSearch, setCallIdSearch] = useState(() => searchParams.get("call_id") ?? "")
+  const [lineFilter, setLineFilter] = useState<"all" | CallLine>(() => {
+    const param = searchParams.get("line")
+    return param && lineFilterValues.has(param as CallLine) ? (param as CallLine) : "all"
+  })
   const [offset, setOffset] = useState(0)
 
   // Debounce the Call ID box so we query once the user pauses, not per keystroke.
@@ -391,7 +538,7 @@ function CallLogPageInner() {
   useEffect(() => {
     setOffset(0)
     setExpandedRow(null)
-  }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId])
+  }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId, lineFilter])
 
   const listKey = hotelId
     ? ([
@@ -404,6 +551,7 @@ function CallLogPageInner() {
         dateFrom,
         dateTo,
         debouncedCallId,
+        lineFilter,
       ] as const)
     : null
   const {
@@ -411,7 +559,7 @@ function CallLogPageInner() {
     isValidating: loading,
     error: errorRaw,
     mutate: refreshCalls,
-  } = useSWR(listKey, ([, hid, off, filter, reason, subcategory, from, to, callId]) =>
+  } = useSWR(listKey, ([, hid, off, filter, reason, subcategory, from, to, callId, line]) =>
     fetchCalls({
       hotel_id: hid,
       limit: PAGE_SIZE,
@@ -422,6 +570,7 @@ function CallLogPageInner() {
       date_from: from || undefined,
       date_to: to || undefined,
       call_id: callId.trim() || undefined,
+      line: line === "all" ? undefined : line,
     }),
   )
   const error = errorRaw ? describeError(errorRaw) : null
@@ -460,6 +609,7 @@ function CallLogPageInner() {
         turns: transcriptDetail ? parseTranscript(transcriptDetail.transcript) : null,
         error: transcriptErrorRaw ? describeError(transcriptErrorRaw) : null,
         hasRecording: transcriptDetail?.has_recording ?? false,
+        salesInquiry: transcriptDetail?.sales_inquiry ?? null,
       }
     : null
 
@@ -498,7 +648,8 @@ function CallLogPageInner() {
     notBookedSubcategoryFilter !== "all" ||
     dateFrom !== "" ||
     dateTo !== "" ||
-    callIdSearch.trim() !== ""
+    callIdSearch.trim() !== "" ||
+    lineFilter !== "all"
 
   const statsTotal = stats?.total_calls ?? 0
   // Bookable = every call that had a verdict other than not_bookable. Pending
@@ -510,7 +661,7 @@ function CallLogPageInner() {
     <div className="flex min-h-screen bg-background">
       <Sidebar />
 
-      <main className="flex-1 p-8">
+      <main className="app-content flex-1 p-8">
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
@@ -581,6 +732,21 @@ function CallLogPageInner() {
               </button>
             )}
           </div>
+          <Select
+            value={lineFilter}
+            onValueChange={(value) => setLineFilter(value as "all" | CallLine)}
+          >
+            <SelectTrigger className="w-40 bg-card border-border">
+              <SelectValue placeholder="All lines" />
+            </SelectTrigger>
+            <SelectContent>
+              {lineFilterOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={outcomeFilter}
             onValueChange={(value) => setOutcomeFilter(value as OutcomeFilter)}
@@ -671,13 +837,14 @@ function CallLogPageInner() {
 
         {/* Calls Table */}
         <Card className="border-border">
-          <CardContent className="p-0">
+          <CardContent className="overflow-x-auto p-0">
             <table className="w-full">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
                   <th className="p-4 font-medium">Call Date</th>
                   <th className="p-4 font-medium">Time</th>
                   <th className="p-4 font-medium">Caller</th>
+                  <th className="p-4 font-medium">Line</th>
                   <th className="p-4 font-medium">Call ID</th>
                   <th className="p-4 font-medium">Duration</th>
                   <th className="p-4 font-medium">Outcome</th>
@@ -725,18 +892,25 @@ function CallLogPageInner() {
                           {formatCallerPhone(call.caller_phone_e164)}
                         </td>
                         <td className="p-4">
+                          <LineBadge line={call.line} />
+                        </td>
+                        <td className="p-4">
                           <CopyableCallId callId={call.provider_call_id} />
                         </td>
                         <td className="p-4 text-muted-foreground">
                           {formatDuration(call.duration_seconds)}
                         </td>
                         <td className="p-4">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <OutcomeBadge outcome={outcome} />
-                            {call.transferred && (
-                              <TransferBadge department={call.transfer_department_name} />
-                            )}
-                          </div>
+                          {call.line === "sales" ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <OutcomeBadge outcome={outcome} />
+                              {call.transferred && (
+                                <TransferBadge department={call.transfer_department_name} />
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="p-4">
                           {call.analytics?.not_booked_reason_category ? (
@@ -777,8 +951,11 @@ function CallLogPageInner() {
                       </tr>
                       {expandedRow === call.id && (
                         <tr key={`${call.id}-transcript`} className="bg-muted/20">
-                          <td colSpan={isPlatformAdmin ? 9 : 8} className="p-0">
+                          <td colSpan={isPlatformAdmin ? 10 : 9} className="p-0">
                             <div className="p-6 border-b border-border">
+                              {call.line === "sales" && !transcript?.loading && !transcript?.error && (
+                                <SalesInquiryPanel inquiry={transcript?.salesInquiry ?? null} />
+                              )}
                               {transcript?.hasRecording && (
                                 <div className="mb-6">
                                   <h4 className="text-sm font-semibold text-foreground mb-3">
@@ -855,7 +1032,7 @@ function CallLogPageInner() {
         </Card>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+        <div className="flex flex-wrap gap-3 items-center justify-between mt-4 text-sm text-muted-foreground">
           <span>
             {total > 0
               ? `Showing ${offset + 1}–${offset + items.length} of ${total} calls`

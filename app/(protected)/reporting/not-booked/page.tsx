@@ -209,7 +209,7 @@ export default function NotBookedReportingPage() {
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
-      <main className="flex-1 p-8">
+      <main className="app-content flex-1 p-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>

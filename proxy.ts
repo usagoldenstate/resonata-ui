@@ -17,6 +17,10 @@ const isPublic = createRouteMatcher([
   "/__clerk/(.*)",
   // Browsers POST CSP violation reports here without any session.
   "/csp-report",
+  // The sales follow-up page reached from the "Update inquiry" button in the
+  // notification email. Its readers are hotel sales staff with no Resonata
+  // account; the signed token in the URL authorizes the one inquiry it names.
+  "/inquiry/(.*)",
 ])
 
 function isHidden(pathname: string): boolean {

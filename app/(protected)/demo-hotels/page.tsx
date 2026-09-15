@@ -16,7 +16,7 @@ export default function DemoHotelsPage() {
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
-      <main className="flex-1 p-8">
+      <main className="app-content flex-1 p-8">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-foreground">Demo Hotels</h1>
           <p className="mt-1 text-sm text-muted-foreground">

@@ -6,8 +6,8 @@ import { ClerkProvider } from '@clerk/nextjs'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 
 export const metadata: Metadata = {
   title: 'Resonata Dashboard',
@@ -45,7 +45,7 @@ export default async function RootLayout({
   return (
     <ClerkProvider nonce={nonce}>
       <html lang="en">
-        <body className="font-sans antialiased">
+        <body className={`${geist.variable} ${geistMono.variable} font-sans antialiased`}>
           {children}
           <Toaster />
           {process.env.NODE_ENV === 'production' && <Analytics />}

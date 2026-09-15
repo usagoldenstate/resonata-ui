@@ -229,7 +229,7 @@ export default function FAQsPage() {
     <div className="flex min-h-screen bg-background">
       <Sidebar />
 
-      <main className="flex-1 p-8">
+      <main className="app-content flex-1 p-8">
         {/* Header */}
         <div className="mb-8 flex items-start justify-between">
           <div>

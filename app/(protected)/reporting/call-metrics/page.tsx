@@ -222,7 +222,7 @@ export default function CallMetricsReportingPage() {
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
-      <main className="flex-1 p-8">
+      <main className="app-content flex-1 p-8">
         <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Call Metrics</h1>

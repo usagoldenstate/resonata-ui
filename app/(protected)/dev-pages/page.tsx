@@ -67,7 +67,7 @@ export default function DevPages() {
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
-      <main className="flex-1 p-8">
+      <main className="app-content flex-1 p-8">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-foreground">Dev Pages</h1>
         </div>

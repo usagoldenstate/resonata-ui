@@ -341,6 +341,10 @@ export type CallListItem = {
   id: string
   provider_call_id: string
   hotel_id: string | null
+  // Which inbound line the call arrived on. "sales" = the hotel's sales
+  // department's no-answer forward, answered by the sales intake assistant
+  // (no booking; a SalesInquiry is recorded instead). Mirrors CallRecord.line.
+  line: CallLine
   summary: string | null
   duration_seconds: number | null
   // Plaintext caller ID (E.164); null for blocked/withheld callers or erased rows.
@@ -374,6 +378,36 @@ export type CallOutcomeFilter =
   | "not_bookable"
   | "pending"
 
+export type CallLine = "reservations" | "sales"
+
+// The structured intake a sales-line call produced — one per call, written
+// mid-call by the submit_sales_inquiry tool. Mirrors the backend's
+// SalesInquirySummary. `email_status` is the delivery to the hotel's sales
+// mailbox: "failed" means the row exists but the email never went out.
+export type SalesInquiry = {
+  id: string
+  caller_name: string | null
+  callback_phone_e164: string | null
+  email: string | null
+  event_type: string
+  event_dates_text: string | null
+  event_start_date: string | null
+  event_end_date: string | null
+  dates_flexible: boolean | null
+  headcount: number | null
+  needs_guest_rooms: boolean | null
+  // The caller's own words about budget, plus the single parsed figure when
+  // they named one (a decimal string — money crosses the wire as a string).
+  budget_text: string | null
+  budget_amount: string | null
+  notes: string | null
+  sent_to: string | null
+  email_status: "sending" | "sent" | "failed"
+  email_error_class: string | null
+  sent_at: string | null
+  created_at: string
+}
+
 // Aggregate counts behind the call-log stat tiles. Outcome buckets sum to
 // total_calls; `transferred` is orthogonal. Mirrors CallStats in the backend's
 // schemas/call_records.py.
@@ -393,6 +427,7 @@ export type CallDetail = {
   id: string
   provider_call_id: string
   hotel_id: string | null
+  line: CallLine
   transcript: string | null
   summary: string | null
   duration_seconds: number | null
@@ -401,6 +436,9 @@ export type CallDetail = {
   // Server-derived: a playable Twilio recording is attached. The raw sid is never
   // exposed; audio is fetched by call_id through the authed proxy below.
   has_recording: boolean
+  // Sales-line calls only; null on reservations calls and on sales calls that
+  // ended before the inquiry was submitted.
+  sales_inquiry: SalesInquiry | null
   // Orthogonal to `outcome`: the call ended forwarded to a human.
   transferred: boolean
   transfer_department_name: string | null
@@ -635,6 +673,14 @@ export type HotelDetail = {
   // backend rejects Vapi webhooks whose payload carries a different id
   // (tenant-binding guard). Platform-admin only; null disables the check.
   vapi_phone_number_id: string | null
+  // Sales intake line — the hotel's second Vapi number (the sales department's
+  // no-answer forward). Platform-admin only. Enabling requires the email.
+  sales_line_enabled: boolean
+  sales_vapi_phone_number_id: string | null
+  sales_inquiry_email: string | null
+  // The hotel's sales team as plain name tags — who follow-up activity is
+  // attributed to. Operator-editable, unlike the sales-line fields above.
+  sales_rep_names: string[]
   pms_webhook_last_received_at: string | null
   is_active: boolean
 }
@@ -651,12 +697,18 @@ export type HotelOperatorUpdate = {
   // page composes this from the Sender Name + Email Address fields. Operator-
   // editable on the backend (PUT), not a platform-settings field.
   email_from?: string | null
+  // Replaces the whole list. Normalized server-side (trimmed, blanks dropped,
+  // case-insensitively de-duplicated, max 50).
+  sales_rep_names?: string[]
 }
 
 // Platform-admin-only partial update (PATCH /admin/hotels/{id}/platform-settings).
 export type HotelPlatformUpdate = {
   inbound_phone_number?: string | null
   vapi_phone_number_id?: string | null
+  sales_line_enabled?: boolean
+  sales_vapi_phone_number_id?: string | null
+  sales_inquiry_email?: string | null
   booking_engine_provider?: string | null
   is_active?: boolean
   commission_rate_basis_points?: number
@@ -891,6 +943,7 @@ export function fetchCalls(
     date_from?: string
     date_to?: string
     call_id?: string
+    line?: CallLine
     // Narrows within whatever outcome filter is set (a transferred call keeps
     // its own outcome bucket); omit for both.
     transferred?: boolean
@@ -1190,4 +1243,100 @@ export function refreshHotelRoomTypes(hotelId: string) {
   return api<unknown>(`/api/v1/admin/hotels/${hotelId}/room-types/refresh`, {
     method: "POST",
   })
+}
+
+// Automatically captured sales inquiries and shared follow-up tracking.
+export type SalesFollowUpStatus = "new" | "call_attempted" | "contacted" | "booked" | "closed"
+export type SalesInquiryItem = SalesInquiry & {
+  provider_call_id: string | null
+  follow_up_status: SalesFollowUpStatus
+  // A name from the hotel's sales-rep roster, not a user account — the
+  // notification email goes to a shared mailbox whose readers have no login.
+  assigned_rep: string | null
+  version: number
+}
+// One save is one entry: the outcome line in `text`, the typed note beneath.
+export type SalesActivity = {
+  id: string
+  at: string
+  actor: string
+  source: "dashboard" | "email_link"
+  kind: "status" | "assignment" | "note"
+  text: string
+  note: string | null
+}
+export type SalesInquiryDetail = SalesInquiryItem & {
+  activity: SalesActivity[]
+  // The no-login link the notification email carried, re-derived so it can be
+  // handed out again. Null once the inquiry has been erased.
+  follow_up_url: string | null
+}
+export type SalesInquiryPage = { items: SalesInquiryItem[]; total: number; counts: Partial<Record<SalesFollowUpStatus, number>> }
+export type SalesInquiryPatch = {
+  version: number
+  follow_up_status?: SalesFollowUpStatus
+  left_voicemail?: boolean
+  assigned_rep?: string | null
+  note?: string
+}
+export function fetchSalesInquiries(hotelId: string, filters: Record<string, QueryValue>) {
+  return api<SalesInquiryPage>(withQuery("/api/v1/sales-inquiries", { hotel_id: hotelId, ...filters }))
+}
+export function fetchSalesAssignees(hotelId: string) {
+  return api<string[]>(withQuery("/api/v1/sales-inquiries/assignees", { hotel_id: hotelId }))
+}
+export function fetchSalesInquiry(hotelId: string, id: string) {
+  return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }))
+}
+export function updateSalesInquiry(hotelId: string, id: string, body: SalesInquiryPatch) {
+  return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }), { method: "PATCH", body })
+}
+
+// ── The emailed follow-up page ──────────────────────────────────────────────
+// Reached from the sales notification email with no Clerk session; the signed
+// token in the URL is the whole authorization, so these two calls carry no
+// hotel_id and `api()` sends no Authorization header (none is set on a public
+// route). Everything the page renders comes back in one response.
+export type SalesFollowUpOutcome = "call_attempted" | "contacted" | "booked" | "closed"
+export type PublicSalesInquiry = {
+  hotel_display_name: string
+  caller_name: string | null
+  callback_phone_e164: string | null
+  email: string | null
+  event_type: string
+  event_dates_text: string | null
+  event_start_date: string | null
+  event_end_date: string | null
+  dates_flexible: boolean | null
+  headcount: number | null
+  needs_guest_rooms: boolean | null
+  // The caller's own words about budget, plus the single parsed figure when
+  // they named one (a decimal string — money crosses the wire as a string).
+  budget_text: string | null
+  budget_amount: string | null
+  notes: string | null
+  created_at: string
+  follow_up_status: SalesFollowUpStatus
+  follow_up_status_label: string
+  assigned_rep: string | null
+  version: number
+  activity: SalesActivity[]
+  sales_reps: string[]
+  outcomes: Array<{ value: SalesFollowUpOutcome; label: string }>
+}
+export type PublicSalesUpdate = {
+  version: number
+  rep_name: string
+  outcome: SalesFollowUpOutcome
+  left_voicemail?: boolean
+  note?: string
+}
+function publicInquiryPath(token: string) {
+  return `/api/v1/public/sales-inquiries/${encodeURIComponent(token)}`
+}
+export function fetchPublicSalesInquiry(token: string) {
+  return api<PublicSalesInquiry>(publicInquiryPath(token))
+}
+export function logPublicSalesUpdate(token: string, body: PublicSalesUpdate) {
+  return api<PublicSalesInquiry>(publicInquiryPath(token), { method: "POST", body })
 }

@@ -14,7 +14,7 @@ export default function RoomMappingPage() {
     return (
       <div className="flex min-h-screen bg-background">
         <Sidebar />
-        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+        <div className="app-content flex-1 flex items-center justify-center text-sm text-muted-foreground">
           Loading hotels…
         </div>
       </div>
@@ -37,7 +37,7 @@ export default function RoomMappingPage() {
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="app-content flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="bg-card border-b border-border px-8 py-4 flex items-center gap-3 shrink-0">
           <h1 className="text-xl font-bold text-foreground">

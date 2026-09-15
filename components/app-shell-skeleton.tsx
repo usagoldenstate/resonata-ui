@@ -9,11 +9,11 @@ import { Skeleton } from "@/components/ui/skeleton"
 // right — instead of a blank white screen. It deliberately depends on no
 // context/hooks so it can render before any provider exists, and it mirrors the
 // real layout's outer container (`min-h-screen bg-background flex`) and sidebar
-// width (`w-52`) so the transition to the live UI doesn't shift.
+// width (`w-60`) so the transition to the live UI doesn't shift.
 export function AppShellSkeleton() {
   return (
     <div className="min-h-screen bg-background flex" aria-busy="true" aria-label="Loading">
-      <aside className="w-52 bg-sidebar border-r border-sidebar-border flex flex-col">
+      <aside className="hidden md:flex h-dvh w-60 shrink-0 bg-sidebar border-r border-sidebar-border flex-col">
         <div className="p-6">
           {/* Wordmark is cheap and stable, so show it for real rather than as a
               bar — it's the one bit of the shell that never changes. */}
@@ -39,12 +39,12 @@ export function AppShellSkeleton() {
         </div>
       </aside>
 
-      <main className="flex-1 p-8">
+      <main className="app-content flex-1 p-8">
         <div className="mb-8 space-y-2">
           <Skeleton className="h-7 w-48" />
           <Skeleton className="h-4 w-72" />
         </div>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-40 w-full rounded-lg" />
           ))}
