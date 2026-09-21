@@ -677,6 +677,10 @@ export type HotelDetail = {
   // backend rejects Vapi webhooks whose payload carries a different id
   // (tenant-binding guard). Platform-admin only; null disables the check.
   vapi_phone_number_id: string | null
+  // Twilio sender (E.164) for outbound guest SMS. Its presence is what turns
+  // on the text-or-email choice for booking-link delivery; null = email only.
+  // Platform-admin only.
+  twilio_from_number: string | null
   // Sales intake line — the hotel's second Vapi number (the sales department's
   // no-answer forward). Platform-admin only. Enabling requires the email.
   sales_line_enabled: boolean
@@ -710,6 +714,7 @@ export type HotelOperatorUpdate = {
 export type HotelPlatformUpdate = {
   inbound_phone_number?: string | null
   vapi_phone_number_id?: string | null
+  twilio_from_number?: string | null
   sales_line_enabled?: boolean
   sales_vapi_phone_number_id?: string | null
   sales_inquiry_email?: string | null

@@ -126,6 +126,9 @@ export default function SettingsPage() {
   const [email, setEmail] = useState("")
   const [inboundNumber, setInboundNumber] = useState("")
   const [vapiPhoneNumberId, setVapiPhoneNumberId] = useState("")
+  // Twilio SMS sender (platform-admin only). Setting it is what lets the agent
+  // offer "emailed or texted?"; clearing it retires the choice.
+  const [twilioFromNumber, setTwilioFromNumber] = useState("")
   // Sales intake line (platform-admin only) — see the "Sales Intake Line" card.
   const [salesLineEnabled, setSalesLineEnabled] = useState(false)
   const [salesVapiPhoneNumberId, setSalesVapiPhoneNumberId] = useState("")
@@ -145,6 +148,7 @@ export default function SettingsPage() {
     setEmail(email)
     setInboundNumber(d.inbound_phone_number ?? "")
     setVapiPhoneNumberId(d.vapi_phone_number_id ?? "")
+    setTwilioFromNumber(d.twilio_from_number ?? "")
     setSalesLineEnabled(d.sales_line_enabled ?? false)
     setSalesVapiPhoneNumberId(d.sales_vapi_phone_number_id ?? "")
     setSalesInquiryEmail(d.sales_inquiry_email ?? "")
@@ -221,6 +225,10 @@ export default function SettingsPage() {
         const nextVapiId = vapiPhoneNumberId.trim() || null
         if (nextVapiId !== (detail.vapi_phone_number_id ?? null)) {
           pfBody.vapi_phone_number_id = nextVapiId
+        }
+        const nextTwilio = twilioFromNumber.trim() || null
+        if (nextTwilio !== (detail.twilio_from_number ?? null)) {
+          pfBody.twilio_from_number = nextTwilio
         }
         // Sales intake line. The backend validates the three together (enabling
         // requires an address), so send whatever changed in one PATCH.
@@ -401,6 +409,25 @@ export default function SettingsPage() {
                   </p>
                 </div>
               )}
+              <div className="space-y-2">
+                <Label htmlFor="twilioFromNumber" className="text-xs text-muted-foreground">
+                  Text Message Sender Number
+                  {!isPlatformAdmin && <PlatformOnlyHint />}
+                </Label>
+                <Input
+                  id="twilioFromNumber"
+                  value={twilioFromNumber}
+                  onChange={(e) => setTwilioFromNumber(e.target.value)}
+                  disabled={!isPlatformAdmin}
+                  placeholder={isPlatformAdmin ? "+13602180737" : "Not set — links are emailed only"}
+                  className="bg-card border-border disabled:opacity-70"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {isPlatformAdmin
+                    ? "Twilio number booking links are texted from. When set, the agent offers guests a choice of email or text; leave blank for email only. The Twilio account credentials must also be configured on the server, or text sends will fail."
+                    : "The phone number guests receive booking-link text messages from. When it is set, the agent offers guests a choice of email or text; otherwise links are emailed only."}
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="senderName" className="text-xs text-muted-foreground">
                   Sender Name
