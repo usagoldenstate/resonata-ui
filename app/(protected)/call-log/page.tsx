@@ -59,6 +59,7 @@ import {
   fetchCallStats,
   fetchCalls,
   fetchNotBookedTaxonomy,
+  formatHeadcount,
 } from "@/lib/api"
 import { useCurrentUser } from "@/lib/current-user-context"
 import { dateRangeError, formatShortDate, rangeForTimespan } from "@/lib/date-range"
@@ -135,12 +136,14 @@ function EmailStatusPill({ status }: { status: SalesInquiry["email_status"] }) {
   const styles: Record<SalesInquiry["email_status"], string> = {
     sent: "bg-[#6b7a4a]/10 text-[#6b7a4a]",
     sending: "bg-muted text-muted-foreground",
-    failed: "bg-destructive/10 text-destructive",
+    failed: "bg-amber-500/10 text-amber-700",
+    gave_up: "bg-destructive/10 text-destructive",
   }
   const labels: Record<SalesInquiry["email_status"], string> = {
     sent: "Emailed to sales",
     sending: "Email pending",
-    failed: "Email failed",
+    failed: "Email failed, retrying",
+    gave_up: "Email not delivered",
   }
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${styles[status]}`}>
@@ -199,7 +202,7 @@ function SalesInquiryPanel({ inquiry }: { inquiry: SalesInquiry | null }) {
     ["Email", inquiry.email ?? "—"],
     ["Event type", inquiry.event_type],
     ["Dates", formatInquiryDates(inquiry)],
-    ["Party size", inquiry.headcount !== null ? String(inquiry.headcount) : "—"],
+    ["Party size", formatHeadcount(inquiry) ?? "—"],
     ["Budget", budget(inquiry) ?? "—"],
     [
       "Guest rooms",
@@ -217,7 +220,7 @@ function SalesInquiryPanel({ inquiry }: { inquiry: SalesInquiry | null }) {
           )}
         </div>
       </div>
-      {inquiry.email_status === "failed" && (
+      {inquiry.email_status === "gave_up" && (
         <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           The inquiry email could not be delivered
           {inquiry.email_error_class ? ` (${inquiry.email_error_class})` : ""}. Forward these details to

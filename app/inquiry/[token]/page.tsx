@@ -37,6 +37,7 @@ import {
   logPublicSalesUpdate,
   type PublicSalesInquiry,
   type SalesFollowUpOutcome,
+  formatHeadcount,
 } from "@/lib/api"
 
 function timestamp(value: string) {
@@ -232,8 +233,8 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
 
           <div className="mt-4 space-y-2 border-t pt-4">
             <Detail icon={<CalendarDays className="size-4" />}>{stayDates(data)}</Detail>
-            {data.headcount !== null && (
-              <Detail icon={<Users className="size-4" />}>{data.headcount} people</Detail>
+            {formatHeadcount(data) && (
+              <Detail icon={<Users className="size-4" />}>{formatHeadcount(data)} people</Detail>
             )}
             {budget(data) && <Detail icon={<Wallet className="size-4" />}>{budget(data)}</Detail>}
             {data.needs_guest_rooms !== null && (

@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetCl
 import { useHotel } from "@/lib/hotel-context"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { confirmDiscardUnsaved, registerUnsavedGuard } from "@/lib/unsaved-guard"
-import { ApiError, fetchSalesAssignees, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
+import { ApiError, fetchSalesAssignees, formatHeadcount, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
 
 const statuses: Record<SalesFollowUpStatus, string> = { new: "New", call_attempted: "Call attempted", contacted: "Spoke with caller", booked: "Booked / Won", closed: "Closed / Not proceeding" }
 const statusStyle: Record<SalesFollowUpStatus, string> = {
@@ -46,10 +46,21 @@ function budget(row: { budget_text: string | null; budget_amount: string | null 
   if (!amount) return row.budget_text
   return row.budget_text ? `${row.budget_text} (${amount})` : amount
 }
-function EmailBadge({ status }: { status: SalesInquiryItem["email_status"] }) {
-  return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${status === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
-    {status === "failed" ? <AlertTriangle className="size-3.5" /> : <Mail className="size-3.5" />}
-    {status === "sent" ? "Sent" : status === "failed" ? "Send failed" : "Sending"}
+// The notification is sent by a background task once the inquiry row is
+// committed, so "sending" normally lasts seconds. One that has sat there for
+// minutes means the process died mid-send (there is no retry cron), and it
+// needs the same manual forwarding a failed send does.
+const STALE_SEND_MS = 5 * 60 * 1000
+function emailStale(row: Pick<SalesInquiryItem, "email_status" | "created_at">): boolean {
+  return row.email_status === "sending" && Date.now() - new Date(row.created_at).getTime() > STALE_SEND_MS
+}
+function EmailBadge({ row }: { row: Pick<SalesInquiryItem, "email_status" | "created_at"> }) {
+  const status = row.email_status
+  const stale = emailStale(row)
+  const problem = status === "gave_up" || stale
+  return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${problem ? "text-destructive" : "text-muted-foreground"}`}>
+    {problem ? <AlertTriangle className="size-3.5" /> : <Mail className="size-3.5" />}
+    {status === "sent" ? "Sent" : status === "gave_up" ? "Not delivered" : status === "failed" ? "Retrying" : stale ? "Send stuck" : "Sending"}
   </span>
 }
 function StatusSelect({ row, disabled, onChange }: { row: SalesInquiryItem; disabled: boolean; onChange: (status: SalesFollowUpStatus) => void }) {
@@ -142,7 +153,7 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
             <label className="relative min-w-60 flex-1"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Search inquiries" placeholder="Search name, phone, email, or request…" value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-9" /></label>
             <select aria-label="Filter by status" className={selectClass} value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}><option value="">All statuses</option>{Object.entries(statuses).map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select>
             <select aria-label="Filter by salesperson" className={selectClass} value={owner} onChange={e => { setOwner(e.target.value); setPage(0) }}><option value="">All salespeople</option><option value="unassigned">Unassigned</option>{reps.map(name => <option key={name} value={name}>{name}</option>)}</select>
-            <select aria-label="Filter by email send status" className={selectClass} value={email} onChange={e => { setEmail(e.target.value); setPage(0) }}><option value="">All email statuses</option><option value="sent">Sent</option><option value="sending">Sending</option><option value="failed">Send failed</option></select>
+            <select aria-label="Filter by email send status" className={selectClass} value={email} onChange={e => { setEmail(e.target.value); setPage(0) }}><option value="">All email statuses</option><option value="sent">Sent</option><option value="sending">Sending</option><option value="failed">Retrying</option><option value="gave_up">Not delivered</option></select>
           </div>
           <div className="flex flex-wrap items-end gap-3 text-xs text-muted-foreground">
             <label className="space-y-1">Received from<Input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0) }} /></label>
@@ -157,10 +168,10 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
             <tbody className="divide-y">{data.items.map(row => <tr key={row.id} className="cursor-pointer transition-colors hover:bg-muted/30" onClick={() => { setSelected(row.id); setDismissed(false) }}>
               <td className="whitespace-nowrap px-5 py-5 text-xs text-muted-foreground">{timestamp(row.created_at, timezone)}</td>
               <td className="px-5 py-5"><button className="text-left font-medium hover:underline focus-visible:outline-ring" onClick={() => setSelected(row.id)}>{row.caller_name || "Name not provided"}</button><p className="mt-1 text-xs text-muted-foreground">{row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || "No contact provided"}</p></td>
-              <td className="max-w-64 px-5 py-5"><p className="font-medium">{row.event_type}{row.headcount !== null ? ` · ${row.headcount} guests` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{dates(row)}</p></td>
+              <td className="max-w-64 px-5 py-5"><p className="font-medium">{row.event_type}{formatHeadcount(row) ? ` · ${formatHeadcount(row)} guests` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{dates(row)}</p></td>
               <td className="px-5 py-5" onClick={e => e.stopPropagation()}><StatusSelect row={row} disabled={!!busy} onChange={v => void save(row, { follow_up_status: v })} /></td>
               <td className="px-5 py-5" onClick={e => e.stopPropagation()}><OwnerSelect row={row} reps={reps} disabled={!!busy || !staff.data} onChange={name => void save(row, { assigned_rep: name })} /></td>
-              <td className="px-5 py-5"><EmailBadge status={row.email_status} /></td>
+              <td className="px-5 py-5"><EmailBadge row={row} /></td>
             </tr>)}</tbody></table></div>
           <div className="flex items-center justify-between border-t px-5 py-4 text-xs text-muted-foreground"><span>{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, data.total)} of {data.total} inquiries</span><div className="flex items-center gap-2"><Button aria-label="Previous page" variant="outline" size="icon" disabled={!page} onClick={() => setPage(p => p - 1)}><ChevronLeft className="size-4" /></Button><Button aria-label="Next page" variant="outline" size="icon" disabled={(page + 1) * PAGE_SIZE >= data.total} onClick={() => setPage(p => p + 1)}><ChevronRight className="size-4" /></Button></div></div>
         </>}
@@ -184,6 +195,9 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
 
 function InquiryPanel({ row, timezone, hotelId, reps, staffReady, busy, save }: { row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelId: string; reps: string[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean> }) {
   const [note, setNote] = useState("")
+  // An erased inquiry is read-only: the server refuses every PATCH (409), so
+  // the controls are disabled rather than letting a save bounce.
+  const locked = busy || row.erased
   useEffect(() => {
     if (!note.trim()) return
     const unregister = registerUnsavedGuard(() => "Discard your unsaved follow-up note?")
@@ -195,7 +209,7 @@ function InquiryPanel({ row, timezone, hotelId, reps, staffReady, busy, save }: 
   const discovery = [
     { label: "Request", value: row.event_type, icon: Sparkles },
     { label: "Event dates", value: dates(row), icon: CalendarDays },
-    { label: "Party size", value: row.headcount !== null ? `${row.headcount} guests` : "Not provided", icon: Users },
+    { label: "Party size", value: formatHeadcount(row) ? `${formatHeadcount(row)} guests` : "Not provided", icon: Users },
     { label: "Budget", value: budget(row) ?? "Not provided", icon: Wallet },
     { label: "Guest rooms", value: row.needs_guest_rooms === null ? "Not provided" : row.needs_guest_rooms ? "Rooms needed" : "Not needed", icon: BedDouble },
   ]
@@ -235,34 +249,37 @@ function InquiryPanel({ row, timezone, hotelId, reps, staffReady, busy, save }: 
 
     <section className="rounded-xl border bg-card px-4 py-3.5 shadow-xs">
       <div className="flex items-start gap-3">
-        <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ${row.email_status === "failed" ? "bg-destructive/10 text-destructive" : "bg-brand-insights/10 text-brand-insights"}`}>{row.email_status === "sent" ? <CheckCircle2 className="size-4" /> : <Mail className="size-4" />}</span>
-        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Sales team notification</h3><EmailBadge status={row.email_status} /></div><p className="mt-1 break-all text-xs text-muted-foreground">{row.sent_to || "Recipient not recorded"}</p>{row.sent_at && <p className="mt-1 text-[11px] text-muted-foreground">Sent {timestamp(row.sent_at, timezone)}</p>}</div>
+        <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ${row.email_status === "gave_up" ? "bg-destructive/10 text-destructive" : "bg-brand-insights/10 text-brand-insights"}`}>{row.email_status === "sent" ? <CheckCircle2 className="size-4" /> : <Mail className="size-4" />}</span>
+        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Sales team notification</h3><EmailBadge row={row} /></div><p className="mt-1 break-all text-xs text-muted-foreground">{row.sent_to || "Recipient not recorded"}</p>{row.sent_at && <p className="mt-1 text-[11px] text-muted-foreground">Sent {timestamp(row.sent_at, timezone)}</p>}</div>
       </div>
-      {row.email_status === "failed" && <p className="mt-3 rounded-lg bg-destructive/5 p-3 text-xs leading-relaxed text-destructive">The notification could not be sent. The inquiry is saved here so your team can follow up.</p>}
+      {row.email_status === "gave_up" && <p className="mt-3 rounded-lg bg-destructive/5 p-3 text-xs leading-relaxed text-destructive">The notification could not be delivered after repeated attempts. The inquiry is saved here so your team can follow up.</p>}
+      {row.email_status === "failed" && <p className="mt-3 rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">The last send attempt failed. It is retried automatically every 10 minutes for about an hour.</p>}
+      {emailStale(row) && <p className="mt-3 rounded-lg bg-destructive/5 p-3 text-xs leading-relaxed text-destructive">The notification never finished sending. The inquiry is saved here — forward it to your sales team manually.</p>}
     </section>
 
+    {row.erased && <p role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-xs leading-relaxed text-destructive">This inquiry was erased under a privacy request. Its caller details are gone and it can no longer be updated.</p>}
     <section className="overflow-hidden rounded-2xl border border-brand-insights/25 bg-card shadow-sm">
       <div className="flex items-center justify-between border-b border-brand-insights/15 bg-brand-insights/5 px-5 py-4"><div className="flex items-center gap-2"><Phone className="size-4 text-brand-insights" /><h3 className="text-sm font-semibold">Follow-up</h3></div><span className="text-[11px] text-muted-foreground">Keep your team in the loop</span></div>
       <div className="space-y-5 p-5">
         <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2">
           <div className="min-w-0"><p className="mb-2 text-xs font-medium text-muted-foreground">Status</p>
-            <Select value={row.follow_up_status} disabled={busy} onValueChange={status => void save(row, { follow_up_status: status as SalesFollowUpStatus })}>
+            <Select value={row.follow_up_status} disabled={locked} onValueChange={status => void save(row, { follow_up_status: status as SalesFollowUpStatus })}>
               <SelectTrigger aria-label={`Status for ${row.caller_name || "inquiry"}`} className={`${panelControl} ${statusStyle[row.follow_up_status]}`}><SelectValue /></SelectTrigger>
               <SelectContent>{Object.entries(statuses).map(([value, label]) => <SelectItem key={value} value={value}><span className="inline-flex items-center gap-2"><span className={`size-2 rounded-full border ${statusStyle[value as SalesFollowUpStatus]}`} />{label}</span></SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="min-w-0"><p className="mb-2 text-xs font-medium text-muted-foreground">Assigned to</p>
-            <Select value={row.assigned_rep || "unassigned"} disabled={busy || !staffReady} onValueChange={name => void save(row, { assigned_rep: name === "unassigned" ? null : name })}>
+            <Select value={row.assigned_rep || "unassigned"} disabled={locked || !staffReady} onValueChange={name => void save(row, { assigned_rep: name === "unassigned" ? null : name })}>
               <SelectTrigger aria-label={`Assigned salesperson for ${row.caller_name || "inquiry"}`} className={panelControl}><span className="flex min-w-0 items-center gap-2"><UserRound className="size-3.5 shrink-0 text-muted-foreground" /><SelectValue /></span></SelectTrigger>
               <SelectContent><SelectItem value="unassigned">Unassigned</SelectItem>{row.assigned_rep && !reps.includes(row.assigned_rep) && <SelectItem value={row.assigned_rep}>{row.assigned_rep} (no longer on the team)</SelectItem>}{reps.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
-        <Button variant="outline" className="h-10 w-full rounded-lg border-brand-insights/25 bg-brand-insights/5 text-brand-insights shadow-none hover:bg-brand-insights/10 hover:text-brand-insights" disabled={busy} onClick={() => void save(row, { follow_up_status: "call_attempted" })}><Phone className="size-3.5" />Log call attempt</Button>
+        <Button variant="outline" className="h-10 w-full rounded-lg border-brand-insights/25 bg-brand-insights/5 text-brand-insights shadow-none hover:bg-brand-insights/10 hover:text-brand-insights" disabled={locked} onClick={() => void save(row, { follow_up_status: "call_attempted" })}><Phone className="size-3.5" />Log call attempt</Button>
         <div className="border-t pt-4"><label htmlFor="follow-up-note" className="flex items-center gap-2 text-xs font-medium"><MessageSquareText className="size-3.5 text-muted-foreground" />Internal note</label>
           <div className="mt-2.5 overflow-hidden rounded-xl border bg-background/50 transition-shadow focus-within:border-brand-insights/50 focus-within:ring-2 focus-within:ring-brand-insights/10">
-            <Textarea id="follow-up-note" className="min-h-24 resize-y rounded-none border-0 bg-transparent px-3.5 py-3 text-sm shadow-none placeholder:text-muted-foreground/75 focus-visible:ring-0 dark:bg-transparent" placeholder="Add a conversation update or next step…" maxLength={4000} value={note} disabled={busy} onChange={e => setNote(e.target.value)} />
-            <div className="flex items-center justify-between border-t bg-card px-3 py-2.5"><span className="text-[11px] tabular-nums text-muted-foreground">{note.length.toLocaleString()} / 4,000</span><Button size="sm" className="rounded-lg px-3.5" disabled={busy || !note.trim()} onClick={async () => { if (await save(row, { note: note.trim() })) setNote("") }}><Send className="size-3.5" />Save note</Button></div>
+            <Textarea id="follow-up-note" className="min-h-24 resize-y rounded-none border-0 bg-transparent px-3.5 py-3 text-sm shadow-none placeholder:text-muted-foreground/75 focus-visible:ring-0 dark:bg-transparent" placeholder="Add a conversation update or next step…" maxLength={4000} value={note} disabled={locked} onChange={e => setNote(e.target.value)} />
+            <div className="flex items-center justify-between border-t bg-card px-3 py-2.5"><span className="text-[11px] tabular-nums text-muted-foreground">{note.length.toLocaleString()} / 4,000</span><Button size="sm" className="rounded-lg px-3.5" disabled={locked || !note.trim()} onClick={async () => { if (await save(row, { note: note.trim() })) setNote("") }}><Send className="size-3.5" />Save note</Button></div>
           </div>
         </div>
       </div>

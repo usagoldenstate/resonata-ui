@@ -66,6 +66,7 @@ type TransferDepartmentRow = {
   routing_rules: string
   position: number
   is_default: boolean
+  sales_line_transfer: boolean
 }
 
 type HotelDetail = {
@@ -93,6 +94,9 @@ type Department = {
   legacyPhone: string | null
   situations: string
   isDefault: boolean
+  // The sales intake line's one transfer target (room-reservation callers).
+  // At most one per hotel, like the catch-all.
+  salesLineTransfer: boolean
 }
 
 function newClientId(): string {
@@ -107,6 +111,7 @@ function blankDepartment(): Department {
     legacyPhone: null,
     situations: "",
     isDefault: false,
+    salesLineTransfer: false,
   }
 }
 
@@ -119,6 +124,7 @@ function rowToDepartment(row: TransferDepartmentRow): Department {
     legacyPhone: parsed ? null : row.phone_number || null,
     situations: row.routing_rules,
     isDefault: row.is_default,
+    salesLineTransfer: row.sales_line_transfer,
   }
 }
 
@@ -131,6 +137,7 @@ function snapshotDepartment(d: Department) {
     legacyPhone: d.legacyPhone,
     situations: d.situations,
     isDefault: d.isDefault,
+    salesLineTransfer: d.salesLineTransfer,
   }
 }
 
@@ -140,6 +147,7 @@ function DepartmentCard({
   onDelete,
   canDelete,
   onSetDefault,
+  onSetSalesLineTransfer,
 }: {
   dept: Department
   onChange: (updates: Partial<Department>) => void
@@ -148,6 +156,7 @@ function DepartmentCard({
   // Toggling the catch-all on this row clears it on every other row.
   // Lifted to the parent so mutual-exclusivity stays consistent.
   onSetDefault: (next: boolean) => void
+  onSetSalesLineTransfer: (next: boolean) => void
 }) {
   const preview = buildE164FromParts(dept.phoneParts)
   const invalidReason = preview ? null : describeInvalidParts(dept.phoneParts)
@@ -293,6 +302,21 @@ function DepartmentCard({
           </span>
         </span>
       </label>
+
+      <label className="flex items-start gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={dept.salesLineTransfer}
+          onChange={(e) => onSetSalesLineTransfer(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-input accent-primary cursor-pointer"
+        />
+        <span className="text-sm">
+          <span className="font-medium">Sales line transfer target</span>
+          <span className="block text-xs text-muted-foreground mt-0.5">
+            When someone reaches the sales intake line but just wants an ordinary room reservation, the agent offers to transfer them here. Only one department can be the target; with none set, the agent reads out the reservations number instead.
+          </span>
+        </span>
+      </label>
     </div>
   )
 }
@@ -421,6 +445,15 @@ export function AgentConfigTab({
       })),
     )
   }, [])
+  // Same mutual exclusion for the sales line's transfer target.
+  const setDepartmentSalesLineTransfer = useCallback((id: string, next: boolean) => {
+    setDepartments((prev) =>
+      prev.map((d) => ({
+        ...d,
+        salesLineTransfer: d.id === id ? next : next ? false : d.salesLineTransfer,
+      })),
+    )
+  }, [])
 
   // Push dirty state up so the parent can show the indicator next to the
   // top-level Save button.
@@ -469,6 +502,7 @@ export function AgentConfigTab({
       phone_number: string
       routing_rules: string
       is_default: boolean
+      sales_line_transfer: boolean
     }[] = []
     for (const [idx, d] of departments.entries()) {
       const name = d.name.trim()
@@ -506,6 +540,7 @@ export function AgentConfigTab({
         phone_number: phone,
         routing_rules: d.situations,
         is_default: d.isDefault,
+        sales_line_transfer: d.salesLineTransfer,
       })
     }
 
@@ -617,6 +652,7 @@ export function AgentConfigTab({
               onDelete={() => removeDepartment(dept.id)}
               canDelete={departments.length > 1}
               onSetDefault={(next) => setDepartmentDefault(dept.id, next)}
+              onSetSalesLineTransfer={(next) => setDepartmentSalesLineTransfer(dept.id, next)}
             />
           ))}
           <Button

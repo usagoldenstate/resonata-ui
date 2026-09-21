@@ -383,7 +383,9 @@ export type CallLine = "reservations" | "sales"
 // The structured intake a sales-line call produced — one per call, written
 // mid-call by the submit_sales_inquiry tool. Mirrors the backend's
 // SalesInquirySummary. `email_status` is the delivery to the hotel's sales
-// mailbox: "failed" means the row exists but the email never went out.
+// mailbox: "failed" means the last send attempt did not go out and the
+// reconcile job will retry; "gave_up" means it exhausted its retries — the
+// row exists, a person has to forward it.
 export type SalesInquiry = {
   id: string
   caller_name: string | null
@@ -398,7 +400,11 @@ export type SalesInquiry = {
   event_start_date: string | null
   event_end_date: string | null
   dates_flexible: boolean | null
-  headcount: number | null
+  // Party size: the caller's words plus the parsed low/high pair. A single
+  // figure is stored in both bounds, so a range is simply min !== max.
+  headcount_text: string | null
+  headcount_min: number | null
+  headcount_max: number | null
   needs_guest_rooms: boolean | null
   // The caller's own words about budget, plus the single parsed figure when
   // they named one (a decimal string — money crosses the wire as a string).
@@ -406,7 +412,7 @@ export type SalesInquiry = {
   budget_amount: string | null
   notes: string | null
   sent_to: string | null
-  email_status: "sending" | "sent" | "failed"
+  email_status: "sending" | "sent" | "failed" | "gave_up"
   email_error_class: string | null
   sent_at: string | null
   created_at: string
@@ -1263,6 +1269,9 @@ export type SalesInquiryItem = SalesInquiry & {
   // notification email goes to a shared mailbox whose readers have no login.
   assigned_rep: string | null
   version: number
+  // True once a privacy erasure has pseudonymized the row. It stays listed for
+  // its event lineage but is read-only: the PATCH refuses (409).
+  erased: boolean
 }
 // One save is one entry: the outcome line in `text`, the typed note beneath.
 export type SalesActivity = {
@@ -1318,7 +1327,11 @@ export type PublicSalesInquiry = {
   event_start_date: string | null
   event_end_date: string | null
   dates_flexible: boolean | null
-  headcount: number | null
+  // Party size: the caller's words plus the parsed low/high pair. A single
+  // figure is stored in both bounds, so a range is simply min !== max.
+  headcount_text: string | null
+  headcount_min: number | null
+  headcount_max: number | null
   needs_guest_rooms: boolean | null
   // The caller's own words about budget, plus the single parsed figure when
   // they named one (a decimal string — money crosses the wire as a string).
@@ -1349,4 +1362,22 @@ export function fetchPublicSalesInquiry(token: string) {
 }
 export function logPublicSalesUpdate(token: string, body: PublicSalesUpdate) {
   return api<PublicSalesInquiry>(publicInquiryPath(token), { method: "POST", body })
+}
+
+// Party size the way the caller said it: "150–200", "40", or "at least a
+// hundred (100)" when their words carry a hedge the numbers can't. Null when
+// nothing was given. Mirrors the email's rendering so staff read the same
+// thing in both places.
+export function formatHeadcount(row: {
+  headcount_text: string | null
+  headcount_min: number | null
+  headcount_max: number | null
+}): string | null {
+  if (row.headcount_min === null || row.headcount_max === null) return row.headcount_text
+  const figure =
+    row.headcount_min === row.headcount_max
+      ? row.headcount_min.toLocaleString()
+      : `${row.headcount_min.toLocaleString()}\u2013${row.headcount_max.toLocaleString()}`
+  if (!row.headcount_text || row.headcount_text.toLowerCase() === figure.toLowerCase()) return figure
+  return `${row.headcount_text} (${figure})`
 }
