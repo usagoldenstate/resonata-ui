@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
   Check,
@@ -15,10 +16,12 @@ import {
   Undo2,
   Users,
   Building2,
+  Wand2,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { BookingEnginePanel } from "@/components/booking-engine-panel"
+import { HotelSetupPanel } from "@/components/hotel-setup/hotel-setup-panel"
 import { OrganizationsPanel } from "@/components/organizations-panel"
 import { UserAccessPanel } from "@/components/user-access-panel"
 import { Sidebar } from "@/components/sidebar"
@@ -54,19 +57,26 @@ const emptyLoadState: LoadState = {
   error: null,
 }
 
-type DevTab = "persona" | "booking-engine" | "user-access" | "organizations"
+type DevTab =
+  | "persona"
+  | "booking-engine"
+  | "user-access"
+  | "organizations"
+  | "hotel-setup"
+
+const DEV_TABS: Array<{ id: DevTab; label: string; icon: React.ReactNode }> = [
+  { id: "persona", label: "Persona Override", icon: <FileText className="w-4 h-4" /> },
+  { id: "booking-engine", label: "Booking Engine", icon: <Link2 className="w-4 h-4" /> },
+  { id: "user-access", label: "User Access", icon: <Users className="w-4 h-4" /> },
+  { id: "organizations", label: "Organizations", icon: <Building2 className="w-4 h-4" /> },
+  { id: "hotel-setup", label: "Hotel Setup", icon: <Wand2 className="w-4 h-4" /> },
+]
+
+function isDevTab(value: string | null): value is DevTab {
+  return value !== null && DEV_TABS.some((t) => t.id === value)
+}
 
 export default function DevPages() {
-  const { loading: userLoading, isPlatformAdmin } = useCurrentUser()
-  const [activeTab, setActiveTab] = React.useState<DevTab>("persona")
-
-  const tabs: Array<{ id: DevTab; label: string; icon: React.ReactNode }> = [
-    { id: "persona", label: "Persona Override", icon: <FileText className="w-4 h-4" /> },
-    { id: "booking-engine", label: "Booking Engine", icon: <Link2 className="w-4 h-4" /> },
-    { id: "user-access", label: "User Access", icon: <Users className="w-4 h-4" /> },
-    { id: "organizations", label: "Organizations", icon: <Building2 className="w-4 h-4" /> },
-  ]
-
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
@@ -75,17 +85,54 @@ export default function DevPages() {
           <h1 className="text-2xl font-semibold text-foreground">Dev Pages</h1>
         </div>
 
+        {/* Shows the hotel selected in the SIDEBAR picker — a dev convenience
+            for copying its slug. The Hotel Setup tab deliberately ignores it
+            and works off its own `?hotel=` param, because a hotel in setup is
+            inactive and therefore never in the picker. */}
         <HotelSlugBar />
 
+        {/* useSearchParams needs a Suspense boundary above it. */}
+        <React.Suspense
+          fallback={<StateNotice tone="muted" message="Loading..." />}
+        >
+          <DevPagesTabs />
+        </React.Suspense>
+      </main>
+    </div>
+  )
+}
+
+function DevPagesTabs() {
+  const { loading: userLoading, isPlatformAdmin } = useCurrentUser()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // The tab lives in the URL so the Hotel Setup wizard is linkable and
+  // resumable (`?tab=hotel-setup&hotel=<id>&step=<key>`). Persona stays the
+  // default when nothing is named.
+  const tabParam = searchParams.get("tab")
+  const activeTab: DevTab = isDevTab(tabParam) ? tabParam : "persona"
+  const tabs = DEV_TABS
+
+  const selectTab = (id: DevTab) => {
+    const next = new URLSearchParams(searchParams.toString())
+    next.set("tab", id)
+    // `hotel`/`step` ride along untouched so leaving the wizard and coming
+    // back lands on the same step.
+    router.replace(`/dev-pages?${next.toString()}`)
+  }
+
+  return (
+    <>
         {userLoading ? (
           <StateNotice tone="muted" message="Loading..." />
         ) : isPlatformAdmin ? (
           <>
-            <div className="mb-6 flex border-b border-border">
+            <div className="mb-6 flex flex-wrap border-b border-border">
               {tabs.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => setActiveTab(t.id)}
+                  onClick={() => selectTab(t.id)}
                   className={cn(
                     "flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors",
                     activeTab === t.id
@@ -98,7 +145,7 @@ export default function DevPages() {
                 </button>
               ))}
             </div>
-            {/* Both tabs stay mounted so unsaved edits survive switching. */}
+            {/* These four stay mounted so unsaved edits survive switching. */}
             <div className={activeTab === "persona" ? "" : "hidden"}>
               <PersonaOverridePanel />
             </div>
@@ -111,12 +158,14 @@ export default function DevPages() {
             <div className={activeTab === "organizations" ? "" : "hidden"}>
               <OrganizationsPanel />
             </div>
+            {/* Mounted only while selected: the wizard reads `?hotel=`/`?step=`
+                and fires loads on mount, which a hidden tab shouldn't do. */}
+            {activeTab === "hotel-setup" ? <HotelSetupPanel /> : null}
           </>
         ) : (
           <StateNotice tone="error" message="This page is only available to platform admins." />
         )}
-      </main>
-    </div>
+    </>
   )
 }
 

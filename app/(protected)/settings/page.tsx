@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Sidebar } from "@/components/sidebar"
+import { SetupHealthCard } from "@/components/hotel-setup/setup-health-card"
 import { OperaCancellationCard } from "@/components/opera-cancellation-card"
 import { StaynTouchCancellationCard } from "@/components/stayntouch-cancellation-card"
 import { useHotel } from "@/lib/hotel-context"
@@ -357,6 +358,15 @@ export default function SettingsPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Rendered above the hotel-scoped block below so a setup problem is
+            visible even while the rest of the page is still loading. Creating
+            a hotel lives in Dev Pages → Hotel Setup, not here. */}
+        {isPlatformAdmin && hotelId && (
+          <div className="mb-6 max-w-3xl">
+            <SetupHealthCard hotelId={hotelId} />
+          </div>
+        )}
 
         {!hotelId ? (
           <StateNotice

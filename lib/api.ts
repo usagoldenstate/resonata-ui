@@ -727,6 +727,9 @@ export type HotelDetail = {
   booking_engine_provider: string | null
   agent_name: string | null
   first_message: string | null
+  // The sales intake line's own opener. Null falls back to the shared
+  // sales-intake template on the voice path.
+  sales_first_message: string | null
   email_from: string | null
   preferred_rate_code: string | null
   commission_rate_basis_points: number
@@ -752,6 +755,271 @@ export type HotelDetail = {
   sales_rep_names: string[]
   pms_webhook_last_received_at: string | null
   is_active: boolean
+  // Which completion path the hotel uses. Platform-admin only.
+  reservation_flow?: ReservationFlow
+  // Provider-specific booking-engine parameterisation (Synxis/P3 shapes).
+  booking_engine_config?: Record<string, unknown> | null
+  // Non-secret per-hotel PMS behaviour settings (never credentials).
+  pms_config?: Record<string, unknown> | null
+  // Returned inline so the agent-config editor hydrates in one round-trip.
+  transfer_departments?: TransferDepartmentRow[]
+}
+
+export type ReservationFlow = "booking_engine_link" | "pms_payment_link"
+
+// Read shape of one transfer destination (returned inline on HotelDetail and
+// from GET /transfer-departments).
+export type TransferDepartmentRow = {
+  department_id: string
+  name: string
+  phone_number: string
+  routing_rules: string
+  position: number
+  is_default: boolean
+  sales_line_transfer: boolean
+}
+
+// Write shape — the bulk PUT replaces the whole list; the server assigns
+// `position` from the array order.
+export type TransferDepartmentInput = {
+  name: string
+  phone_number: string
+  routing_rules: string
+  is_default: boolean
+  sales_line_transfer: boolean
+}
+
+export function fetchTransferDepartments(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<TransferDepartmentRow[]>(
+    `/api/v1/admin/hotels/${hotelId}/transfer-departments`,
+    opts,
+  )
+}
+
+export function replaceTransferDepartments(
+  hotelId: string,
+  departments: TransferDepartmentInput[],
+) {
+  return api<TransferDepartmentRow[]>(
+    `/api/v1/admin/hotels/${hotelId}/transfer-departments`,
+    { method: "PUT", body: { departments } },
+  )
+}
+
+// ── Hotel creation (the setup wizard's first step) ──────────────────────────
+// Mirrors the backend `HotelCreate`. The wizard always creates INACTIVE and
+// activates from the review step once every blocking step is done.
+export type HotelCreateBody = {
+  hotel_id: string
+  display_name: string
+  timezone: string
+  currency: string
+  agent_name?: string | null
+  first_message?: string | null
+  sales_first_message?: string | null
+  pms_provider: string
+  booking_engine_provider?: string | null
+  booking_engine_config?: Record<string, unknown> | null
+  email_from?: string | null
+  preferred_rate_code?: string | null
+  max_call_minutes?: number | null
+  commission_rate_basis_points: number
+  is_active: boolean
+  // At least one destination is required at creation time — the voice agent
+  // must always have somewhere to transfer a caller it can't help.
+  departments: TransferDepartmentInput[]
+}
+
+export function createHotel(body: HotelCreateBody) {
+  return api<HotelDetail>("/api/v1/admin/hotels", { method: "POST", body })
+}
+
+// ── PMS credentials (setup wizard) ──────────────────────────────────────────
+// The backend never returns stored values — only which field names are set.
+export type PmsCredentialsState = {
+  hotel_id: string
+  pms_provider: string
+  configured: boolean
+  fields_set: string[]
+}
+
+export type PmsCredentialsTestResult = {
+  ok: boolean
+  message: string
+  checked_at: string
+}
+
+export function fetchPmsCredentials(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<PmsCredentialsState>(
+    `/api/v1/admin/hotels/${hotelId}/pms-credentials`,
+    opts,
+  )
+}
+
+// FULL replace — send every field the provider needs, not a patch.
+export function updatePmsCredentials(
+  hotelId: string,
+  credentials: Record<string, unknown>,
+) {
+  return api<PmsCredentialsState>(
+    `/api/v1/admin/hotels/${hotelId}/pms-credentials`,
+    { method: "PUT", body: { credentials } },
+  )
+}
+
+export function testPmsCredentials(hotelId: string) {
+  return api<PmsCredentialsTestResult>(
+    `/api/v1/admin/hotels/${hotelId}/pms-credentials/test`,
+    { method: "POST" },
+  )
+}
+
+// ── Setup status (setup wizard) ─────────────────────────────────────────────
+// Server-computed per-step completion. The wizard is resumable because every
+// step persists through an ordinary endpoint and this is the read-back.
+export type SetupStepKey =
+  | "identity"
+  | "lines"
+  | "pms"
+  | "catalog"
+  | "reservation_flow"
+  | "delivery"
+  | "sales"
+  | "persona"
+  | "knowledge"
+  | "telephony"
+  | "access"
+
+export type SetupStepStatus = "done" | "skipped" | "incomplete" | "not_applicable"
+
+export type SetupStep = {
+  key: SetupStepKey
+  status: SetupStepStatus
+  // Blocking steps must be done (or skipped, where the backend allows it)
+  // before the hotel can be activated.
+  blocking: boolean
+  detail: string | null
+}
+
+// Work that happens outside this app (Vapi dashboard, StayNTouch portal, …).
+export type SetupExternalTask = {
+  key: string
+  title: string
+  detail: string
+  url_hint: string | null
+}
+
+// The TEMPLATE opening each line speaks while its own column is empty,
+// rendered server-side from the hotel's current display_name + agent_name.
+// `reservations` backs `Hotel.first_message`, `sales` backs
+// `Hotel.sales_first_message`; both columns are editable per hotel, so these
+// are for prefill only. Optional until the backend change lands.
+export type FirstMessageDefaults = {
+  reservations: string
+  sales: string
+}
+
+export type SetupStatus = {
+  hotel_id: string
+  is_active: boolean
+  setup_progress: Record<string, string>
+  steps: SetupStep[]
+  external_tasks: SetupExternalTask[]
+  can_activate: boolean
+  blockers: string[]
+  first_message_defaults?: FirstMessageDefaults
+}
+
+// Which inbound lines the hotel runs. Chosen on the identity step (it decides
+// which later steps apply) and recorded with the setup-progress PATCH.
+export type LinesMode = "reservations" | "sales" | "both"
+
+export function fetchHotelSetup(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<SetupStatus>(`/api/v1/admin/hotels/${hotelId}/setup`, opts)
+}
+
+export function patchSetupProgress(
+  hotelId: string,
+  body: { step?: SetupStepKey; status?: "done" | "skipped"; lines_mode?: LinesMode },
+) {
+  return api<SetupStatus>(`/api/v1/admin/hotels/${hotelId}/setup-progress`, {
+    method: "PATCH",
+    body,
+  })
+}
+
+// ── Knowledge base (wizard's research step) ─────────────────────────────────
+export type HotelKnowledgeEntry = {
+  topic: string
+  content: string
+  // The editor's own section object, round-tripped verbatim (see
+  // lib/knowledge-serialize.ts). Opaque to this layer.
+  structured_content: unknown
+  sort_order: number
+}
+
+export function fetchHotelKnowledge(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<HotelKnowledgeEntry[]>(
+    `/api/v1/admin/hotels/${hotelId}/knowledge`,
+    opts,
+  )
+}
+
+export function replaceHotelKnowledge(
+  hotelId: string,
+  entries: HotelKnowledgeEntry[],
+) {
+  return api<HotelKnowledgeEntry[]>(`/api/v1/admin/hotels/${hotelId}/knowledge`, {
+    method: "PUT",
+    body: { entries },
+  })
+}
+
+// ── Room types (wizard's catalog step) ──────────────────────────────────────
+export type HotelRoomTypeRow = {
+  room_type_id: string
+  room_name: string
+  cached_description: string | null
+  operator_description: string | null
+  image_url: string | null
+  max_occupancy: number
+}
+
+export type HotelRoomTypeList = {
+  hotel_id: string
+  pms_provider: string
+  supported: boolean
+  message: string | null
+  rooms: HotelRoomTypeRow[]
+}
+
+export function fetchHotelRoomTypes(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<HotelRoomTypeList>(`/api/v1/admin/hotels/${hotelId}/room-types`, opts)
+}
+
+// ── Vapi webhook secret (wizard's telephony step) ───────────────────────────
+// Plaintext comes back exactly once; only its SHA-256 hash is stored. Calls
+// 401 between the rotate and pasting it into the Vapi dashboard.
+export function rotateVapiWebhookSecret(hotelId: string) {
+  return api<{ vapi_webhook_secret: string }>(
+    `/api/v1/admin/hotels/${hotelId}/vapi-webhook-secret/rotate`,
+    { method: "POST" },
+  )
 }
 
 // Operator-safe partial update (PUT /admin/hotels/{id}). Only send changed keys.
@@ -760,6 +1028,8 @@ export type HotelOperatorUpdate = {
   timezone?: string
   agent_name?: string | null
   first_message?: string | null
+  // Blank/null restores the shared sales-intake template.
+  sales_first_message?: string | null
   preferred_rate_code?: string | null
   max_call_minutes?: number | null
   // Full RFC 5322 sender ("Name <addr@domain>" or bare address). The settings
@@ -782,8 +1052,23 @@ export type HotelPlatformUpdate = {
   sales_vapi_phone_number_id?: string | null
   sales_inquiry_email?: string | null
   booking_engine_provider?: string | null
+  booking_engine_config?: Record<string, unknown> | null
+  // The PMS connector. Accepted ONLY while the hotel is inactive — a live
+  // hotel's holds and attribution reference reservations inside its current
+  // PMS, so the backend 422s a change. Switching discards the stored
+  // credentials and the hotel's cached PMS catalog.
+  pms_provider?: string
+  // Non-secret PMS behaviour settings (e.g. reservation_source_code).
+  pms_config?: Record<string, unknown> | null
+  reservation_flow?: ReservationFlow
   is_active?: boolean
   commission_rate_basis_points?: number
+}
+
+// Base URL of the FastAPI backend, used to render the exact webhook URLs an
+// operator pastes into Vapi / StayNTouch. Empty when unconfigured.
+export function apiBaseUrl(): string {
+  return env.apiUrl.replace(/\/$/, "")
 }
 
 export function fetchHotelDetail(

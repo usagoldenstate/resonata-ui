@@ -76,6 +76,10 @@ type HotelDetail = {
   pms_provider: string
   agent_name: string | null
   first_message: string | null
+  // The sales intake line's own opener. Null/blank falls back to the shared
+  // sales-intake template. Only meaningful while `sales_line_enabled`.
+  sales_first_message: string | null
+  sales_line_enabled: boolean
   email_from: string | null
   preferred_rate_code: string | null
   max_call_minutes: number | null
@@ -341,6 +345,9 @@ export function AgentConfigTab({
   const [preferredRateCode, setPreferredRateCode] = useState("")
   const [agentName, setAgentName] = useState("")
   const [firstMessage, setFirstMessage] = useState("")
+  const [salesFirstMessage, setSalesFirstMessage] = useState("")
+  // Only hotels running the sales intake line get the second opener field.
+  const [salesLineEnabled, setSalesLineEnabled] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   // Saved-baseline JSON snapshot of the form. Null while loading or before
   // first successful load. Compared against the live snapshot to derive dirty.
@@ -352,12 +359,14 @@ export function AgentConfigTab({
         departments: departments.map(snapshotDepartment),
         agentName,
         firstMessage,
+        salesFirstMessage,
         preferredRateCode,
       }),
     [
       departments,
       agentName,
       firstMessage,
+      salesFirstMessage,
       preferredRateCode,
     ],
   )
@@ -370,6 +379,7 @@ export function AgentConfigTab({
   const applyHotelDetail = useCallback((hotel: HotelDetail) => {
     const loadedAgentName = hotel.agent_name ?? ""
     const loadedFirstMessage = hotel.first_message ?? ""
+    const loadedSalesFirstMessage = hotel.sales_first_message ?? ""
     const loadedPreferredRateCode = String(hotel.preferred_rate_code ?? "")
     const loadedDepartments = (hotel.transfer_departments ?? []).map(rowToDepartment)
     // Defensive: backend invariant is ≥1 department, but if a hotel ever
@@ -378,6 +388,8 @@ export function AgentConfigTab({
     if (loadedDepartments.length === 0) loadedDepartments.push(blankDepartment())
     setAgentName(loadedAgentName)
     setFirstMessage(loadedFirstMessage)
+    setSalesFirstMessage(loadedSalesFirstMessage)
+    setSalesLineEnabled(Boolean(hotel.sales_line_enabled))
     setPreferredRateCode(loadedPreferredRateCode)
     setDepartments(loadedDepartments)
     // Baseline must match the shape `formSnapshot` produces so dirty reads
@@ -387,6 +399,7 @@ export function AgentConfigTab({
         departments: loadedDepartments.map(snapshotDepartment),
         agentName: loadedAgentName,
         firstMessage: loadedFirstMessage,
+        salesFirstMessage: loadedSalesFirstMessage,
         preferredRateCode: loadedPreferredRateCode,
       }),
     )
@@ -569,6 +582,9 @@ export function AgentConfigTab({
         body: {
           agent_name: agentName || null,
           first_message: firstMessage || null,
+          // Only sent for hotels that run the line, so a hotel without one
+          // never has wording written to a column nothing speaks.
+          ...(salesLineEnabled ? { sales_first_message: salesFirstMessage || null } : {}),
           preferred_rate_code: preferredRateCode || null,
         },
       })
@@ -712,7 +728,7 @@ export function AgentConfigTab({
           </div>
           <div>
             <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
-              First Message
+              {salesLineEnabled ? "Reservations Line Opening" : "First Message"}
             </label>
             <textarea
               className="w-full min-h-[100px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
@@ -721,6 +737,23 @@ export function AgentConfigTab({
               placeholder="e.g. Hi, thank you for calling The Lakehouse. My name is Sarah, how can I help you today?"
             />
           </div>
+          {salesLineEnabled && (
+            <div>
+              <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                Sales Line Opening
+              </label>
+              <textarea
+                className="w-full min-h-[100px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+                value={salesFirstMessage}
+                onChange={(e) => setSalesFirstMessage(e.target.value)}
+                placeholder="e.g. Thanks for calling The Lakehouse sales team — I can take down the details of your event."
+              />
+              <p className="mt-2 text-xs text-muted-foreground">
+                What callers to the sales intake line hear first. Leave blank to use the
+                standard sales opening.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
