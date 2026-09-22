@@ -422,10 +422,15 @@ export type SalesInquiry = {
   headcount_min: number | null
   headcount_max: number | null
   needs_guest_rooms: boolean | null
-  // The caller's own words about budget, plus the single parsed figure when
-  // they named one (a decimal string — money crosses the wire as a string).
+  // The caller's own words plus the post-call AI-estimated total-event range.
+  // Money crosses the wire as decimal strings.
   budget_text: string | null
-  budget_amount: string | null
+  estimated_budget_min: string | null
+  estimated_budget_max: string | null
+  budget_estimation_status: "pending" | "complete" | "failed"
+  budget_estimated_at: string | null
+  budget_estimation_model: string | null
+  budget_estimation_prompt_version: string | null
   notes: string | null
   sent_to: string | null
   email_status: "sending" | "sent" | "failed" | "gave_up"
@@ -1420,10 +1425,14 @@ export type PublicSalesInquiry = {
   headcount_min: number | null
   headcount_max: number | null
   needs_guest_rooms: boolean | null
-  // The caller's own words about budget, plus the single parsed figure when
-  // they named one (a decimal string — money crosses the wire as a string).
+  // The caller's own words plus the post-call AI-estimated total-event range.
   budget_text: string | null
-  budget_amount: string | null
+  estimated_budget_min: string | null
+  estimated_budget_max: string | null
+  budget_estimation_status: "pending" | "complete" | "failed"
+  budget_estimated_at: string | null
+  budget_estimation_model: string | null
+  budget_estimation_prompt_version: string | null
   notes: string | null
   created_at: string
   follow_up_status: SalesFollowUpStatus

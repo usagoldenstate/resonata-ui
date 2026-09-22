@@ -33,6 +33,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Card, CardContent } from "@/components/ui/card"
+import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
@@ -166,15 +167,6 @@ function formatInquiryDates(inquiry: SalesInquiry): string {
   return inquiry.dates_flexible ? `${base} · flexible` : base
 }
 
-// The caller's words lead; the parsed figure rides in parentheses when it adds
-// something. Most callers hedge ("we're flexible"), so text-only is normal.
-function budget(row: { budget_text: string | null; budget_amount: string | null }): string | null {
-  const amount =
-    row.budget_amount === null ? null : Number(row.budget_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })
-  if (!amount) return row.budget_text
-  return row.budget_text ? `${row.budget_text} (${amount})` : amount
-}
-
 // The structured intake a sales-line call produced, shown above the
 // transcript. A `failed` email status is the cue for staff to forward the
 // details manually — the inquiry itself is intact in the row.
@@ -203,7 +195,7 @@ function SalesInquiryPanel({ inquiry }: { inquiry: SalesInquiry | null }) {
     ["Event type", inquiry.event_type],
     ["Dates", formatInquiryDates(inquiry)],
     ["Party size", formatHeadcount(inquiry) ?? "—"],
-    ["Budget", budget(inquiry) ?? "—"],
+    ["Budget stated by caller", inquiry.budget_text ?? "—"],
     [
       "Guest rooms",
       inquiry.needs_guest_rooms === null ? "—" : inquiry.needs_guest_rooms ? "Yes" : "No",
@@ -234,6 +226,10 @@ function SalesInquiryPanel({ inquiry }: { inquiry: SalesInquiry | null }) {
             <dd className="text-card-foreground">{value}</dd>
           </div>
         ))}
+        <div>
+          <dt className="text-xs text-muted-foreground"><AiBudgetHelp label="AI-estimated total budget" /></dt>
+          <dd className="text-card-foreground tabular-nums">{formatAiBudget(inquiry)}</dd>
+        </div>
       </dl>
       {inquiry.notes && (
         <div className="mt-3">

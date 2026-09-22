@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet"
+import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import { useHotel, type HotelListItem } from "@/lib/hotel-context"
 type Selection = { id: string; hotelId: string }
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
@@ -38,14 +39,6 @@ function timestamp(value: string | null, timezone: string) {
 function dates(row: SalesInquiryItem) {
   const parts = row.event_dates_text || [row.event_start_date, row.event_end_date !== row.event_start_date ? row.event_end_date : null].filter(Boolean).join(" – ") || "Dates not provided"
   return `${parts}${row.dates_flexible ? " · Flexible" : ""}`
-}
-// The caller's words lead; the parsed figure rides in parentheses when it adds
-// something. Most callers hedge ("we're flexible"), so text-only is normal.
-function budget(row: { budget_text: string | null; budget_amount: string | null }): string | null {
-  const amount =
-    row.budget_amount === null ? null : Number(row.budget_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })
-  if (!amount) return row.budget_text
-  return row.budget_text ? `${row.budget_text} (${amount})` : amount
 }
 // The notification is sent by a background task once the inquiry row is
 // committed, so "sending" normally lasts seconds. One that has sat there for
@@ -114,6 +107,10 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   const [email, setEmail] = useState("")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
+  const [eventFrom, setEventFrom] = useState("")
+  const [eventTo, setEventTo] = useState("")
+  const [budgetMinimum, setBudgetMinimum] = useState("")
+  const [sort, setSort] = useState("newest")
   const [page, setPage] = useState(0)
   const [callId, setCallId] = useState(initialCall)
   // The selection carries its hotel so the detail request survives the row
@@ -127,8 +124,9 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   const q = useDebouncedValue(search, 300)
   const event = useDebouncedValue(eventType, 300)
   const invalidDates = !!(dateFrom && dateTo && dateFrom > dateTo)
-  const filters = { q, event_type: event, status, assigned_rep: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", email_status: email, date_from: dateFrom, date_to: dateTo, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
-  const { data, error, isLoading, isValidating, mutate } = useSWR(invalidDates ? null : ["sales-inquiries", hotelIds.join(","), filters], () => fetchSalesInquiries(hotelIds, filters), { refreshInterval: 30000 })
+  const invalidEventDates = !!(eventFrom && eventTo && eventFrom > eventTo)
+  const filters = { q, event_type: event, status, assigned_rep: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", email_status: email, date_from: dateFrom, date_to: dateTo, event_from: eventFrom, event_to: eventTo, budget_value_gte: budgetMinimum, sort, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+  const { data, error, isLoading, isValidating, mutate } = useSWR(invalidDates || invalidEventDates ? null : ["sales-inquiries", hotelIds.join(","), filters], () => fetchSalesInquiries(hotelIds, filters), { refreshInterval: 30000 })
   const staff = useSWR<Rosters>(["sales-assignees", hotelIds.join(",")], async () => Object.fromEntries(await Promise.all(hotelIds.map(async id => [id, await fetchSalesAssignees(id)] as const))))
   const linkedRow = !dismissed && callId ? data?.items[0] : undefined
   const current: Selection | null = selected || (linkedRow ? { id: linkedRow.id, hotelId: linkedRow.hotel_id } : null)
@@ -154,7 +152,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
       return false
     } finally { saving.current = false; setBusy(null) }
   }
-  function clearFilters() { setSearch(""); setEventType(""); setStatus(""); setOwner(""); setEmail(""); setDateFrom(""); setDateTo(""); setCallId(null); setPage(0) }
+  function clearFilters() { setSearch(""); setEventType(""); setStatus(""); setOwner(""); setEmail(""); setDateFrom(""); setDateTo(""); setEventFrom(""); setEventTo(""); setBudgetMinimum(""); setSort("newest"); setCallId(null); setPage(0) }
   const counts = data?.counts
   const cards = [
     { label: "New inquiries", value: counts?.new || 0, icon: Inbox, color: "text-blue-600" },
@@ -168,7 +166,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
       <Button variant="outline" size="sm" disabled={isValidating} onClick={() => { void mutate(); void staff.mutate(); void detail.mutate() }}><RefreshCw className={`size-4 ${isValidating ? "animate-spin" : ""}`} />Refresh</Button>
     </header>
     <div className="space-y-6 p-6 lg:p-8">
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{cards.map(card => <div key={card.label} className="metric-card rounded-2xl border border-border/80 bg-card p-5 shadow-xs"><div className="flex items-center justify-between text-sm text-muted-foreground">{card.label}<card.icon className={`size-4 ${card.color}`} /></div><p className="metric-value mt-3 text-3xl font-semibold tabular-nums">{!data || error || invalidDates ? "—" : card.value}</p></div>)}</div>
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{cards.map(card => <div key={card.label} className="metric-card rounded-2xl border border-border/80 bg-card p-5 shadow-xs"><div className="flex items-center justify-between text-sm text-muted-foreground">{card.label}<card.icon className={`size-4 ${card.color}`} /></div><p className="metric-value mt-3 text-3xl font-semibold tabular-nums">{!data || error || invalidDates || invalidEventDates ? "—" : card.value}</p></div>)}</div>
       <section className="overflow-hidden rounded-xl border bg-card shadow-sm" aria-label="Sales inquiries">
         <div className="space-y-4 border-b p-5">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">Incoming inquiries</h2><p className="mt-1 text-xs text-muted-foreground">Automatically captured by your voice agent · Received times in {portfolio ? "each hotel's local time" : tzOf(hotelIds[0])}</p></div><Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button></div>
@@ -177,22 +175,27 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
             <select aria-label="Filter by status" className={selectClass} value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}><option value="">All statuses</option>{Object.entries(statuses).map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select>
             <select aria-label="Filter by salesperson" className={selectClass} value={owner} onChange={e => { setOwner(e.target.value); setPage(0) }}><option value="">All salespeople</option><option value="unassigned">Unassigned</option>{reps.map(name => <option key={name} value={name}>{name}</option>)}</select>
             <select aria-label="Filter by email send status" className={selectClass} value={email} onChange={e => { setEmail(e.target.value); setPage(0) }}><option value="">All email statuses</option><option value="sent">Sent</option><option value="sending">Sending</option><option value="failed">Retrying</option><option value="gave_up">Not delivered</option></select>
+            <select aria-label="Sort inquiries" className={selectClass} value={sort} onChange={e => { setSort(e.target.value); setPage(0) }}><option value="newest">Newest first</option><option value="budget_desc">Highest AI-estimated budget</option><option value="event_date_asc">Soonest event</option><option value="headcount_desc">Largest party</option></select>
           </div>
           <div className="flex flex-wrap items-end gap-3 text-xs text-muted-foreground">
             <label className="space-y-1">Received from<Input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0) }} /></label>
             <label className="space-y-1">Received through<Input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0) }} /></label>
+            <label className="space-y-1">Event from<Input type="date" value={eventFrom} onChange={e => { setEventFrom(e.target.value); setPage(0) }} /></label>
+            <label className="space-y-1">Event through<Input type="date" value={eventTo} onChange={e => { setEventTo(e.target.value); setPage(0) }} /></label>
+            <label className="space-y-1">Potential budget at least<Input aria-label="Potential AI-estimated budget at least" inputMode="decimal" min="0" type="number" placeholder="e.g. 10000" value={budgetMinimum} onChange={e => { setBudgetMinimum(e.target.value); setPage(0) }} /></label>
             <label className="space-y-1">Event type<Input placeholder="e.g. wedding" value={eventType} onChange={e => { setEventType(e.target.value); setPage(0) }} /></label>
             {callId && <span className="rounded-md bg-muted px-3 py-2">Showing inquiry from linked call</span>}
           </div>
           {staff.error && <p role="alert" className="text-sm text-destructive">Employees could not be loaded. <button className="underline" onClick={() => void staff.mutate()}>Retry</button></p>}
         </div>
-        {invalidDates ? <p role="alert" className="p-8 text-sm text-destructive">The received-from date must be on or before the end date.</p> : error ? <div role="alert" className="p-10 text-center"><AlertTriangle className="mx-auto mb-3 size-6 text-destructive" /><p>Could not load sales inquiries.</p><Button className="mt-4" variant="outline" onClick={() => void mutate()}>Try again</Button></div> : isLoading ? <div role="status" className="flex justify-center gap-2 p-16 text-muted-foreground"><Loader2 className="size-5 animate-spin" />Loading inquiries…</div> : !data?.items.length ? <div className="p-16 text-center"><Inbox className="mx-auto mb-4 size-8 text-muted-foreground" /><h3 className="font-medium">{search || status || owner || email || dateFrom || dateTo || eventType || callId ? "No inquiries match these filters" : "Your sales inquiries will appear here"}</h3><p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">When your voice agent captures a sales request, its details and email-send status are added automatically.</p>{!!data?.total && <Button variant="outline" className="mt-4" onClick={() => setPage(0)}>Return to first page</Button>}</div> : <>
-          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/40 text-xs text-muted-foreground"><tr>{["Received", ...(portfolio ? ["Hotel"] : []), "Caller", "Request / dates", "Status", "Assigned to", "Email"].map(h => <th key={h} className="whitespace-nowrap px-5 py-3 font-medium">{h}</th>)}</tr></thead>
+        {invalidDates || invalidEventDates ? <p role="alert" className="p-8 text-sm text-destructive">{invalidDates ? "The received-from date must be on or before the end date." : "The event-from date must be on or before the event-through date."}</p> : error ? <div role="alert" className="p-10 text-center"><AlertTriangle className="mx-auto mb-3 size-6 text-destructive" /><p>Could not load sales inquiries.</p><Button className="mt-4" variant="outline" onClick={() => void mutate()}>Try again</Button></div> : isLoading ? <div role="status" className="flex justify-center gap-2 p-16 text-muted-foreground"><Loader2 className="size-5 animate-spin" />Loading inquiries…</div> : !data?.items.length ? <div className="p-16 text-center"><Inbox className="mx-auto mb-4 size-8 text-muted-foreground" /><h3 className="font-medium">{search || status || owner || email || dateFrom || dateTo || eventFrom || eventTo || budgetMinimum || eventType || callId ? "No inquiries match these filters" : "Your sales inquiries will appear here"}</h3><p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">When your voice agent captures a sales request, its details and email-send status are added automatically.</p>{!!data?.total && <Button variant="outline" className="mt-4" onClick={() => setPage(0)}>Return to first page</Button>}</div> : <>
+          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/40 text-xs text-muted-foreground"><tr>{["Received", ...(portfolio ? ["Hotel"] : []), "Caller", "Request / dates", "AI-estimated budget", "Status", "Assigned to", "Email"].map(h => <th key={h} className="whitespace-nowrap px-5 py-3 font-medium">{h === "AI-estimated budget" ? <AiBudgetHelp /> : h}</th>)}</tr></thead>
             <tbody className="divide-y">{data.items.map(row => <tr key={row.id} className="cursor-pointer transition-colors hover:bg-muted/30" onClick={() => { setSelected({ id: row.id, hotelId: row.hotel_id }); setDismissed(false) }}>
               <td className="whitespace-nowrap px-5 py-5 text-xs text-muted-foreground">{timestamp(row.created_at, tzOf(row.hotel_id))}</td>
               {portfolio && <td className="whitespace-nowrap px-5 py-5"><span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{nameOf(row.hotel_id)}</span></td>}
               <td className="px-5 py-5"><button className="text-left font-medium hover:underline focus-visible:outline-ring" onClick={() => setSelected({ id: row.id, hotelId: row.hotel_id })}>{row.caller_name || "Name not provided"}</button><p className="mt-1 text-xs text-muted-foreground">{row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || "No contact provided"}</p></td>
               <td className="max-w-64 px-5 py-5"><p className="font-medium">{row.event_type}{formatHeadcount(row) ? ` · ${formatHeadcount(row)} guests` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{dates(row)}</p></td>
+              <td className="whitespace-nowrap px-5 py-5 font-medium tabular-nums">{formatAiBudget(row)}</td>
               <td className="px-5 py-5" onClick={e => e.stopPropagation()}><StatusSelect row={row} disabled={!!busy} onChange={v => void save(row, { follow_up_status: v })} /></td>
               <td className="px-5 py-5" onClick={e => e.stopPropagation()}><OwnerSelect row={row} reps={staff.data?.[row.hotel_id] ?? []} disabled={!!busy || !staff.data} onChange={name => void save(row, { assigned_rep: name })} /></td>
               <td className="px-5 py-5"><EmailBadge row={row} /></td>
@@ -234,7 +237,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
     { label: "Request", value: row.event_type, icon: Sparkles },
     { label: "Event dates", value: dates(row), icon: CalendarDays },
     { label: "Party size", value: formatHeadcount(row) ? `${formatHeadcount(row)} guests` : "Not provided", icon: Users },
-    { label: "Budget", value: budget(row) ?? "Not provided", icon: Wallet },
+    { label: "Budget stated by caller", value: row.budget_text ?? "Not provided", icon: Wallet },
     { label: "Guest rooms", value: row.needs_guest_rooms === null ? "Not provided" : row.needs_guest_rooms ? "Rooms needed" : "Not needed", icon: BedDouble },
   ]
   const panelControl = "h-11! w-full min-w-0 rounded-lg border-border bg-card text-sm shadow-xs focus-visible:ring-brand-insights/20"
@@ -267,6 +270,10 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground"><field.icon className="size-4" /></span>
           <div className="min-w-0"><dt className="text-xs font-medium text-muted-foreground">{field.label}</dt><dd className="mt-1 break-words text-sm font-medium leading-relaxed">{field.value}</dd></div>
         </div>)}
+        <div className="flex items-start gap-2.5">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground"><Wallet className="size-4" /></span>
+          <div className="min-w-0"><dt className="text-xs font-medium text-muted-foreground"><AiBudgetHelp label="AI-estimated total budget" /></dt><dd className="mt-1 break-words text-sm font-medium leading-relaxed tabular-nums">{formatAiBudget(row)}</dd></div>
+        </div>
       </dl>
       {row.notes && <div className="mx-5 mb-5 rounded-r-lg border-l-2 border-brand-insights/50 bg-brand-insights/5 px-3.5 py-3"><p className="mb-1 text-[11px] font-medium text-brand-insights">From the caller</p><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{row.notes}</p></div>}
     </section>

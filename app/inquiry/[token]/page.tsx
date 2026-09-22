@@ -31,6 +31,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import {
   ApiError,
   fetchPublicSalesInquiry,
@@ -50,17 +51,6 @@ function timestamp(value: string) {
     month: "short",
     day: "numeric",
   }).format(new Date(normalized))
-}
-
-// The caller's words lead; the parsed figure rides in parentheses when it adds
-// something. Most callers hedge ("we're flexible"), so text-only is normal.
-function budget(inquiry: PublicSalesInquiry): string | null {
-  const amount =
-    inquiry.budget_amount === null
-      ? null
-      : Number(inquiry.budget_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })
-  if (!amount) return inquiry.budget_text
-  return inquiry.budget_text ? `${inquiry.budget_text} (${amount})` : amount
 }
 
 function stayDates(inquiry: PublicSalesInquiry) {
@@ -236,7 +226,8 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
             {formatHeadcount(data) && (
               <Detail icon={<Users className="size-4" />}>{formatHeadcount(data)} people</Detail>
             )}
-            {budget(data) && <Detail icon={<Wallet className="size-4" />}>{budget(data)}</Detail>}
+            {data.budget_text && <Detail icon={<Wallet className="size-4" />}><span><span className="block text-xs">Budget stated by caller</span>{data.budget_text}</span></Detail>}
+            <Detail icon={<Wallet className="size-4" />}><span><AiBudgetHelp label="AI-estimated total budget" /><span className="block text-foreground tabular-nums">{formatAiBudget(data)}</span></span></Detail>
             {data.needs_guest_rooms !== null && (
               <Detail icon={<BedDouble className="size-4" />}>
                 {data.needs_guest_rooms ? "Needs guest rooms" : "No guest rooms needed"}
