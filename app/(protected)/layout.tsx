@@ -1,12 +1,29 @@
 "use client"
 
 import { RedirectToSignIn, useAuth, useClerk } from "@clerk/nextjs"
+import { usePathname } from "next/navigation"
 import { SWRConfig } from "swr"
 
 import { AppShellSkeleton } from "@/components/app-shell-skeleton"
+import { SingleHotelRequired } from "@/components/single-hotel-required"
 import { CurrentUserProvider } from "@/lib/current-user-context"
-import { HotelProvider } from "@/lib/hotel-context"
+import { HotelProvider, useHotel } from "@/lib/hotel-context"
 import { __setClerkTokenGetter, __setUnauthorizedHandler } from "@/lib/api"
+
+// Routes that render a whole organization at once (rows carry a hotel badge).
+// Everything else works one hotel at a time and gets the shared "pick a hotel"
+// prompt while the scope is an organization — including the dashboard, dev
+// pages and any page added later.
+const PORTFOLIO_ROUTES = new Set(["/call-log", "/sales-inquiries"])
+
+function ScopeGate({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const { scope } = useHotel()
+  if (scope?.kind === "org" && !PORTFOLIO_ROUTES.has(pathname)) {
+    return <SingleHotelRequired />
+  }
+  return <>{children}</>
+}
 
 function ClerkTokenBridge() {
   // ProtectedLayout renders this only after Clerk is loaded and the user is
@@ -19,6 +36,7 @@ function ClerkTokenBridge() {
   __setUnauthorizedHandler(async () => {
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("resonata.selected_hotel_id")
+      window.localStorage.removeItem("resonata.hotel_scope")
     }
     await signOut({ redirectUrl: "/sign-in" })
   })
@@ -46,7 +64,9 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     >
       <ClerkTokenBridge />
       <CurrentUserProvider>
-        <HotelProvider>{children}</HotelProvider>
+        <HotelProvider>
+          <ScopeGate>{children}</ScopeGate>
+        </HotelProvider>
       </CurrentUserProvider>
     </SWRConfig>
   )

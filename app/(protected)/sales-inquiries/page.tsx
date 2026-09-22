@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet"
-import { useHotel } from "@/lib/hotel-context"
+import { useHotel, type HotelListItem } from "@/lib/hotel-context"
+type Selection = { id: string; hotelId: string }
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { confirmDiscardUnsaved, registerUnsavedGuard } from "@/lib/unsaved-guard"
 import { ApiError, fetchSalesAssignees, formatHeadcount, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
@@ -83,13 +84,29 @@ export default function SalesInquiriesPage() {
   return <Suspense><SalesPage /></Suspense>
 }
 function SalesPage() {
-  const { hotelId, hotelTimezone, loading, error } = useHotel()
+  // One hotel, or an organization's accessible hotels (the portfolio view).
+  const { scope, scopeHotels, setHotelId, loading, error } = useHotel()
   const params = useSearchParams()
+  const scopeKey = scopeHotels.map(h => h.hotel_id).join(",")
   return <div className="flex h-screen bg-background"><Sidebar /><main className="app-content min-w-0 flex-1 overflow-auto">
-    {hotelId ? <Workspace key={`${hotelId}:${params.toString()}`} hotelId={hotelId} timezone={hotelTimezone || "UTC"} initialInquiry={params.get("inquiry_id")} initialCall={params.get("call_id")} /> : <div className="p-8 text-muted-foreground">{loading ? "Loading hotel…" : error || "Select a hotel to view sales inquiries."}</div>}
+    {scopeHotels.length ? <Workspace key={`${scopeKey}:${params.toString()}`} hotels={scopeHotels} portfolio={scope?.kind === "org"} setHotelId={setHotelId} initialInquiry={params.get("inquiry_id")} initialCall={params.get("call_id")} /> : <div className="p-8 text-muted-foreground">{loading ? "Loading hotel…" : error || "Select a hotel to view sales inquiries."}</div>}
   </main></div>
 }
-function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId: string; timezone: string; initialInquiry: string | null; initialCall: string | null }) {
+// Every hotel's own roster, keyed by hotel id. Editing an assignment uses the
+// ROW's hotel roster (a name from hotel A can't be assigned at hotel B); the
+// owner filter merges every roster in scope, which works because
+// `assigned_rep` is stored as plain text and simply matches wherever it occurs.
+type Rosters = Record<string, string[]>
+function mergeRosters(rosters: Rosters | undefined, hotelIds: string[]): string[] {
+  const seen = new Set<string>()
+  for (const id of hotelIds) for (const name of rosters?.[id] ?? []) seen.add(name)
+  return [...seen]
+}
+function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall }: { hotels: HotelListItem[]; portfolio: boolean; setHotelId: (id: string) => void; initialInquiry: string | null; initialCall: string | null }) {
+  const hotelIds = hotels.map(h => h.hotel_id)
+  const hotelById = new Map(hotels.map(h => [h.hotel_id, h]))
+  const tzOf = (hotelId: string) => hotelById.get(hotelId)?.timezone || "UTC"
+  const nameOf = (hotelId: string) => hotelById.get(hotelId)?.display_name || hotelId
   const [search, setSearch] = useState("")
   const [eventType, setEventType] = useState("")
   const [status, setStatus] = useState("")
@@ -99,7 +116,11 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
   const [dateTo, setDateTo] = useState("")
   const [page, setPage] = useState(0)
   const [callId, setCallId] = useState(initialCall)
-  const [selected, setSelected] = useState(initialInquiry)
+  // The selection carries its hotel so the detail request survives the row
+  // leaving the current page (e.g. a status change while filtering by status).
+  // A deep link (`?inquiry_id=`) arrives with `?hotel_id=`, which on a full
+  // load forces single-hotel scope, so the one hotel in scope is its hotel.
+  const [selected, setSelected] = useState<Selection | null>(initialInquiry && hotels.length === 1 ? { id: initialInquiry, hotelId: hotels[0].hotel_id } : null)
   const [dismissed, setDismissed] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const saving = useRef(false)
@@ -107,17 +128,19 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
   const event = useDebouncedValue(eventType, 300)
   const invalidDates = !!(dateFrom && dateTo && dateFrom > dateTo)
   const filters = { q, event_type: event, status, assigned_rep: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", email_status: email, date_from: dateFrom, date_to: dateTo, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
-  const { data, error, isLoading, isValidating, mutate } = useSWR(invalidDates ? null : ["sales-inquiries", hotelId, filters], () => fetchSalesInquiries(hotelId, filters), { refreshInterval: 30000 })
-  const staff = useSWR(["sales-assignees", hotelId], () => fetchSalesAssignees(hotelId))
-  const selectedId = selected || (!dismissed && callId ? data?.items[0]?.id : null)
-  const detail = useSWR(selectedId ? ["sales-inquiry", hotelId, selectedId] : null, () => fetchSalesInquiry(hotelId, selectedId!), { refreshInterval: 30000 })
-  const reps = staff.data || []
+  const { data, error, isLoading, isValidating, mutate } = useSWR(invalidDates ? null : ["sales-inquiries", hotelIds.join(","), filters], () => fetchSalesInquiries(hotelIds, filters), { refreshInterval: 30000 })
+  const staff = useSWR<Rosters>(["sales-assignees", hotelIds.join(",")], async () => Object.fromEntries(await Promise.all(hotelIds.map(async id => [id, await fetchSalesAssignees(id)] as const))))
+  const linkedRow = !dismissed && callId ? data?.items[0] : undefined
+  const current: Selection | null = selected || (linkedRow ? { id: linkedRow.id, hotelId: linkedRow.hotel_id } : null)
+  const selectedId = current?.id ?? null
+  const detail = useSWR(current ? ["sales-inquiry", current.hotelId, current.id] : null, () => fetchSalesInquiry(current!.hotelId, current!.id), { refreshInterval: 30000 })
+  const reps = mergeRosters(staff.data, hotelIds)
   async function save(row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) {
     if (saving.current) return false
     saving.current = true
     setBusy(row.id)
     try {
-      const updated = await updateSalesInquiry(hotelId, row.id, { ...patch, version: row.version })
+      const updated = await updateSalesInquiry(row.hotel_id, row.id, { ...patch, version: row.version })
       if (selectedId === row.id) await detail.mutate(updated, { revalidate: false })
       void mutate()
       toast.success("Inquiry updated")
@@ -148,7 +171,7 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{cards.map(card => <div key={card.label} className="metric-card rounded-2xl border border-border/80 bg-card p-5 shadow-xs"><div className="flex items-center justify-between text-sm text-muted-foreground">{card.label}<card.icon className={`size-4 ${card.color}`} /></div><p className="metric-value mt-3 text-3xl font-semibold tabular-nums">{!data || error || invalidDates ? "—" : card.value}</p></div>)}</div>
       <section className="overflow-hidden rounded-xl border bg-card shadow-sm" aria-label="Sales inquiries">
         <div className="space-y-4 border-b p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">Incoming inquiries</h2><p className="mt-1 text-xs text-muted-foreground">Automatically captured by your voice agent · Received times in {timezone}</p></div><Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">Incoming inquiries</h2><p className="mt-1 text-xs text-muted-foreground">Automatically captured by your voice agent · Received times in {portfolio ? "each hotel's local time" : tzOf(hotelIds[0])}</p></div><Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button></div>
           <div className="flex flex-wrap gap-3">
             <label className="relative min-w-60 flex-1"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Search inquiries" placeholder="Search name, phone, email, or request…" value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-9" /></label>
             <select aria-label="Filter by status" className={selectClass} value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}><option value="">All statuses</option>{Object.entries(statuses).map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select>
@@ -164,13 +187,14 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
           {staff.error && <p role="alert" className="text-sm text-destructive">Employees could not be loaded. <button className="underline" onClick={() => void staff.mutate()}>Retry</button></p>}
         </div>
         {invalidDates ? <p role="alert" className="p-8 text-sm text-destructive">The received-from date must be on or before the end date.</p> : error ? <div role="alert" className="p-10 text-center"><AlertTriangle className="mx-auto mb-3 size-6 text-destructive" /><p>Could not load sales inquiries.</p><Button className="mt-4" variant="outline" onClick={() => void mutate()}>Try again</Button></div> : isLoading ? <div role="status" className="flex justify-center gap-2 p-16 text-muted-foreground"><Loader2 className="size-5 animate-spin" />Loading inquiries…</div> : !data?.items.length ? <div className="p-16 text-center"><Inbox className="mx-auto mb-4 size-8 text-muted-foreground" /><h3 className="font-medium">{search || status || owner || email || dateFrom || dateTo || eventType || callId ? "No inquiries match these filters" : "Your sales inquiries will appear here"}</h3><p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">When your voice agent captures a sales request, its details and email-send status are added automatically.</p>{!!data?.total && <Button variant="outline" className="mt-4" onClick={() => setPage(0)}>Return to first page</Button>}</div> : <>
-          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/40 text-xs text-muted-foreground"><tr>{["Received", "Caller", "Request / dates", "Status", "Assigned to", "Email"].map(h => <th key={h} className="whitespace-nowrap px-5 py-3 font-medium">{h}</th>)}</tr></thead>
-            <tbody className="divide-y">{data.items.map(row => <tr key={row.id} className="cursor-pointer transition-colors hover:bg-muted/30" onClick={() => { setSelected(row.id); setDismissed(false) }}>
-              <td className="whitespace-nowrap px-5 py-5 text-xs text-muted-foreground">{timestamp(row.created_at, timezone)}</td>
-              <td className="px-5 py-5"><button className="text-left font-medium hover:underline focus-visible:outline-ring" onClick={() => setSelected(row.id)}>{row.caller_name || "Name not provided"}</button><p className="mt-1 text-xs text-muted-foreground">{row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || "No contact provided"}</p></td>
+          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/40 text-xs text-muted-foreground"><tr>{["Received", ...(portfolio ? ["Hotel"] : []), "Caller", "Request / dates", "Status", "Assigned to", "Email"].map(h => <th key={h} className="whitespace-nowrap px-5 py-3 font-medium">{h}</th>)}</tr></thead>
+            <tbody className="divide-y">{data.items.map(row => <tr key={row.id} className="cursor-pointer transition-colors hover:bg-muted/30" onClick={() => { setSelected({ id: row.id, hotelId: row.hotel_id }); setDismissed(false) }}>
+              <td className="whitespace-nowrap px-5 py-5 text-xs text-muted-foreground">{timestamp(row.created_at, tzOf(row.hotel_id))}</td>
+              {portfolio && <td className="whitespace-nowrap px-5 py-5"><span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{nameOf(row.hotel_id)}</span></td>}
+              <td className="px-5 py-5"><button className="text-left font-medium hover:underline focus-visible:outline-ring" onClick={() => setSelected({ id: row.id, hotelId: row.hotel_id })}>{row.caller_name || "Name not provided"}</button><p className="mt-1 text-xs text-muted-foreground">{row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || "No contact provided"}</p></td>
               <td className="max-w-64 px-5 py-5"><p className="font-medium">{row.event_type}{formatHeadcount(row) ? ` · ${formatHeadcount(row)} guests` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{dates(row)}</p></td>
               <td className="px-5 py-5" onClick={e => e.stopPropagation()}><StatusSelect row={row} disabled={!!busy} onChange={v => void save(row, { follow_up_status: v })} /></td>
-              <td className="px-5 py-5" onClick={e => e.stopPropagation()}><OwnerSelect row={row} reps={reps} disabled={!!busy || !staff.data} onChange={name => void save(row, { assigned_rep: name })} /></td>
+              <td className="px-5 py-5" onClick={e => e.stopPropagation()}><OwnerSelect row={row} reps={staff.data?.[row.hotel_id] ?? []} disabled={!!busy || !staff.data} onChange={name => void save(row, { assigned_rep: name })} /></td>
               <td className="px-5 py-5"><EmailBadge row={row} /></td>
             </tr>)}</tbody></table></div>
           <div className="flex items-center justify-between border-t px-5 py-4 text-xs text-muted-foreground"><span>{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, data.total)} of {data.total} inquiries</span><div className="flex items-center gap-2"><Button aria-label="Previous page" variant="outline" size="icon" disabled={!page} onClick={() => setPage(p => p - 1)}><ChevronLeft className="size-4" /></Button><Button aria-label="Next page" variant="outline" size="icon" disabled={(page + 1) * PAGE_SIZE >= data.total} onClick={() => setPage(p => p + 1)}><ChevronRight className="size-4" /></Button></div></div>
@@ -187,13 +211,13 @@ function Workspace({ hotelId, timezone, initialInquiry, initialCall }: { hotelId
             <SheetClose asChild><button aria-label="Close inquiry" className="absolute right-4 top-5 flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><X className="size-4" /></button></SheetClose>
           </div>
         </SheetHeader>
-        {detail.error && !detail.data ? <div role="alert" className="p-6">Could not load this inquiry. <button className="underline" onClick={() => void detail.mutate()}>Retry</button></div> : !detail.data ? <div className="p-6" role="status">Loading inquiry…</div> : <InquiryPanel key={detail.data.id} row={detail.data} timezone={timezone} hotelId={hotelId} reps={reps} staffReady={!!staff.data} busy={!!busy} save={save} />}
+        {detail.error && !detail.data ? <div role="alert" className="p-6">Could not load this inquiry. <button className="underline" onClick={() => void detail.mutate()}>Retry</button></div> : !detail.data ? <div className="p-6" role="status">Loading inquiry…</div> : <InquiryPanel key={detail.data.id} row={detail.data} timezone={tzOf(detail.data.hotel_id)} hotelName={portfolio ? nameOf(detail.data.hotel_id) : null} reps={staff.data?.[detail.data.hotel_id] ?? []} staffReady={!!staff.data} busy={!!busy} save={save} setHotelId={setHotelId} />}
       </SheetContent>
     </Sheet>
   </>
 }
 
-function InquiryPanel({ row, timezone, hotelId, reps, staffReady, busy, save }: { row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelId: string; reps: string[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean> }) {
+function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, setHotelId }: { row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelName: string | null; reps: string[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean>; setHotelId: (id: string) => void }) {
   const [note, setNote] = useState("")
   // An erased inquiry is read-only: the server refuses every PATCH (409), so
   // the controls are disabled rather than letting a save bounce.
@@ -219,7 +243,7 @@ function InquiryPanel({ row, timezone, hotelId, reps, staffReady, busy, save }: 
       <div className="h-1 bg-brand-insights" />
       <div className="bg-linear-to-br from-brand-insights/10 via-brand-insights/5 to-transparent p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground"><Clock3 className="size-3.5" />{timestamp(row.created_at, timezone)}</span>
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground"><Clock3 className="size-3.5" />{timestamp(row.created_at, timezone)}{hotelName && <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{hotelName}</span>}</span>
           <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${statusStyle[row.follow_up_status]}`}><span className="size-1.5 rounded-full bg-current" />{statuses[row.follow_up_status]}</span>
         </div>
         <div className="flex items-center gap-3.5">
@@ -299,6 +323,6 @@ function InquiryPanel({ row, timezone, hotelId, reps, staffReady, busy, save }: 
         toast.error("Could not copy the link", { description: "Your browser blocked clipboard access." })
       }
     }}><Link2 className="size-4 text-brand-insights" />Copy update link<ArrowUpRight className="ml-auto size-4 text-muted-foreground" /></Button>}
-    {row.provider_call_id && <Button variant="outline" className="h-11 w-full rounded-xl bg-card text-sm" asChild><Link onClick={e => { if (!confirmDiscardUnsaved()) e.preventDefault() }} href={`/call-log?${new URLSearchParams({ hotel_id: hotelId, call_id: row.provider_call_id, line: "sales" })}`}><Phone className="size-4 text-brand-insights" />View original call<ArrowUpRight className="ml-auto size-4 text-muted-foreground" /></Link></Button>}
+    {row.provider_call_id && <Button variant="outline" className="h-11 w-full rounded-xl bg-card text-sm" asChild><Link onClick={e => { if (!confirmDiscardUnsaved()) { e.preventDefault(); return } /* Client-side navigation keeps the provider mounted, so the URL's hotel_id is not re-read; switch scope to the row's hotel explicitly. */ setHotelId(row.hotel_id) }} href={`/call-log?${new URLSearchParams({ hotel_id: row.hotel_id, call_id: row.provider_call_id, line: "sales" })}`}><Phone className="size-4 text-brand-insights" />View original call<ArrowUpRight className="ml-auto size-4 text-muted-foreground" /></Link></Button>}
   </div>
 }

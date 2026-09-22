@@ -26,14 +26,19 @@ All backend calls go through the `api<T>(path, opts)` wrapper in `lib/api.ts`. I
 - Prefixes `NEXT_PUBLIC_API_URL` (set per-env; points at FastAPI, e.g. `http://localhost:8000` in dev).
 - Reads the Clerk session token from the bridge mounted in `app/(protected)/layout.tsx` and sends it as `Authorization: Bearer ...`.
 - Sends `ngrok-skip-browser-warning: true` so ngrok-fronted dev backends work.
-- On a backend 401, clears `resonata.selected_hotel_id` and signs the user out to `/sign-in`.
+- On a backend 401, clears the stored hotel scope (`resonata.hotel_scope` + the legacy `resonata.selected_hotel_id`) and signs the user out to `/sign-in`.
+- `withQuery` emits a `string[]` param as a repeated key (`?hotel_id=a&hotel_id=b`, blanks dropped, de-duplicated) — how the backend's multi-hotel scope reads it.
 - Throws `ApiError` (with status + parsed body) on non-2xx.
 
 When adding backend calls, always go through `api()`; do not call `fetch` directly.
 
 ### Hotel selection (`lib/hotel-context.tsx`)
 
-`<HotelProvider>` is mounted only after Clerk reports `isLoaded && isSignedIn` in `app/(protected)/layout.tsx`. It loads `GET /api/v1/me/hotels` once on mount, persists the selection in `localStorage` under `resonata.selected_hotel_id`, and falls back to the first accessible active hotel on first load. Every data-bound page reads `hotelId` from `useHotel()` and scopes its requests to it.
+`<HotelProvider>` is mounted only after Clerk reports `isLoaded && isSignedIn` in `app/(protected)/layout.tsx`. It loads `GET /api/v1/me/hotels` once on mount and falls back to the first accessible active hotel on first load.
+
+The selection is a **scope**: one hotel (`{kind: "hotel", hotelId}`) or one organization — a management company's portfolio, every accessible hotel with that `organization_id` (`{kind: "org", organizationId}`). Only the scope's identity is persisted (`localStorage` `resonata.hotel_scope`; the legacy `resonata.selected_hotel_id` is migrated on read), and an org's hotel list is recomputed from every fresh `/me/hotels` response so membership changes and revoked grants take effect on the next load. A `?hotel_id=` URL param (the sales email's "open the call" link) always forces single-hotel scope. The sidebar groups hotels under their organization and offers "<Org> (N hotels)" once a group spans two or more visible hotels (N is the user's accessible subset, so the label is honest for a partial grant).
+
+`useHotel()` exposes `hotelId` (null in org mode), `scope`, `scopeHotels`, `scopeLabel`, `organizations`, `setHotelId`, `setScope`. Only `/call-log` and `/sales-inquiries` render a whole organization (rows carry a hotel badge; requests send `hotel_id` repeated; the backend applies dates hotel-locally per hotel; the sales page fetches each hotel's roster — the owner filter merges them, editing uses the row's hotel roster, and detail/patch calls are keyed by the row's own `hotel_id`). Every other route is single-hotel: `ScopeGate` in the protected layout swaps it for the shared `SingleHotelRequired` prompt while the scope is an organization (allowlist `PORTFOLIO_ROUTES` — a new page gets the safe behaviour for free; never fall back to the first hotel silently). Organizations are created/renamed under Dev Pages → Organizations, attached per hotel on Settings (platform admin), and granted per user on Dev Pages → User Access (invite form, manual grant, org chips).
 
 ### Feature flags + hidden pages
 

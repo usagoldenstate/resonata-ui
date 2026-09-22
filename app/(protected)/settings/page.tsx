@@ -36,6 +36,8 @@ import {
   type HotelDetail,
   type HotelOperatorUpdate,
   type HotelPlatformUpdate,
+  type Organization,
+  fetchOrganizations,
   fetchHotelDetail,
   updateHotelOperatorSettings,
   updateHotelPlatformSettings,
@@ -126,6 +128,10 @@ export default function SettingsPage() {
   const [email, setEmail] = useState("")
   const [inboundNumber, setInboundNumber] = useState("")
   const [vapiPhoneNumberId, setVapiPhoneNumberId] = useState("")
+  // Organization membership (platform-admin only). "" = independent hotel.
+  // The org list loads once for admins; the select is the only writer.
+  const [organizationId, setOrganizationId] = useState("")
+  const [organizations, setOrganizations] = useState<Organization[] | null>(null)
   // Twilio SMS sender (platform-admin only). Setting it is what lets the agent
   // offer "emailed or texted?"; clearing it retires the choice.
   const [twilioFromNumber, setTwilioFromNumber] = useState("")
@@ -148,6 +154,7 @@ export default function SettingsPage() {
     setEmail(email)
     setInboundNumber(d.inbound_phone_number ?? "")
     setVapiPhoneNumberId(d.vapi_phone_number_id ?? "")
+    setOrganizationId(d.organization_id ?? "")
     setTwilioFromNumber(d.twilio_from_number ?? "")
     setSalesLineEnabled(d.sales_line_enabled ?? false)
     setSalesVapiPhoneNumberId(d.sales_vapi_phone_number_id ?? "")
@@ -155,6 +162,19 @@ export default function SettingsPage() {
     setSalesRepNames((d.sales_rep_names ?? []).join("\n"))
     setTimezone(d.timezone)
   }, [])
+
+  useEffect(() => {
+    if (!isPlatformAdmin) return
+    const controller = new AbortController()
+    fetchOrganizations({ signal: controller.signal })
+      .then(setOrganizations)
+      .catch((e) => {
+        if (e instanceof DOMException && e.name === "AbortError") return
+        setOrganizations([])
+        toast.error("Could not load organizations.")
+      })
+    return () => controller.abort()
+  }, [isPlatformAdmin])
 
   useEffect(() => {
     if (!hotelId) {
@@ -225,6 +245,10 @@ export default function SettingsPage() {
         const nextVapiId = vapiPhoneNumberId.trim() || null
         if (nextVapiId !== (detail.vapi_phone_number_id ?? null)) {
           pfBody.vapi_phone_number_id = nextVapiId
+        }
+        const nextOrg = organizationId || null
+        if (nextOrg !== (detail.organization_id ?? null)) {
+          pfBody.organization_id = nextOrg
         }
         const nextTwilio = twilioFromNumber.trim() || null
         if (nextTwilio !== (detail.twilio_from_number ?? null)) {
@@ -406,6 +430,32 @@ export default function SettingsPage() {
                     select the number → copy the ID). When set, webhooks from any other Vapi
                     number are rejected — a wrong value blocks this hotel&apos;s calls, so make a
                     test call after changing it. Leave blank to disable the check.
+                  </p>
+                </div>
+              )}
+              {isPlatformAdmin && (
+                <div className="space-y-2">
+                  <Label htmlFor="organizationId" className="text-xs text-muted-foreground">
+                    Organization
+                  </Label>
+                  <select
+                    id="organizationId"
+                    value={organizationId}
+                    onChange={(e) => setOrganizationId(e.target.value)}
+                    disabled={organizations === null}
+                    className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-70"
+                  >
+                    <option value="">Independent (no organization)</option>
+                    {(organizations ?? []).map((org) => (
+                      <option key={org.organization_id} value={org.organization_id}>
+                        {org.display_name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-muted-foreground">
+                    The management company this hotel belongs to. Users granted the organization
+                    see this hotel immediately; its call history moves with it. Create
+                    organizations under Dev Pages → Organizations.
                   </p>
                 </div>
               )}

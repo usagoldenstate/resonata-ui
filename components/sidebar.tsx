@@ -27,7 +27,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/lib/current-user-context"
 import { featureFlags } from "@/lib/env"
-import { useHotel } from "@/lib/hotel-context"
+import { organizationScopeLabel, useHotel } from "@/lib/hotel-context"
 import { confirmDiscardUnsaved } from "@/lib/unsaved-guard"
 
 import { Button } from "@/components/ui/button"
@@ -90,7 +90,10 @@ const ACCENT: Record<Accent, { label: string; activeText: string; activeBg: stri
 export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const pathname = usePathname()
-  const { hotels, hotelId, setHotelId, loading, accessState } = useHotel()
+  const { hotels, organizations, scope, setScope, loading, accessState } = useHotel()
+  // <select> value: "hotel:<id>" or "org:<id>".
+  const scopeValue = scope ? (scope.kind === "hotel" ? `hotel:${scope.hotelId}` : `org:${scope.organizationId}`) : ""
+  const independentHotels = hotels.filter((h) => !h.organization_id)
   const { isPlatformAdmin } = useCurrentUser()
   const { signOut } = useClerk()
   const currentPageLabel = sections.flatMap(section => section.items).find(item => item.href === pathname)?.label
@@ -127,22 +130,41 @@ export function Sidebar() {
         ) : (
           <select
             id={hotelSelectId}
-            value={hotelId ?? ""}
+            value={scopeValue}
             onChange={(e) => {
-              if (e.target.value === hotelId) return
+              if (e.target.value === scopeValue) return
               if (!confirmDiscardUnsaved()) {
                 // Revert the visible selection. The element is uncontrolled-ish
-                // here (re-renders from `hotelId` state), so resetting the
+                // here (re-renders from `scope` state), so resetting the
                 // value attribute syncs the DOM with our refusal to switch.
-                e.target.value = hotelId ?? ""
+                e.target.value = scopeValue
                 return
               }
-              setHotelId(e.target.value)
+              const sep = e.target.value.indexOf(":")
+              const kind = e.target.value.slice(0, sep)
+              const id = e.target.value.slice(sep + 1)
+              setScope(kind === "org" ? { kind: "org", organizationId: id } : { kind: "hotel", hotelId: id })
             }}
             className="w-full text-sm rounded-lg border border-sidebar-border bg-card px-2.5 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
           >
-            {hotels.map((h) => (
-              <option key={h.hotel_id} value={h.hotel_id}>
+            {organizations.map((group) => (
+              <optgroup key={group.organization_id} label={group.display_name}>
+                {/* The portfolio entry only once it spans two or more hotels
+                    the user can see; "(N hotels)" is honest for a partial grant. */}
+                {group.hotels.length >= 2 && (
+                  <option value={`org:${group.organization_id}`}>
+                    {organizationScopeLabel(group)}
+                  </option>
+                )}
+                {group.hotels.map((h) => (
+                  <option key={h.hotel_id} value={`hotel:${h.hotel_id}`}>
+                    {h.display_name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+            {independentHotels.map((h) => (
+              <option key={h.hotel_id} value={`hotel:${h.hotel_id}`}>
                 {h.display_name}
               </option>
             ))}
@@ -259,6 +281,7 @@ export function Sidebar() {
           type="button"
           onClick={async () => {
             window.localStorage.removeItem("resonata.selected_hotel_id")
+            window.localStorage.removeItem("resonata.hotel_scope")
             await signOut({ redirectUrl: "/sign-in" })
           }}
           className="w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50 transition-colors"

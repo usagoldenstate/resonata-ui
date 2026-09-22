@@ -470,8 +470,20 @@ export default function CallLogPage() {
 }
 
 function CallLogPageInner() {
-  const { hotelId, hotels, hotelTimezone, loading: hotelLoading, accessState } = useHotel()
-  const hotelName = hotels.find((h) => h.hotel_id === hotelId)?.display_name
+  const { scope, scopeHotels, scopeLabel, loading: hotelLoading, accessState } = useHotel()
+  // The hotels this page spans: one, or an organization's accessible hotels.
+  // Requests key on the joined ids so an org whose membership changed refetches.
+  const scopeIds = scopeHotels.map((h) => h.hotel_id)
+  const scopeKey = scopeIds.join(",")
+  const portfolio = scope?.kind === "org"
+  const hotelNames = new Map(scopeHotels.map((h) => [h.hotel_id, h.display_name]))
+  // Rows render in their own hotel's zone so the displayed date agrees with
+  // the (hotel-local) date filter and with the sales page — not the viewer's.
+  const hotelZones = new Map(scopeHotels.map((h) => [h.hotel_id, h.timezone]))
+  // Date presets are computed in hotel-local time; in portfolio mode the first
+  // hotel's zone picks the preset's calendar dates, and the backend then
+  // applies those dates per hotel in each hotel's own zone.
+  const hotelTimezone = scopeHotels[0]?.timezone ?? null
   const { isPlatformAdmin } = useCurrentUser()
 
   // Filters can arrive via URL params (drill-through from the Not Booked
@@ -539,9 +551,8 @@ function CallLogPageInner() {
   // Subcategory options come from the backend taxonomy (same source the
   // reporting pages use), scoped to the selected category. Non-fatal on
   // failure — the dropdown just stays empty, so the error is ignored.
-  const { data: taxonomy } = useSWR(
-    hotelId ? (["call-log-taxonomy", hotelId] as const) : null,
-    ([, hid]) => fetchNotBookedTaxonomy({ hotel_id: hid }).then((response) => response.categories),
+  const { data: taxonomy } = useSWR(["call-log-taxonomy"] as const, () =>
+    fetchNotBookedTaxonomy().then((response) => response.categories),
   )
   const subcategoryOptions =
     (taxonomy ?? []).find((c) => c.name === notBookedReasonFilter)?.subcategories ?? []
@@ -550,12 +561,12 @@ function CallLogPageInner() {
   useEffect(() => {
     setOffset(0)
     setExpandedRow(null)
-  }, [hotelId, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId, lineFilter])
+  }, [scopeKey, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId, lineFilter])
 
-  const listKey = hotelId
+  const listKey = scopeKey
     ? ([
         "call-log",
-        hotelId,
+        scopeKey,
         offset,
         outcomeFilter,
         notBookedReasonFilter,
@@ -571,9 +582,9 @@ function CallLogPageInner() {
     isValidating: loading,
     error: errorRaw,
     mutate: refreshCalls,
-  } = useSWR(listKey, ([, hid, off, filter, reason, subcategory, from, to, callId, line]) =>
+  } = useSWR(listKey, ([, ids, off, filter, reason, subcategory, from, to, callId, line]) =>
     fetchCalls({
-      hotel_id: hid,
+      hotel_id: ids.split(","),
       limit: PAGE_SIZE,
       offset: off,
       ...outcomeFilterParams(filter),
@@ -590,10 +601,17 @@ function CallLogPageInner() {
   // Tiles describe the whole period (hotel + date range only), so they don't
   // move when the outcome / reason / call-id filters change. Non-fatal: on
   // failure the rate tiles just show "—".
+  // The tiles follow the line filter (omitted = reservations, the backend
+  // default) so a sales-line view counts sales calls.
   const { data: stats, mutate: refreshStats } = useSWR(
-    hotelId ? (["call-log-stats", hotelId, dateFrom, dateTo] as const) : null,
-    ([, hid, from, to]) =>
-      fetchCallStats({ hotel_id: hid, date_from: from || undefined, date_to: to || undefined }),
+    scopeKey ? (["call-log-stats", scopeKey, dateFrom, dateTo, lineFilter] as const) : null,
+    ([, ids, from, to, line]) =>
+      fetchCallStats({
+        hotel_id: ids.split(","),
+        date_from: from || undefined,
+        date_to: to || undefined,
+        line: line === "all" ? undefined : line,
+      }),
   )
 
   const [refreshing, setRefreshing] = useState(false)
@@ -678,8 +696,8 @@ function CallLogPageInner() {
         <div className="flex items-start justify-between mb-8">
           <div>
             <h2 className="text-2xl font-semibold text-foreground">Call Log</h2>
-            {hotelName && (
-              <p className="text-sm text-muted-foreground mt-1">{hotelName}</p>
+            {scopeLabel && (
+              <p className="text-sm text-muted-foreground mt-1">{scopeLabel}</p>
             )}
           </div>
           <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
@@ -855,6 +873,7 @@ function CallLogPageInner() {
                 <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
                   <th className="p-4 font-medium">Call Date</th>
                   <th className="p-4 font-medium">Time</th>
+                  {portfolio && <th className="p-4 font-medium">Hotel</th>}
                   <th className="p-4 font-medium">Caller</th>
                   <th className="p-4 font-medium">Line</th>
                   <th className="p-4 font-medium">Call ID</th>
@@ -891,6 +910,7 @@ function CallLogPageInner() {
                               month: "short",
                               day: "numeric",
                               year: "numeric",
+                              timeZone: (call.hotel_id && hotelZones.get(call.hotel_id)) || undefined,
                             })}
                           </div>
                         </td>
@@ -898,8 +918,16 @@ function CallLogPageInner() {
                           {startedAt.toLocaleTimeString(undefined, {
                             hour: "numeric",
                             minute: "2-digit",
+                            timeZone: (call.hotel_id && hotelZones.get(call.hotel_id)) || undefined,
                           })}
                         </td>
+                        {portfolio && (
+                          <td className="p-4 whitespace-nowrap">
+                            <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                              {(call.hotel_id && hotelNames.get(call.hotel_id)) ?? call.hotel_id ?? "—"}
+                            </span>
+                          </td>
+                        )}
                         <td className="p-4 text-card-foreground tabular-nums whitespace-nowrap">
                           {formatCallerPhone(call.caller_phone_e164)}
                         </td>
@@ -963,7 +991,7 @@ function CallLogPageInner() {
                       </tr>
                       {expandedRow === call.id && (
                         <tr key={`${call.id}-transcript`} className="bg-muted/20">
-                          <td colSpan={isPlatformAdmin ? 10 : 9} className="p-0">
+                          <td colSpan={(isPlatformAdmin ? 10 : 9) + (portfolio ? 1 : 0)} className="p-0">
                             <div className="p-6 border-b border-border">
                               {call.line === "sales" && !transcript?.loading && !transcript?.error && (
                                 <SalesInquiryPanel inquiry={transcript?.salesInquiry ?? null} />
@@ -1029,7 +1057,7 @@ function CallLogPageInner() {
               </div>
             ) : error ? (
               <div className="p-8 text-center text-destructive">{error}</div>
-            ) : !hotelId ? (
+            ) : scopeIds.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground">
                 {accessState === "no-access"
                   ? "Your account isn't set up for any hotels yet. Contact Resonata to have your account configured."

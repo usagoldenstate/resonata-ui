@@ -14,10 +14,12 @@ import {
   Save,
   Undo2,
   Users,
+  Building2,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { BookingEnginePanel } from "@/components/booking-engine-panel"
+import { OrganizationsPanel } from "@/components/organizations-panel"
 import { UserAccessPanel } from "@/components/user-access-panel"
 import { Sidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
@@ -52,7 +54,7 @@ const emptyLoadState: LoadState = {
   error: null,
 }
 
-type DevTab = "persona" | "booking-engine" | "user-access"
+type DevTab = "persona" | "booking-engine" | "user-access" | "organizations"
 
 export default function DevPages() {
   const { loading: userLoading, isPlatformAdmin } = useCurrentUser()
@@ -62,6 +64,7 @@ export default function DevPages() {
     { id: "persona", label: "Persona Override", icon: <FileText className="w-4 h-4" /> },
     { id: "booking-engine", label: "Booking Engine", icon: <Link2 className="w-4 h-4" /> },
     { id: "user-access", label: "User Access", icon: <Users className="w-4 h-4" /> },
+    { id: "organizations", label: "Organizations", icon: <Building2 className="w-4 h-4" /> },
   ]
 
   return (
@@ -104,6 +107,9 @@ export default function DevPages() {
             </div>
             <div className={activeTab === "user-access" ? "" : "hidden"}>
               <UserAccessPanel />
+            </div>
+            <div className={activeTab === "organizations" ? "" : "hidden"}>
+              <OrganizationsPanel />
             </div>
           </>
         ) : (

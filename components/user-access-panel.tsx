@@ -57,15 +57,20 @@ import {
   deleteUser,
   fetchAdminHotels,
   fetchAdminUsers,
+  fetchOrganizations,
   fetchPendingInvitations,
   grantUserHotelAccess,
+  grantUserOrganizationAccess,
   inviteUser,
+  type Organization,
   type PendingInvitation,
   revokeInvitation,
   revokeUserHotelAccess,
+  revokeUserOrganizationAccess,
   updateUserRole,
   type UserAccessItem,
   type UserGrantedHotel,
+  type UserGrantedOrganization,
 } from "@/lib/api"
 import { useCurrentUser } from "@/lib/current-user-context"
 
@@ -73,6 +78,7 @@ type Role = "operator" | "platform_admin"
 
 type LoadState = {
   hotels: AdminHotelListItem[]
+  organizations: Organization[]
   users: UserAccessItem[]
   invitations: PendingInvitation[]
   loading: boolean
@@ -81,6 +87,7 @@ type LoadState = {
 
 const emptyLoadState: LoadState = {
   hotels: [],
+  organizations: [],
   users: [],
   invitations: [],
   loading: true,
@@ -95,6 +102,9 @@ export function UserAccessPanel() {
   const [inviteEmail, setInviteEmail] = React.useState("")
   const [inviteRole, setInviteRole] = React.useState<Role>("operator")
   const [inviteHotels, setInviteHotels] = React.useState<string[]>([])
+  // Org-level grants: the invitee sees every hotel in the organization, now
+  // and as hotels are added — nothing is copied per hotel.
+  const [inviteOrgs, setInviteOrgs] = React.useState<string[]>([])
   const [inviting, setInviting] = React.useState(false)
   // invitation_id currently being revoked, or null.
   const [revokingInvite, setRevokingInvite] = React.useState<string | null>(null)
@@ -103,7 +113,8 @@ export function UserAccessPanel() {
   const [advancedOpen, setAdvancedOpen] = React.useState(false)
   const [authSubject, setAuthSubject] = React.useState("")
   const [email, setEmail] = React.useState("")
-  const [hotelId, setHotelId] = React.useState("")
+  // Either one hotel or one organization per manual grant.
+  const [grantTarget, setGrantTarget] = React.useState("")
   const [granting, setGranting] = React.useState(false)
 
   // "userId:hotelId" of the grant currently being revoked, or null.
@@ -121,12 +132,13 @@ export function UserAccessPanel() {
   const load = React.useCallback(async (signal?: AbortSignal) => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
     try {
-      const [hotels, users, invitations] = await Promise.all([
+      const [hotels, organizations, users, invitations] = await Promise.all([
         fetchAdminHotels({ signal }),
+        fetchOrganizations({ signal }),
         fetchAdminUsers({ signal }),
         fetchPendingInvitations({ signal }),
       ])
-      setState({ hotels, users, invitations, loading: false, error: null })
+      setState({ hotels, organizations, users, invitations, loading: false, error: null })
     } catch (e) {
       if (isAbortError(e)) return
       setState((prev) => ({ ...prev, loading: false, error: describeError(e) }))
@@ -145,16 +157,28 @@ export function UserAccessPanel() {
     return map
   }, [state.hotels])
 
+  const orgLabels = React.useMemo(() => {
+    const map = new Map<string, string>()
+    for (const o of state.organizations) map.set(o.organization_id, o.display_name)
+    return map
+  }, [state.organizations])
+
   const toggleInviteHotel = (id: string) => {
     setInviteHotels((prev) =>
       prev.includes(id) ? prev.filter((h) => h !== id) : [...prev, id],
     )
   }
+  const toggleInviteOrg = (id: string) => {
+    setInviteOrgs((prev) =>
+      prev.includes(id) ? prev.filter((o) => o !== id) : [...prev, id],
+    )
+  }
 
+  // An operator needs at least one grant of EITHER kind.
   const canInvite =
     inviteEmail.trim().length > 2 &&
     !inviting &&
-    (inviteRole === "platform_admin" || inviteHotels.length > 0)
+    (inviteRole === "platform_admin" || inviteHotels.length > 0 || inviteOrgs.length > 0)
 
   const invite = async () => {
     if (!canInvite) return
@@ -164,12 +188,14 @@ export function UserAccessPanel() {
         email: inviteEmail.trim(),
         role: inviteRole,
         hotel_ids: inviteRole === "platform_admin" ? [] : inviteHotels,
+        organization_ids: inviteRole === "platform_admin" ? [] : inviteOrgs,
       })
       toast.success(
         `Invitation sent to ${result.email} — they'll get an email to set up their account.`,
       )
       setInviteEmail("")
       setInviteHotels([])
+      setInviteOrgs([])
       setInviteRole("operator")
       await load()
     } catch (e) {
@@ -207,19 +233,31 @@ export function UserAccessPanel() {
   const canGrant =
     authSubject.trim().length > 0 &&
     email.trim().length > 2 &&
-    hotelId.length > 0 &&
+    grantTarget.length > 0 &&
     !granting
 
   const grant = async () => {
     if (!canGrant) return
     setGranting(true)
     try {
-      const user = await grantUserHotelAccess({
-        auth_subject: authSubject.trim(),
-        email: email.trim(),
-        hotel_id: hotelId,
-      })
-      toast.success(`${user.email} now has access to ${hotelId}.`)
+      const sep = grantTarget.indexOf(":")
+      const kind = grantTarget.slice(0, sep)
+      const id = grantTarget.slice(sep + 1)
+      const user =
+        kind === "org"
+          ? await grantUserOrganizationAccess({
+              auth_subject: authSubject.trim(),
+              email: email.trim(),
+              organization_id: id,
+            })
+          : await grantUserHotelAccess({
+              auth_subject: authSubject.trim(),
+              email: email.trim(),
+              hotel_id: id,
+            })
+      toast.success(
+        `${user.email} now has access to ${kind === "org" ? `every hotel in ${orgLabels.get(id) ?? id}` : id}.`,
+      )
       setAuthSubject("")
       setEmail("")
       await load()
@@ -247,6 +285,30 @@ export function UserAccessPanel() {
         users: prev.users.map((u) => (u.user_id === updated.user_id ? updated : u)),
       }))
       toast.success(`Revoked ${user.email}'s access to ${hotel.display_name}.`)
+    } catch (e) {
+      toast.error(describeError(e))
+    } finally {
+      setRevoking(null)
+    }
+  }
+
+  const revokeOrg = async (user: UserAccessItem, org: UserGrantedOrganization) => {
+    if (
+      !window.confirm(
+        `Revoke ${user.email}'s access to every hotel in ${org.display_name}? Any direct per-hotel grants they hold are kept.`,
+      )
+    ) {
+      return
+    }
+    const key = `${user.user_id}:org:${org.organization_id}`
+    setRevoking(key)
+    try {
+      const updated = await revokeUserOrganizationAccess(user.user_id, org.organization_id)
+      setState((prev) => ({
+        ...prev,
+        users: prev.users.map((u) => (u.user_id === updated.user_id ? updated : u)),
+      }))
+      toast.success(`Revoked ${user.email}'s access to ${org.display_name}.`)
     } catch (e) {
       toast.error(describeError(e))
     } finally {
@@ -312,7 +374,7 @@ export function UserAccessPanel() {
           Clerk User ID needed.
         </p>
 
-        <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
+        <div className="grid gap-4 lg:grid-cols-[1fr_240px_240px]">
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="invite-email">Email</Label>
@@ -372,6 +434,40 @@ export function UserAccessPanel() {
               </ScrollArea>
             )}
           </div>
+
+          <div className="space-y-2">
+            <Label>Organizations</Label>
+            {inviteRole === "platform_admin" ? (
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                Not applicable for platform admins.
+              </div>
+            ) : state.organizations.length === 0 ? (
+              <div className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
+                {state.loading ? "Loading…" : "No organizations yet."}
+              </div>
+            ) : (
+              <ScrollArea className="h-40 rounded-md border border-border bg-card">
+                <div className="space-y-1 p-2">
+                  {state.organizations.map((org) => (
+                    <label
+                      key={org.organization_id}
+                      className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted/50"
+                      title="Every hotel in the organization, including ones added later"
+                    >
+                      <Checkbox
+                        checked={inviteOrgs.includes(org.organization_id)}
+                        onCheckedChange={() => toggleInviteOrg(org.organization_id)}
+                      />
+                      <span className="truncate">
+                        {org.display_name}{" "}
+                        <span className="text-muted-foreground">({org.hotel_count})</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
         </div>
 
         <div className="mt-4 flex items-center gap-3">
@@ -383,9 +479,15 @@ export function UserAccessPanel() {
             )}
             Send Invitation
           </Button>
-          {inviteRole === "operator" && inviteHotels.length > 0 ? (
+          {inviteRole === "operator" && (inviteHotels.length > 0 || inviteOrgs.length > 0) ? (
             <span className="text-sm text-muted-foreground">
-              {inviteHotels.length} hotel{inviteHotels.length === 1 ? "" : "s"} selected
+              {[
+                inviteHotels.length > 0 && `${inviteHotels.length} hotel${inviteHotels.length === 1 ? "" : "s"}`,
+                inviteOrgs.length > 0 && `${inviteOrgs.length} organization${inviteOrgs.length === 1 ? "" : "s"}`,
+              ]
+                .filter(Boolean)
+                .join(" + ")}{" "}
+              selected
             </span>
           ) : null}
         </div>
@@ -402,7 +504,7 @@ export function UserAccessPanel() {
               <TableRow>
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead>Hotels</TableHead>
+                <TableHead>Access</TableHead>
                 <TableHead>Invited</TableHead>
                 <TableHead className="w-12 text-right">
                   <span className="sr-only">Revoke</span>
@@ -423,10 +525,15 @@ export function UserAccessPanel() {
                   <TableCell>
                     {inv.role === "platform_admin" ? (
                       <span className="text-sm text-muted-foreground">all hotels</span>
-                    ) : inv.hotel_ids.length === 0 ? (
+                    ) : inv.hotel_ids.length === 0 && inv.organization_ids.length === 0 ? (
                       <span className="text-sm text-muted-foreground">—</span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
+                        {inv.organization_ids.map((oid) => (
+                          <Badge key={`org:${oid}`} variant="default" title="Organization (every hotel in it)">
+                            {orgLabels.get(oid) ?? oid}
+                          </Badge>
+                        ))}
                         {inv.hotel_ids.map((hid) => (
                           <Badge key={hid} variant="secondary">
                             {hotelLabels.get(hid) ?? hid}
@@ -491,7 +598,7 @@ export function UserAccessPanel() {
           <p className="mb-5 text-sm text-muted-foreground">
             Break-glass for a user who already has a Clerk account (created
             outside the invite flow). Finds or creates the user (new users become
-            operators) and grants access to one hotel. Get the Clerk User ID from
+            operators) and grants access to one hotel or one organization. Get the Clerk User ID from
             the Clerk dashboard (Users → select user → User ID, looks like{" "}
             <code className="text-xs">user_2abc...</code>).
           </p>
@@ -521,14 +628,19 @@ export function UserAccessPanel() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Hotel</Label>
-              <Select value={hotelId} onValueChange={setHotelId}>
+              <Label>Hotel or organization</Label>
+              <Select value={grantTarget} onValueChange={setGrantTarget}>
                 <SelectTrigger className="bg-card">
-                  <SelectValue placeholder="Pick a hotel" />
+                  <SelectValue placeholder="Pick a hotel or organization" />
                 </SelectTrigger>
                 <SelectContent>
+                  {state.organizations.map((org) => (
+                    <SelectItem key={`org:${org.organization_id}`} value={`org:${org.organization_id}`}>
+                      Organization: {org.display_name} ({org.hotel_count} hotel{org.hotel_count === 1 ? "" : "s"})
+                    </SelectItem>
+                  ))}
                   {state.hotels.map((hotel) => (
-                    <SelectItem key={hotel.hotel_id} value={hotel.hotel_id}>
+                    <SelectItem key={`hotel:${hotel.hotel_id}`} value={`hotel:${hotel.hotel_id}`}>
                       {hotel.display_name} ({hotel.hotel_id})
                     </SelectItem>
                   ))}
@@ -580,7 +692,7 @@ export function UserAccessPanel() {
                 <TableHead>Clerk User ID</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Hotels</TableHead>
+                <TableHead>Access</TableHead>
                 <TableHead className="w-12 text-right">
                   <span className="sr-only">Delete</span>
                 </TableHead>
@@ -641,10 +753,36 @@ export function UserAccessPanel() {
                       <span className="text-sm text-muted-foreground">
                         all hotels
                       </span>
-                    ) : user.hotels.length === 0 ? (
+                    ) : user.hotels.length === 0 && user.organizations.length === 0 ? (
                       <span className="text-sm text-muted-foreground">—</span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
+                        {user.organizations.map((org) => {
+                          const key = `${user.user_id}:org:${org.organization_id}`
+                          return (
+                            <Badge
+                              key={key}
+                              variant="default"
+                              className="gap-1 pr-1"
+                              title={`Organization — every hotel in it. Granted ${formatDateTime(org.granted_at)}`}
+                            >
+                              {org.display_name}
+                              <button
+                                type="button"
+                                aria-label={`Revoke access to organization ${org.display_name}`}
+                                onClick={() => void revokeOrg(user, org)}
+                                disabled={revoking !== null}
+                                className="rounded-sm p-0.5 hover:bg-background/20 disabled:opacity-50"
+                              >
+                                {revoking === key ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <X className="h-3 w-3" />
+                                )}
+                              </button>
+                            </Badge>
+                          )
+                        })}
                         {user.hotels.map((hotel) => {
                           const key = `${user.user_id}:${hotel.hotel_id}`
                           return (

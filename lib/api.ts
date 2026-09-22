@@ -24,7 +24,9 @@ type Options = {
   signal?: AbortSignal
 }
 
-type QueryValue = string | number | boolean | null | undefined
+// A string[] is emitted as a repeated key (`?hotel_id=a&hotel_id=b`), which
+// is how the backend's multi-hotel scope dependency reads it.
+export type QueryValue = string | number | boolean | string[] | null | undefined
 type TokenGetter = () => Promise<string | null>
 type UnauthorizedHandler = () => Promise<void>
 
@@ -39,12 +41,24 @@ export function __setUnauthorizedHandler(handler: UnauthorizedHandler) {
   unauthorizedHandler = handler
 }
 
-function withQuery(path: string, params: Record<string, QueryValue>): string {
+export function withQuery(path: string, params: Record<string, QueryValue>): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== "") {
-      search.set(key, String(value))
+    if (value === undefined || value === null || value === "") continue
+    if (Array.isArray(value)) {
+      // Repeated key, blanks dropped, de-duplicated in order. An empty array
+      // emits nothing — the caller decides whether that is an error.
+      const seen = new Set<string>()
+      for (const item of value) {
+        const cleaned = String(item).trim()
+        if (cleaned && !seen.has(cleaned)) {
+          seen.add(cleaned)
+          search.append(key, cleaned)
+        }
+      }
+      continue
     }
+    search.set(key, String(value))
   }
   const query = search.toString()
   return query ? `${path}?${query}` : path
@@ -79,6 +93,7 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
     if (res.status === 401 && unauthorizedHandler) {
       if (typeof window !== "undefined") {
         window.localStorage.removeItem("resonata.selected_hotel_id")
+        window.localStorage.removeItem("resonata.hotel_scope")
       }
       await unauthorizedHandler()
     }
@@ -134,6 +149,7 @@ export async function apiStream(
     if (res.status === 401 && unauthorizedHandler) {
       if (typeof window !== "undefined") {
         window.localStorage.removeItem("resonata.selected_hotel_id")
+        window.localStorage.removeItem("resonata.hotel_scope")
       }
       await unauthorizedHandler()
     }
@@ -638,10 +654,44 @@ export type AdminHotelListItem = {
   display_name: string
   pms_provider: string
   is_active: boolean
+  // The organization (management company) the hotel belongs to, if any.
+  organization_id: string | null
+}
+
+// ── Organizations (management companies / portfolios) ───────────────────────
+// A named group of hotels. Membership is set from the hotel side
+// (platform settings → Organization); users are granted the org as a unit and
+// see every hotel in it at request time — nothing is copied per hotel.
+export type Organization = {
+  organization_id: string
+  display_name: string
+  hotel_count: number
+  created_at: string
+}
+
+export function fetchOrganizations(opts: Pick<Options, "signal"> = {}) {
+  return api<Organization[]>("/api/v1/admin/organizations", opts)
+}
+
+export function createOrganization(body: { organization_id: string; display_name: string }) {
+  return api<Organization>("/api/v1/admin/organizations", { method: "POST", body })
+}
+
+export function renameOrganization(organizationId: string, display_name: string) {
+  return api<Organization>(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}`, {
+    method: "PATCH",
+    body: { display_name },
+  })
 }
 
 export type UserGrantedHotel = {
   hotel_id: string
+  display_name: string
+  granted_at: string
+}
+
+export type UserGrantedOrganization = {
+  organization_id: string
   display_name: string
   granted_at: string
 }
@@ -652,7 +702,10 @@ export type UserAccessItem = {
   email: string
   role: string
   is_active: boolean
+  // Direct per-hotel grants only; org grants are listed separately and are
+  // never expanded into this list.
   hotels: UserGrantedHotel[]
+  organizations: UserGrantedOrganization[]
 }
 
 export function fetchAdminHotels(opts: Pick<Options, "signal"> = {}) {
@@ -668,6 +721,8 @@ export type HotelDetail = {
   hotel_id: string
   display_name: string
   timezone: string
+  // Organization membership. Platform-admin only; null = independent hotel.
+  organization_id: string | null
   pms_provider: string
   booking_engine_provider: string | null
   agent_name: string | null
@@ -718,6 +773,8 @@ export type HotelOperatorUpdate = {
 
 // Platform-admin-only partial update (PATCH /admin/hotels/{id}/platform-settings).
 export type HotelPlatformUpdate = {
+  // An existing organization id, or null/"" to make the hotel independent.
+  organization_id?: string | null
   inbound_phone_number?: string | null
   vapi_phone_number_id?: string | null
   twilio_from_number?: string | null
@@ -897,6 +954,24 @@ export function revokeUserHotelAccess(userId: string, hotelId: string) {
   })
 }
 
+export function grantUserOrganizationAccess(body: {
+  auth_subject: string
+  email: string
+  organization_id: string
+}) {
+  return api<UserAccessItem>("/api/v1/admin/users/org-grants", {
+    method: "POST",
+    body,
+  })
+}
+
+export function revokeUserOrganizationAccess(userId: string, organizationId: string) {
+  return api<UserAccessItem>(
+    `/api/v1/admin/users/${userId}/org-grants/${encodeURIComponent(organizationId)}`,
+    { method: "DELETE" },
+  )
+}
+
 export function deleteUser(userId: string) {
   return api<void>(`/api/v1/admin/users/${userId}`, {
     method: "DELETE",
@@ -912,6 +987,7 @@ export type UserInvitationResult = {
   status: string
   role: "operator" | "platform_admin"
   hotel_ids: string[]
+  organization_ids: string[]
 }
 
 export type PendingInvitation = {
@@ -921,14 +997,17 @@ export type PendingInvitation = {
   created_at: string | null
   role: "operator" | "platform_admin" | null
   hotel_ids: string[]
+  organization_ids: string[]
 }
 
 // Invite a new user by email. Clerk emails them a sign-up link; the role +
-// hotel access are applied automatically when they finish signing up.
+// hotel / organization access are applied automatically when they finish
+// signing up.
 export function inviteUser(body: {
   email: string
   role: "operator" | "platform_admin"
   hotel_ids: string[]
+  organization_ids: string[]
 }) {
   return api<UserInvitationResult>("/api/v1/admin/users/invitations", {
     method: "POST",
@@ -947,9 +1026,11 @@ export function revokeInvitation(invitationId: string) {
   })
 }
 
+// `hotel_id` may be several hotels (the portfolio view): the backend spans
+// them all, and a calendar date means that local date at EACH hotel.
 export function fetchCalls(
   params: {
-    hotel_id: string
+    hotel_id: string | string[]
     limit?: number
     offset?: number
     outcome?: CallOutcomeFilter
@@ -971,7 +1052,14 @@ export function fetchCalls(
 // Honors hotel + date range only: the backend ignores outcome / transfer /
 // reason filters so a rate never collapses to 100% when its bucket is selected.
 export function fetchCallStats(
-  params: { hotel_id: string; date_from?: string; date_to?: string },
+  params: {
+    hotel_id: string | string[]
+    date_from?: string
+    date_to?: string
+    // Omitted = the reservations line only (the backend default: sales calls
+    // carry no outcome verdict and would inflate the pending tile).
+    line?: CallLine
+  },
   opts: Pick<Options, "signal"> = {},
 ) {
   return api<CallStats>(withQuery("/api/v1/calls/stats", params), opts)
@@ -1077,14 +1165,10 @@ export function fetchCallMetricsMonthly(
   )
 }
 
-export function fetchNotBookedTaxonomy(
-  params: { hotel_id: string },
-  opts: Pick<Options, "signal"> = {},
-) {
-  return api<NotBookedTaxonomyResponse>(
-    withQuery("/api/v1/reporting/not-booked/taxonomy", params),
-    opts,
-  )
+// Static vocabulary — not hotel-scoped, so the call log can ask for it in the
+// portfolio view too.
+export function fetchNotBookedTaxonomy(opts: Pick<Options, "signal"> = {}) {
+  return api<NotBookedTaxonomyResponse>("/api/v1/reporting/not-booked/taxonomy", opts)
 }
 
 export function fetchNotBookedBreakdown(
@@ -1263,6 +1347,9 @@ export function refreshHotelRoomTypes(hotelId: string) {
 // Automatically captured sales inquiries and shared follow-up tracking.
 export type SalesFollowUpStatus = "new" | "call_attempted" | "contacted" | "booked" | "closed"
 export type SalesInquiryItem = SalesInquiry & {
+  // The list may span an organization; detail/patch and the roster used to
+  // edit an assignment are keyed by the row's own hotel.
+  hotel_id: string
   provider_call_id: string | null
   follow_up_status: SalesFollowUpStatus
   // A name from the hotel's sales-rep roster, not a user account — the
@@ -1297,8 +1384,8 @@ export type SalesInquiryPatch = {
   assigned_rep?: string | null
   note?: string
 }
-export function fetchSalesInquiries(hotelId: string, filters: Record<string, QueryValue>) {
-  return api<SalesInquiryPage>(withQuery("/api/v1/sales-inquiries", { hotel_id: hotelId, ...filters }))
+export function fetchSalesInquiries(hotelIds: string | string[], filters: Record<string, QueryValue>) {
+  return api<SalesInquiryPage>(withQuery("/api/v1/sales-inquiries", { hotel_id: hotelIds, ...filters }))
 }
 export function fetchSalesAssignees(hotelId: string) {
   return api<string[]>(withQuery("/api/v1/sales-inquiries/assignees", { hotel_id: hotelId }))
