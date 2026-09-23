@@ -1,6 +1,7 @@
 "use client"
 
 import { env } from "./env"
+import type { HotelLines } from "./product-lines"
 
 export class ApiError extends Error {
   constructor(
@@ -736,6 +737,12 @@ export type HotelDetail = {
   // The hotel's sales team as plain name tags — who follow-up activity is
   // attributed to. Operator-editable, unlike the sales-line fields above.
   sales_rep_names: string[]
+  // The sales line's own opener (null = the template) and the template
+  // rendered for this hotel. Operator-editable via Agent Configuration.
+  sales_first_message?: string | null
+  sales_first_message_default?: string
+  // Which products the hotel bought. Platform-admin only.
+  lines?: HotelLines
   pms_webhook_last_received_at: string | null
   is_active: boolean
 }
@@ -755,6 +762,8 @@ export type HotelOperatorUpdate = {
   // Replaces the whole list. Normalized server-side (trimmed, blanks dropped,
   // case-insensitively de-duplicated, max 50).
   sales_rep_names?: string[]
+  // Blank clears back to the shared template.
+  sales_first_message?: string | null
 }
 
 // Platform-admin-only partial update (PATCH /admin/hotels/{id}/platform-settings).
@@ -767,6 +776,9 @@ export type HotelPlatformUpdate = {
   sales_line_enabled?: boolean
   sales_vapi_phone_number_id?: string | null
   sales_inquiry_email?: string | null
+  // Validated with the sales-line fields: the line can only be on for
+  // "sales" | "both", so the two travel in one PATCH on launch day.
+  lines?: HotelLines
   booking_engine_provider?: string | null
   is_active?: boolean
   commission_rate_basis_points?: number

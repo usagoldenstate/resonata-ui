@@ -1,13 +1,15 @@
 "use client"
 
+import { useEffect } from "react"
 import { RedirectToSignIn, useAuth, useClerk } from "@clerk/nextjs"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { SWRConfig } from "swr"
 
 import { AppShellSkeleton } from "@/components/app-shell-skeleton"
 import { SingleHotelRequired } from "@/components/single-hotel-required"
 import { CurrentUserProvider } from "@/lib/current-user-context"
 import { HotelProvider, useHotel } from "@/lib/hotel-context"
+import { homeRouteFor, lineRequiredFor } from "@/lib/product-lines"
 import { __setClerkTokenGetter, __setUnauthorizedHandler } from "@/lib/api"
 
 // Routes that render a whole organization at once (rows carry a hotel badge).
@@ -21,6 +23,30 @@ function ScopeGate({ children }: { children: React.ReactNode }) {
   const { scope } = useHotel()
   if (scope?.kind === "org" && !PORTFOLIO_ROUTES.has(pathname)) {
     return <SingleHotelRequired />
+  }
+  return <>{children}</>
+}
+
+// Pages tied to one product line (reservation reports, room mapping, sales
+// inquiries) are off-limits to a scope that doesn't have that line — hiding
+// the nav item is not enough, since the page still opens by URL or bookmark.
+// A blocked page redirects to the scope's home: sales inquiries for a
+// sales-only hotel (which is also where its "/" lands), the dashboard
+// otherwise. While the hotel list is still loading, a line-specific page shows
+// the skeleton instead of briefly rendering reports a sales-only hotel never
+// has.
+function LineGate({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const router = useRouter()
+  const { scopeLines, loading } = useHotel()
+  const needed = lineRequiredFor(pathname)
+  const blocked = needed !== null && scopeLines !== null && !scopeLines[needed]
+  const home = scopeLines ? homeRouteFor(scopeLines) : "/"
+  useEffect(() => {
+    if (blocked) router.replace(home)
+  }, [blocked, home, router])
+  if (blocked || (needed !== null && scopeLines === null && loading)) {
+    return <AppShellSkeleton />
   }
   return <>{children}</>
 }
@@ -65,7 +91,9 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
       <ClerkTokenBridge />
       <CurrentUserProvider>
         <HotelProvider>
-          <ScopeGate>{children}</ScopeGate>
+          <ScopeGate>
+            <LineGate>{children}</LineGate>
+          </ScopeGate>
         </HotelProvider>
       </CurrentUserProvider>
     </SWRConfig>

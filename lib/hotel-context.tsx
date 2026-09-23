@@ -21,6 +21,7 @@
 import * as React from "react"
 
 import { api, ApiError } from "./api"
+import { scopeLineSet, type HotelLines, type LineSet } from "./product-lines"
 
 export type HotelListItem = {
   hotel_id: string
@@ -34,6 +35,9 @@ export type HotelListItem = {
   // by it and offers the group as a scope once it holds two or more hotels.
   organization_id: string | null
   organization_name: string | null
+  // Which products the hotel bought. Optional so an older backend without the
+  // field still works — a missing value reads as "reservations".
+  lines?: HotelLines
 }
 
 export type HotelScope =
@@ -73,6 +77,10 @@ type Ctx = {
   scopeHotels: HotelListItem[]
   // Human label for the scope ("Coastal (3 hotels)" / the hotel's name).
   scopeLabel: string | null
+  // The lines the scope spans (union across an organization's hotels), or
+  // null until the hotel list has loaded. Drives nav, page guards and the
+  // per-line sections of Agent Configuration.
+  scopeLines: LineSet | null
   setHotelId: (id: string) => void
   setScope: (scope: HotelScope) => void
   loading: boolean
@@ -250,6 +258,7 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
     if (selectedGroup) return selectedGroup.hotels
     return selectedHotel ? [selectedHotel] : []
   }, [selectedGroup, selectedHotel])
+  const scopeLines = React.useMemo(() => scopeLineSet(scopeHotels), [scopeHotels])
 
   const value: Ctx = {
     hotels,
@@ -261,6 +270,7 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
     scopeLabel: selectedGroup
       ? organizationScopeLabel(selectedGroup)
       : selectedHotel?.display_name ?? null,
+    scopeLines,
     setHotelId,
     setScope,
     loading,
