@@ -78,6 +78,9 @@ type HotelDetail = {
   pms_provider: string
   agent_name: string | null
   first_message: string | null
+  // What the reservations line says while first_message is empty, rendered
+  // for this hotel — shown as the placeholder.
+  first_message_default?: string
   email_from: string | null
   preferred_rate_code: string | null
   max_call_minutes: number | null
@@ -332,6 +335,7 @@ export function AgentConfigTab({
   const [preferredRateCode, setPreferredRateCode] = useState("")
   const [agentName, setAgentName] = useState("")
   const [firstMessage, setFirstMessage] = useState("")
+  const [firstMessageDefault, setFirstMessageDefault] = useState("")
   const [salesFirstMessage, setSalesFirstMessage] = useState("")
   const [salesFirstMessageDefault, setSalesFirstMessageDefault] = useState("")
   // Which per-line sections this hotel gets. Null until the hotel loads.
@@ -378,6 +382,7 @@ export function AgentConfigTab({
     setFirstMessage(loadedFirstMessage)
     setPreferredRateCode(loadedPreferredRateCode)
     setSalesFirstMessage(loadedSalesFirstMessage)
+    setFirstMessageDefault(hotel.first_message_default ?? "")
     setSalesFirstMessageDefault(hotel.sales_first_message_default ?? "")
     setLines(lineSetOf(hotel.lines))
     setDepartments(loadedDepartments)
@@ -644,9 +649,11 @@ export function AgentConfigTab({
             <MessageSquareQuote className="w-4 h-4 text-primary" />
             Reservations Greeting
           </CardTitle>
-          <p className="text-sm text-muted-foreground">What the agent says when it answers the reservations line</p>
+          <p className="text-sm text-muted-foreground">
+            What the agent says when it answers the reservations line. Leave it empty to use the default shown below.
+          </p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-2">
           <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
             First Message
           </label>
@@ -654,8 +661,19 @@ export function AgentConfigTab({
             className="w-full min-h-[100px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
             value={firstMessage}
             onChange={(e) => setFirstMessage(e.target.value)}
-            placeholder="e.g. Hi, thank you for calling The Lakehouse. My name is Sarah, how can I help you today?"
+            placeholder={firstMessageDefault}
           />
+          {firstMessage.trim() !== "" && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setFirstMessage("")}
+              className="text-muted-foreground"
+            >
+              Reset to default
+            </Button>
+          )}
         </CardContent>
       </Card>
 
