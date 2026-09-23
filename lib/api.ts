@@ -178,12 +178,6 @@ export type CallMetricsSummary = {
   total_call_seconds: number
   conversion_rate: number
   missed_opportunities: number
-  csat_score: number | null
-  csat_satisfied: number
-  csat_dissatisfied: number
-  csat_mixed: number
-  csat_declined: number
-  csat_responses: number
   attribution_last_discovered_at: string | null
 }
 
@@ -216,19 +210,6 @@ export type RevenueSummary = {
   // that, including all time, so the trend chart stays readable.
   trend_bucket: "day" | "month"
   trend: RevenueTrendRow[]
-}
-
-export type CsatFeedbackItem = {
-  provider_call_id: string
-  call_record_id: string | null
-  response: string
-  reason: string | null
-  survey_language: string
-  responded_at: string | null
-}
-
-export type CsatFeedbackResponse = {
-  items: CsatFeedbackItem[]
 }
 
 export type CallMetricsHourlyResponse = {
@@ -1126,16 +1107,6 @@ export function fetchRevenueSummary(
 ) {
   return api<RevenueSummary>(
     withQuery("/api/v1/reporting/revenue/summary", params),
-    opts,
-  )
-}
-
-export function fetchCsatFeedback(
-  params: { hotel_id: string; start_date: string; end_date: string },
-  opts: Pick<Options, "signal"> = {},
-) {
-  return api<CsatFeedbackResponse>(
-    withQuery("/api/v1/reporting/csat/feedback", params),
     opts,
   )
 }

@@ -282,7 +282,7 @@ export default function CallMetricsReportingPage() {
           {summary.error ? <Notice tone="error" message={summary.error} /> : null}
           {summaryEmpty ? <Notice tone="muted" message="No calls found in this date range." /> : null}
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <MetricCard
               label="Total Call Volume"
               value={summary.loading ? "..." : formatNumber(summaryData?.total_calls)}
@@ -302,14 +302,6 @@ export default function CallMetricsReportingPage() {
                 summary.loading
                   ? "..."
                   : formatAvgDuration(summaryData?.total_call_seconds, summaryData?.total_calls)
-              }
-            />
-            <MetricCard
-              label="Customer Satisfaction Score"
-              value={
-                summary.loading
-                  ? "..."
-                  : formatPercent(summaryData?.csat_score ?? undefined)
               }
             />
           </div>
@@ -567,10 +559,6 @@ function ChartState({
 
 function formatNumber(value: number | undefined): string {
   return value === undefined ? "--" : value.toLocaleString()
-}
-
-function formatPercent(value: number | undefined): string {
-  return value === undefined ? "--" : `${value.toFixed(1)}%`
 }
 
 function formatMinutes(seconds: number | undefined): string {
