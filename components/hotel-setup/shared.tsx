@@ -125,10 +125,8 @@ export type StepContext = {
   hasBack: boolean
 }
 
-export function linesModeOf(status: SetupStatus | null): LinesMode {
-  const raw = status?.setup_progress?.lines_mode
-  if (raw === "sales" || raw === "reservations" || raw === "both") return raw
-  return "reservations"
+export function linesModeOf(detail: HotelDetail | null): LinesMode {
+  return detail?.lines ?? "reservations"
 }
 
 export function includesReservations(mode: LinesMode): boolean {

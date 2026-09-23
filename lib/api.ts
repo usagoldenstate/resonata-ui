@@ -1,6 +1,7 @@
 "use client"
 
 import { env } from "./env"
+import type { HotelLines } from "./product-lines"
 
 export class ApiError extends Error {
   constructor(
@@ -178,12 +179,6 @@ export type CallMetricsSummary = {
   total_call_seconds: number
   conversion_rate: number
   missed_opportunities: number
-  csat_score: number | null
-  csat_satisfied: number
-  csat_dissatisfied: number
-  csat_mixed: number
-  csat_declined: number
-  csat_responses: number
   attribution_last_discovered_at: string | null
 }
 
@@ -216,19 +211,6 @@ export type RevenueSummary = {
   // that, including all time, so the trend chart stays readable.
   trend_bucket: "day" | "month"
   trend: RevenueTrendRow[]
-}
-
-export type CsatFeedbackItem = {
-  provider_call_id: string
-  call_record_id: string | null
-  response: string
-  reason: string | null
-  survey_language: string
-  responded_at: string | null
-}
-
-export type CsatFeedbackResponse = {
-  items: CsatFeedbackItem[]
 }
 
 export type CallMetricsHourlyResponse = {
@@ -422,10 +404,15 @@ export type SalesInquiry = {
   headcount_min: number | null
   headcount_max: number | null
   needs_guest_rooms: boolean | null
-  // The caller's own words about budget, plus the single parsed figure when
-  // they named one (a decimal string — money crosses the wire as a string).
+  // The caller's own words plus the post-call AI-estimated total-event range.
+  // Money crosses the wire as decimal strings.
   budget_text: string | null
-  budget_amount: string | null
+  estimated_budget_min: string | null
+  estimated_budget_max: string | null
+  budget_estimation_status: "pending" | "complete" | "failed"
+  budget_estimated_at: string | null
+  budget_estimation_model: string | null
+  budget_estimation_prompt_version: string | null
   notes: string | null
   sent_to: string | null
   email_status: "sending" | "sent" | "failed" | "gave_up"
@@ -727,9 +714,6 @@ export type HotelDetail = {
   booking_engine_provider: string | null
   agent_name: string | null
   first_message: string | null
-  // The sales intake line's own opener. Null falls back to the shared
-  // sales-intake template on the voice path.
-  sales_first_message: string | null
   email_from: string | null
   preferred_rate_code: string | null
   commission_rate_basis_points: number
@@ -753,6 +737,12 @@ export type HotelDetail = {
   // The hotel's sales team as plain name tags — who follow-up activity is
   // attributed to. Operator-editable, unlike the sales-line fields above.
   sales_rep_names: string[]
+  // The sales line's own opener (null = the template) and the template
+  // rendered for this hotel. Operator-editable via Agent Configuration.
+  sales_first_message: string | null
+  sales_first_message_default?: string
+  // Which products the hotel bought. Platform-admin only.
+  lines?: HotelLines
   pms_webhook_last_received_at: string | null
   is_active: boolean
   // Which completion path the hotel uses. Platform-admin only.
@@ -936,9 +926,9 @@ export type SetupStatus = {
   first_message_defaults?: FirstMessageDefaults
 }
 
-// Which inbound lines the hotel runs. Chosen on the identity step (it decides
-// which later steps apply) and recorded with the setup-progress PATCH.
-export type LinesMode = "reservations" | "sales" | "both"
+// Which inbound lines the hotel runs — `hotels.lines`. Chosen on the identity
+// step (it decides which later steps apply); the setup-progress PATCH writes it.
+export type LinesMode = HotelLines
 
 export function fetchHotelSetup(
   hotelId: string,
@@ -1028,8 +1018,6 @@ export type HotelOperatorUpdate = {
   timezone?: string
   agent_name?: string | null
   first_message?: string | null
-  // Blank/null restores the shared sales-intake template.
-  sales_first_message?: string | null
   preferred_rate_code?: string | null
   max_call_minutes?: number | null
   // Full RFC 5322 sender ("Name <addr@domain>" or bare address). The settings
@@ -1039,6 +1027,8 @@ export type HotelOperatorUpdate = {
   // Replaces the whole list. Normalized server-side (trimmed, blanks dropped,
   // case-insensitively de-duplicated, max 50).
   sales_rep_names?: string[]
+  // Blank clears back to the shared template.
+  sales_first_message?: string | null
 }
 
 // Platform-admin-only partial update (PATCH /admin/hotels/{id}/platform-settings).
@@ -1051,6 +1041,9 @@ export type HotelPlatformUpdate = {
   sales_line_enabled?: boolean
   sales_vapi_phone_number_id?: string | null
   sales_inquiry_email?: string | null
+  // Validated with the sales-line fields: the line can only be on for
+  // "sales" | "both", so the two travel in one PATCH on launch day.
+  lines?: HotelLines
   booking_engine_provider?: string | null
   booking_engine_config?: Record<string, unknown> | null
   // The PMS connector. Accepted ONLY while the hotel is inactive — a live
@@ -1410,16 +1403,6 @@ export function fetchRevenueSummary(
   )
 }
 
-export function fetchCsatFeedback(
-  params: { hotel_id: string; start_date: string; end_date: string },
-  opts: Pick<Options, "signal"> = {},
-) {
-  return api<CsatFeedbackResponse>(
-    withQuery("/api/v1/reporting/csat/feedback", params),
-    opts,
-  )
-}
-
 export function fetchCallMetricsHourly(
   params: CallMetricsBaseParams,
   opts: Pick<Options, "signal"> = {},
@@ -1705,10 +1688,14 @@ export type PublicSalesInquiry = {
   headcount_min: number | null
   headcount_max: number | null
   needs_guest_rooms: boolean | null
-  // The caller's own words about budget, plus the single parsed figure when
-  // they named one (a decimal string — money crosses the wire as a string).
+  // The caller's own words plus the post-call AI-estimated total-event range.
   budget_text: string | null
-  budget_amount: string | null
+  estimated_budget_min: string | null
+  estimated_budget_max: string | null
+  budget_estimation_status: "pending" | "complete" | "failed"
+  budget_estimated_at: string | null
+  budget_estimation_model: string | null
+  budget_estimation_prompt_version: string | null
   notes: string | null
   created_at: string
   follow_up_status: SalesFollowUpStatus

@@ -33,6 +33,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Card, CardContent } from "@/components/ui/card"
+import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
@@ -166,15 +167,6 @@ function formatInquiryDates(inquiry: SalesInquiry): string {
   return inquiry.dates_flexible ? `${base} · flexible` : base
 }
 
-// The caller's words lead; the parsed figure rides in parentheses when it adds
-// something. Most callers hedge ("we're flexible"), so text-only is normal.
-function budget(row: { budget_text: string | null; budget_amount: string | null }): string | null {
-  const amount =
-    row.budget_amount === null ? null : Number(row.budget_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })
-  if (!amount) return row.budget_text
-  return row.budget_text ? `${row.budget_text} (${amount})` : amount
-}
-
 // The structured intake a sales-line call produced, shown above the
 // transcript. A `failed` email status is the cue for staff to forward the
 // details manually — the inquiry itself is intact in the row.
@@ -203,7 +195,7 @@ function SalesInquiryPanel({ inquiry }: { inquiry: SalesInquiry | null }) {
     ["Event type", inquiry.event_type],
     ["Dates", formatInquiryDates(inquiry)],
     ["Party size", formatHeadcount(inquiry) ?? "—"],
-    ["Budget", budget(inquiry) ?? "—"],
+    ["Budget stated by caller", inquiry.budget_text ?? "—"],
     [
       "Guest rooms",
       inquiry.needs_guest_rooms === null ? "—" : inquiry.needs_guest_rooms ? "Yes" : "No",
@@ -234,6 +226,10 @@ function SalesInquiryPanel({ inquiry }: { inquiry: SalesInquiry | null }) {
             <dd className="text-card-foreground">{value}</dd>
           </div>
         ))}
+        <div>
+          <dt className="text-xs text-muted-foreground"><AiBudgetHelp label="AI-estimated total budget" /></dt>
+          <dd className="text-card-foreground tabular-nums">{formatAiBudget(inquiry)}</dd>
+        </div>
       </dl>
       {inquiry.notes && (
         <div className="mt-3">
@@ -470,7 +466,15 @@ export default function CallLogPage() {
 }
 
 function CallLogPageInner() {
-  const { scope, scopeHotels, scopeLabel, loading: hotelLoading, accessState } = useHotel()
+  const { scope, scopeHotels, scopeLabel, scopeLines, loading: hotelLoading, accessState } = useHotel()
+  // Which lines this scope has decides how much of the line split shows. Only
+  // a scope with both lines gets the Line column and filter; a single-line
+  // scope is pinned to its line (a sales-only hotel also drops the
+  // reservation-outcome columns, filters and rate tiles, which are always
+  // empty for sales calls).
+  const bothLines = Boolean(scopeLines?.reservations && scopeLines?.sales)
+  const salesOnly = Boolean(scopeLines && scopeLines.sales && !scopeLines.reservations)
+  const reservationsOnly = Boolean(scopeLines && scopeLines.reservations && !scopeLines.sales)
   // The hotels this page spans: one, or an organization's accessible hotels.
   // Requests key on the joined ids so an org whose membership changed refetches.
   const scopeIds = scopeHotels.map((h) => h.hotel_id)
@@ -518,6 +522,15 @@ function CallLogPageInner() {
     return param && lineFilterValues.has(param as CallLine) ? (param as CallLine) : "all"
   })
   const [offset, setOffset] = useState(0)
+  const effectiveLine: "all" | CallLine = salesOnly
+    ? "sales"
+    : reservationsOnly
+      ? "reservations"
+      : lineFilter
+  // The rate tiles always describe one line: sales calls never enter a
+  // reservations denominator, so with "All lines" selected they still count
+  // reservation calls only (the backend default) — say so on the tile.
+  const statsNoun = effectiveLine === "sales" ? "sales calls" : "reservation calls"
 
   // Debounce the Call ID box so we query once the user pauses, not per keystroke.
   const debouncedCallId = useDebouncedValue(callIdSearch, 300)
@@ -561,7 +574,7 @@ function CallLogPageInner() {
   useEffect(() => {
     setOffset(0)
     setExpandedRow(null)
-  }, [scopeKey, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId, lineFilter])
+  }, [scopeKey, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId, effectiveLine])
 
   const listKey = scopeKey
     ? ([
@@ -574,7 +587,7 @@ function CallLogPageInner() {
         dateFrom,
         dateTo,
         debouncedCallId,
-        lineFilter,
+        effectiveLine,
       ] as const)
     : null
   const {
@@ -604,7 +617,7 @@ function CallLogPageInner() {
   // The tiles follow the line filter (omitted = reservations, the backend
   // default) so a sales-line view counts sales calls.
   const { data: stats, mutate: refreshStats } = useSWR(
-    scopeKey ? (["call-log-stats", scopeKey, dateFrom, dateTo, lineFilter] as const) : null,
+    scopeKey ? (["call-log-stats", scopeKey, dateFrom, dateTo, effectiveLine] as const) : null,
     ([, ids, from, to, line]) =>
       fetchCallStats({
         hotel_id: ids.split(","),
@@ -679,7 +692,7 @@ function CallLogPageInner() {
     dateFrom !== "" ||
     dateTo !== "" ||
     callIdSearch.trim() !== "" ||
-    lineFilter !== "all"
+    (bothLines && lineFilter !== "all")
 
   const statsTotal = stats?.total_calls ?? 0
   // Bookable = every call that had a verdict other than not_bookable. Pending
@@ -710,33 +723,39 @@ function CallLogPageInner() {
             value={String(total)}
             label={hasFilters ? "Matching Calls" : "Total Calls"}
           />
-          <StatTile
-            icon={CalendarCheck}
-            value={formatRate(bookableCount, decidedCount)}
-            label="Bookable"
-            detail={stats ? `${bookableCount} of ${decidedCount} assessed` : undefined}
-          />
-          <StatTile
-            icon={Link2}
-            value={formatRate(stats?.link_sent ?? 0, bookableCount)}
-            label="Link Sent"
-            detail={stats ? `${stats.link_sent} of ${bookableCount} bookable` : undefined}
-          />
-          {/* Hidden until the first attributed booking so an empty 0% tile
-              doesn't sit on the page while PMS attribution is new. */}
-          {stats && stats.booked >= 1 && (
-            <StatTile
-              icon={BadgeCheck}
-              value={formatRate(stats.booked, statsTotal)}
-              label="Booked"
-              detail={`${stats.booked} of ${statsTotal} calls`}
-            />
+          {/* Booking tiles are reservation concepts; a sales call never
+              books or gets a link, so they would sit at 0% on a sales view. */}
+          {effectiveLine !== "sales" && (
+            <>
+              <StatTile
+                icon={CalendarCheck}
+                value={formatRate(bookableCount, decidedCount)}
+                label="Bookable"
+                detail={stats ? `${bookableCount} of ${decidedCount} assessed ${statsNoun}` : undefined}
+              />
+              <StatTile
+                icon={Link2}
+                value={formatRate(stats?.link_sent ?? 0, bookableCount)}
+                label="Link Sent"
+                detail={stats ? `${stats.link_sent} of ${bookableCount} bookable` : undefined}
+              />
+              {/* Hidden until the first attributed booking so an empty 0% tile
+                  doesn't sit on the page while PMS attribution is new. */}
+              {stats && stats.booked >= 1 && (
+                <StatTile
+                  icon={BadgeCheck}
+                  value={formatRate(stats.booked, statsTotal)}
+                  label="Booked"
+                  detail={`${stats.booked} of ${statsTotal} ${statsNoun}`}
+                />
+              )}
+            </>
           )}
           <StatTile
             icon={PhoneForwarded}
             value={formatRate(stats?.transferred ?? 0, statsTotal)}
             label="Transferred"
-            detail={stats ? `${stats.transferred} of ${statsTotal} calls` : undefined}
+            detail={stats ? `${stats.transferred} of ${statsTotal} ${statsNoun}` : undefined}
           />
         </div>
 
@@ -762,73 +781,81 @@ function CallLogPageInner() {
               </button>
             )}
           </div>
-          <Select
-            value={lineFilter}
-            onValueChange={(value) => setLineFilter(value as "all" | CallLine)}
-          >
-            <SelectTrigger className="w-40 bg-card border-border">
-              <SelectValue placeholder="All lines" />
-            </SelectTrigger>
-            <SelectContent>
-              {lineFilterOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={outcomeFilter}
-            onValueChange={(value) => setOutcomeFilter(value as OutcomeFilter)}
-          >
-            <SelectTrigger className="w-44 bg-card border-border">
-              <SelectValue placeholder="All outcomes" />
-            </SelectTrigger>
-            <SelectContent>
-              {outcomeFilterOptions.map((option) => (
-                <Fragment key={option.value}>
-                  {option.value === firstTransferChoice && <SelectSeparator />}
-                  <SelectItem value={option.value}>{option.label}</SelectItem>
-                </Fragment>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={notBookedReasonFilter}
-            onValueChange={(value) => {
-              setNotBookedReasonFilter(value)
-              setNotBookedSubcategoryFilter("all")
-            }}
-          >
-            <SelectTrigger className="w-52 bg-card border-border">
-              <SelectValue placeholder="Not booked reasons" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Not booked reasons</SelectItem>
-              {notBookedReasonOptions.map((reason) => (
-                <SelectItem key={reason} value={reason}>
-                  {reason}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {notBookedReasonFilter !== "all" && subcategoryOptions.length > 0 && (
+          {bothLines && (
             <Select
-              value={notBookedSubcategoryFilter}
-              onValueChange={setNotBookedSubcategoryFilter}
+              value={lineFilter}
+              onValueChange={(value) => setLineFilter(value as "all" | CallLine)}
             >
-              <SelectTrigger className="w-64 bg-card border-border">
-                <SelectValue placeholder="All subcategories" />
+              <SelectTrigger className="w-40 bg-card border-border">
+                <SelectValue placeholder="All lines" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All subcategories</SelectItem>
-                {subcategoryOptions.map((sub) => (
-                  <SelectItem key={sub} value={sub}>
-                    {sub}
+                {lineFilterOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+          )}
+          {/* Outcome and not-booked filters narrow on reservation analytics;
+              a sales-only scope has none. */}
+          {!salesOnly && (
+            <>
+              <Select
+                value={outcomeFilter}
+                onValueChange={(value) => setOutcomeFilter(value as OutcomeFilter)}
+              >
+                <SelectTrigger className="w-44 bg-card border-border">
+                  <SelectValue placeholder="All outcomes" />
+                </SelectTrigger>
+                <SelectContent>
+                  {outcomeFilterOptions.map((option) => (
+                    <Fragment key={option.value}>
+                      {option.value === firstTransferChoice && <SelectSeparator />}
+                      <SelectItem value={option.value}>{option.label}</SelectItem>
+                    </Fragment>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={notBookedReasonFilter}
+                onValueChange={(value) => {
+                  setNotBookedReasonFilter(value)
+                  setNotBookedSubcategoryFilter("all")
+                }}
+              >
+                <SelectTrigger className="w-52 bg-card border-border">
+                  <SelectValue placeholder="Not booked reasons" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Not booked reasons</SelectItem>
+                  {notBookedReasonOptions.map((reason) => (
+                    <SelectItem key={reason} value={reason}>
+                      {reason}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {notBookedReasonFilter !== "all" && subcategoryOptions.length > 0 && (
+                <Select
+                  value={notBookedSubcategoryFilter}
+                  onValueChange={setNotBookedSubcategoryFilter}
+                >
+                  <SelectTrigger className="w-64 bg-card border-border">
+                    <SelectValue placeholder="All subcategories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All subcategories</SelectItem>
+                    {subcategoryOptions.map((sub) => (
+                      <SelectItem key={sub} value={sub}>
+                        {sub}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </>
           )}
 
           {/* Call-date range */}

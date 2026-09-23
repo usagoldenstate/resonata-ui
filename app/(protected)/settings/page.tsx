@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Building2, Globe, Megaphone, Save, Loader2, Lock, TriangleAlert, Users } from "lucide-react"
+import { Building2, Globe, Layers, Megaphone, Save, Loader2, Lock, TriangleAlert, Users } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -32,6 +32,7 @@ import { OperaCancellationCard } from "@/components/opera-cancellation-card"
 import { StaynTouchCancellationCard } from "@/components/stayntouch-cancellation-card"
 import { useHotel } from "@/lib/hotel-context"
 import { useCurrentUser } from "@/lib/current-user-context"
+import { lineSetOf, type HotelLines } from "@/lib/product-lines"
 import {
   ApiError,
   type HotelDetail,
@@ -140,6 +141,9 @@ export default function SettingsPage() {
   const [salesLineEnabled, setSalesLineEnabled] = useState(false)
   const [salesVapiPhoneNumberId, setSalesVapiPhoneNumberId] = useState("")
   const [salesInquiryEmail, setSalesInquiryEmail] = useState("")
+  // Which products the hotel bought (platform-admin only). Sections below
+  // follow the SAVED value, so fields don't vanish mid-edit.
+  const [productLines, setProductLines] = useState<HotelLines>("reservations")
   // Sales team roster — operator-editable (unlike the sales-line fields
   // above). Held as newline-separated text so the whole list edits like a
   // note; split and normalized on save.
@@ -160,6 +164,7 @@ export default function SettingsPage() {
     setSalesLineEnabled(d.sales_line_enabled ?? false)
     setSalesVapiPhoneNumberId(d.sales_vapi_phone_number_id ?? "")
     setSalesInquiryEmail(d.sales_inquiry_email ?? "")
+    setProductLines(d.lines ?? "reservations")
     setSalesRepNames((d.sales_rep_names ?? []).join("\n"))
     setTimezone(d.timezone)
   }, [])
@@ -268,6 +273,11 @@ export default function SettingsPage() {
         if (nextSalesEmail !== (detail.sales_inquiry_email ?? null)) {
           pfBody.sales_inquiry_email = nextSalesEmail
         }
+        // Validated together with the sales-line switch, so adding the sales
+        // line and switching it on can be one save.
+        if (productLines !== (detail.lines ?? "reservations")) {
+          pfBody.lines = productLines
+        }
         if (Object.keys(pfBody).length > 0) {
           latest = await updateHotelPlatformSettings(hotelId, pfBody)
         }
@@ -287,6 +297,8 @@ export default function SettingsPage() {
       setSaving(false)
     }
   }
+
+  const savedLines = lineSetOf(detail?.lines)
 
   const selectedHotelName =
     hotels.find((h) => h.hotel_id === hotelId)?.display_name ?? hotelId ?? ""
@@ -469,6 +481,8 @@ export default function SettingsPage() {
                   </p>
                 </div>
               )}
+              {/* Texting booking links is a reservations-line feature. */}
+              {savedLines.reservations && (
               <div className="space-y-2">
                 <Label htmlFor="twilioFromNumber" className="text-xs text-muted-foreground">
                   Text Message Sender Number
@@ -488,6 +502,7 @@ export default function SettingsPage() {
                     : "The phone number guests receive booking-link text messages from. When it is set, the agent offers guests a choice of email or text; otherwise links are emailed only."}
                 </p>
               </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="senderName" className="text-xs text-muted-foreground">
                   Sender Name
@@ -580,7 +595,9 @@ export default function SettingsPage() {
           {/* Operator-visible, unlike the Sales Intake Line card below: the
               people who work inquiries change often and the hotel manages
               them itself. These names are what the emailed follow-up page
-              offers as "who are you", and what an inquiry gets assigned to. */}
+              offers as "who are you", and what an inquiry gets assigned to.
+              Only for hotels with the sales line. */}
+          {savedLines.sales && (
           <Card className="border-border">
             <CardHeader className="pb-4">
               <div className="flex items-center gap-3">
@@ -615,6 +632,45 @@ export default function SettingsPage() {
               </p>
             </CardContent>
           </Card>
+          )}
+          {isPlatformAdmin && (
+            <Card className="border-border">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
+                    <Layers className="w-5 h-5 text-[#6b7a4a]" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Products</CardTitle>
+                    <CardDescription className="text-xs">
+                      Which phone lines this hotel uses. Decides what the dashboard shows its team.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Label htmlFor="productLines" className="text-xs text-muted-foreground">
+                  Lines
+                </Label>
+                <select
+                  id="productLines"
+                  value={productLines}
+                  onChange={(e) => setProductLines(e.target.value as HotelLines)}
+                  className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                >
+                  <option value="reservations">Reservations line only</option>
+                  <option value="sales">Sales line only</option>
+                  <option value="both">Reservations and sales lines</option>
+                </select>
+                <p className="text-[11px] text-muted-foreground">
+                  A sales-only hotel sees Call Log, Sales Inquiries, Knowledge Base, Agent
+                  Configuration and Settings, and its reservations webhook refuses new calls. The sales
+                  line can only be switched on when this includes sales; to remove sales, switch the
+                  line off first. Existing calls keep their line either way.
+                </p>
+              </CardContent>
+            </Card>
+          )}
           {isPlatformAdmin && (
             <Card className="border-border">
               <CardHeader className="pb-4">

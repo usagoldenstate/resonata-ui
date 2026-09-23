@@ -225,7 +225,7 @@ function SetupWizard({ hotelId }: { hotelId: string }) {
     return () => controller.abort()
   }, [load])
 
-  const linesMode = linesModeOf(status)
+  const linesMode = linesModeOf(detail)
 
   // Steps the backend says apply to this hotel, in wizard order. Review is
   // always last and always present.

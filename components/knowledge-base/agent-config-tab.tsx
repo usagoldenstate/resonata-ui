@@ -1,11 +1,13 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { Star, Plus, Trash2, Users } from "lucide-react"
+import { Star, Plus, Trash2, Users, MessageSquareQuote, PhoneForwarded } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { api, ApiError } from "@/lib/api"
+import { lineSetOf, type HotelLines, type LineSet } from "@/lib/product-lines"
 import { registerUnsavedGuard } from "@/lib/unsaved-guard"
 
 // ─── Agent Config Tab ───
@@ -76,15 +78,20 @@ type HotelDetail = {
   pms_provider: string
   agent_name: string | null
   first_message: string | null
-  // The sales intake line's own opener. Null/blank falls back to the shared
-  // sales-intake template. Only meaningful while `sales_line_enabled`.
-  sales_first_message: string | null
-  sales_line_enabled: boolean
+  // What the reservations line says while first_message is empty, rendered
+  // for this hotel — shown as the placeholder.
+  first_message_default?: string
   email_from: string | null
   preferred_rate_code: string | null
   max_call_minutes: number | null
   is_active: boolean
   transfer_departments: TransferDepartmentRow[]
+  // Which products the hotel bought; decides which per-line sections show.
+  lines?: HotelLines
+  // The sales line's own opener (null = the template) and the template
+  // rendered for this hotel, shown as the placeholder.
+  sales_first_message?: string | null
+  sales_first_message_default?: string
 }
 
 // Local edit-time shape. Carries the 3-field phone breakdown alongside the
@@ -151,7 +158,6 @@ function DepartmentCard({
   onDelete,
   canDelete,
   onSetDefault,
-  onSetSalesLineTransfer,
 }: {
   dept: Department
   onChange: (updates: Partial<Department>) => void
@@ -160,7 +166,6 @@ function DepartmentCard({
   // Toggling the catch-all on this row clears it on every other row.
   // Lifted to the parent so mutual-exclusivity stays consistent.
   onSetDefault: (next: boolean) => void
-  onSetSalesLineTransfer: (next: boolean) => void
 }) {
   const preview = buildE164FromParts(dept.phoneParts)
   const invalidReason = preview ? null : describeInvalidParts(dept.phoneParts)
@@ -306,21 +311,6 @@ function DepartmentCard({
           </span>
         </span>
       </label>
-
-      <label className="flex items-start gap-2 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={dept.salesLineTransfer}
-          onChange={(e) => onSetSalesLineTransfer(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-input accent-primary cursor-pointer"
-        />
-        <span className="text-sm">
-          <span className="font-medium">Sales line transfer target</span>
-          <span className="block text-xs text-muted-foreground mt-0.5">
-            When someone reaches the sales intake line but just wants an ordinary room reservation, the agent offers to transfer them here. Only one department can be the target; with none set, the agent reads out the reservations number instead.
-          </span>
-        </span>
-      </label>
     </div>
   )
 }
@@ -345,9 +335,11 @@ export function AgentConfigTab({
   const [preferredRateCode, setPreferredRateCode] = useState("")
   const [agentName, setAgentName] = useState("")
   const [firstMessage, setFirstMessage] = useState("")
+  const [firstMessageDefault, setFirstMessageDefault] = useState("")
   const [salesFirstMessage, setSalesFirstMessage] = useState("")
-  // Only hotels running the sales intake line get the second opener field.
-  const [salesLineEnabled, setSalesLineEnabled] = useState(false)
+  const [salesFirstMessageDefault, setSalesFirstMessageDefault] = useState("")
+  // Which per-line sections this hotel gets. Null until the hotel loads.
+  const [lines, setLines] = useState<LineSet | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   // Saved-baseline JSON snapshot of the form. Null while loading or before
   // first successful load. Compared against the live snapshot to derive dirty.
@@ -359,15 +351,15 @@ export function AgentConfigTab({
         departments: departments.map(snapshotDepartment),
         agentName,
         firstMessage,
-        salesFirstMessage,
         preferredRateCode,
+        salesFirstMessage,
       }),
     [
       departments,
       agentName,
       firstMessage,
-      salesFirstMessage,
       preferredRateCode,
+      salesFirstMessage,
     ],
   )
   const dirty = savedJson !== null && formSnapshot !== savedJson
@@ -379,8 +371,8 @@ export function AgentConfigTab({
   const applyHotelDetail = useCallback((hotel: HotelDetail) => {
     const loadedAgentName = hotel.agent_name ?? ""
     const loadedFirstMessage = hotel.first_message ?? ""
-    const loadedSalesFirstMessage = hotel.sales_first_message ?? ""
     const loadedPreferredRateCode = String(hotel.preferred_rate_code ?? "")
+    const loadedSalesFirstMessage = hotel.sales_first_message ?? ""
     const loadedDepartments = (hotel.transfer_departments ?? []).map(rowToDepartment)
     // Defensive: backend invariant is ≥1 department, but if a hotel ever
     // ends up empty (manual DB edit, mid-migration), give the user a blank
@@ -388,9 +380,11 @@ export function AgentConfigTab({
     if (loadedDepartments.length === 0) loadedDepartments.push(blankDepartment())
     setAgentName(loadedAgentName)
     setFirstMessage(loadedFirstMessage)
-    setSalesFirstMessage(loadedSalesFirstMessage)
-    setSalesLineEnabled(Boolean(hotel.sales_line_enabled))
     setPreferredRateCode(loadedPreferredRateCode)
+    setSalesFirstMessage(loadedSalesFirstMessage)
+    setFirstMessageDefault(hotel.first_message_default ?? "")
+    setSalesFirstMessageDefault(hotel.sales_first_message_default ?? "")
+    setLines(lineSetOf(hotel.lines))
     setDepartments(loadedDepartments)
     // Baseline must match the shape `formSnapshot` produces so dirty reads
     // false immediately after load.
@@ -399,8 +393,8 @@ export function AgentConfigTab({
         departments: loadedDepartments.map(snapshotDepartment),
         agentName: loadedAgentName,
         firstMessage: loadedFirstMessage,
-        salesFirstMessage: loadedSalesFirstMessage,
         preferredRateCode: loadedPreferredRateCode,
+        salesFirstMessage: loadedSalesFirstMessage,
       }),
     )
   }, [])
@@ -458,13 +452,12 @@ export function AgentConfigTab({
       })),
     )
   }, [])
-  // Same mutual exclusion for the sales line's transfer target.
-  const setDepartmentSalesLineTransfer = useCallback((id: string, next: boolean) => {
+  // The sales line's one transfer target, picked from a single dropdown
+  // (null = none: the agent reads out the reservations number instead). At
+  // most one department carries the flag, like the catch-all.
+  const setSalesTransferTarget = useCallback((id: string | null) => {
     setDepartments((prev) =>
-      prev.map((d) => ({
-        ...d,
-        salesLineTransfer: d.id === id ? next : next ? false : d.salesLineTransfer,
-      })),
+      prev.map((d) => ({ ...d, salesLineTransfer: d.id === id })),
     )
   }, [])
 
@@ -500,6 +493,9 @@ export function AgentConfigTab({
   }, [dirty])
 
   const handleSave = async () => {
+    // Nothing loaded yet (or the load failed): saving now would write the
+    // empty form over the hotel's real settings.
+    if (savedJson === null || lines === null) return
     if (departments.length === 0) {
       onErrorChange("At least one transfer department is required.")
       onStateChange("error")
@@ -577,16 +573,22 @@ export function AgentConfigTab({
 
     let hotelSaved = false
     try {
+      // Only the fields of the lines this hotel has: a sales-only hotel's
+      // hidden reservation fields (and vice versa) are left exactly as stored.
+      const hotelBody: Record<string, string | null> = {
+        agent_name: agentName || null,
+      }
+      if (lines?.reservations) {
+        hotelBody.first_message = firstMessage || null
+        hotelBody.preferred_rate_code = preferredRateCode || null
+      }
+      if (lines?.sales) {
+        // Blank clears to the template server-side.
+        hotelBody.sales_first_message = salesFirstMessage
+      }
       await api(`/api/v1/admin/hotels/${hotelId}`, {
         method: "PUT",
-        body: {
-          agent_name: agentName || null,
-          first_message: firstMessage || null,
-          // Only sent for hotels that run the line, so a hotel without one
-          // never has wording written to a column nothing speaks.
-          ...(salesLineEnabled ? { sales_first_message: salesFirstMessage || null } : {}),
-          preferred_rate_code: preferredRateCode || null,
-        },
+        body: hotelBody,
       })
       hotelSaved = true
 
@@ -636,6 +638,140 @@ export function AgentConfigTab({
     return () => registerSave(null)
   }, [registerSave])
 
+  const bothLines = Boolean(lines?.reservations && lines?.sales)
+  const salesTransferTarget = departments.find((d) => d.salesLineTransfer)?.id ?? ""
+
+  const reservationsSection = (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MessageSquareQuote className="w-4 h-4 text-primary" />
+            Reservations Greeting
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            What the agent says when it answers the reservations line. Leave it empty to use the default shown below.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+            First Message
+          </label>
+          <textarea
+            className="w-full min-h-[100px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+            value={firstMessage}
+            onChange={(e) => setFirstMessage(e.target.value)}
+            placeholder={firstMessageDefault}
+          />
+          {firstMessage.trim() !== "" && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setFirstMessage("")}
+              className="text-muted-foreground"
+            >
+              Reset to default
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Star className="w-4 h-4 text-primary" />
+            Preferred Rate Code
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">The rate code the AI agent should use when selling this property</p>
+        </CardHeader>
+        <CardContent>
+          <div>
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+              Rate Code
+            </label>
+            <Input
+              value={preferredRateCode}
+              onChange={(e) => setPreferredRateCode(e.target.value)}
+              placeholder="e.g. BAR, RACK, PROMO2024"
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </>
+  )
+
+  const salesSection = (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MessageSquareQuote className="w-4 h-4 text-primary" />
+            Sales Greeting
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            What the agent says when it answers the sales line. Leave it empty to use the default shown below.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+            First Message
+          </label>
+          <textarea
+            className="w-full min-h-[100px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+            value={salesFirstMessage}
+            onChange={(e) => setSalesFirstMessage(e.target.value)}
+            placeholder={salesFirstMessageDefault}
+          />
+          {salesFirstMessage.trim() !== "" && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setSalesFirstMessage("")}
+              className="text-muted-foreground"
+            >
+              Reset to default
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <PhoneForwarded className="w-4 h-4 text-primary" />
+            Sales Line Transfer
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            The sales line only rings after the sales team didn&apos;t answer, so the agent never transfers callers back to sales or the front desk. The one exception is a caller who just wants an ordinary room reservation.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <label
+            htmlFor="sales-transfer-target"
+            className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1"
+          >
+            Room-reservation callers are transferred to
+          </label>
+          <select
+            id="sales-transfer-target"
+            value={salesTransferTarget}
+            onChange={(e) => setSalesTransferTarget(e.target.value || null)}
+            className="w-full max-w-sm text-sm rounded-md border border-input bg-card px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <option value="">No transfer: read out the reservations number</option>
+            {departments.map((d, idx) => (
+              <option key={d.id} value={d.id}>
+                {d.name.trim() || `Department ${idx + 1}`}
+              </option>
+            ))}
+          </select>
+        </CardContent>
+      </Card>
+    </>
+  )
+
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       {loadError && (
@@ -668,7 +804,6 @@ export function AgentConfigTab({
               onDelete={() => removeDepartment(dept.id)}
               canDelete={departments.length > 1}
               onSetDefault={(next) => setDepartmentDefault(dept.id, next)}
-              onSetSalesLineTransfer={(next) => setDepartmentSalesLineTransfer(dept.id, next)}
             />
           ))}
           <Button
@@ -683,80 +818,50 @@ export function AgentConfigTab({
         </CardContent>
       </Card>
 
-      {/* Preferred Rate Code */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Star className="w-4 h-4 text-primary" />
-            Preferred Rate Code
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">The rate code the AI agent should use when selling this property</p>
-        </CardHeader>
-        <CardContent>
-          <div>
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
-              Rate Code
-            </label>
-            <Input
-              value={preferredRateCode}
-              onChange={(e) => setPreferredRateCode(e.target.value)}
-              placeholder="e.g. BAR, RACK, PROMO2024"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Agent Details */}
+      {/* Agent name — shared by every line */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Users className="w-4 h-4 text-primary" />
             Agent Details
           </CardTitle>
-          <p className="text-sm text-muted-foreground">Customize your AI agent&apos;s identity and greeting</p>
+          <p className="text-sm text-muted-foreground">
+            {bothLines
+              ? "The agent's name is shared by the reservations and sales lines"
+              : "Customize your AI agent's identity"}
+          </p>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
-              Agent Name
-            </label>
-            <Input
-              value={agentName}
-              onChange={(e) => setAgentName(e.target.value)}
-              placeholder="e.g. Sarah, Alex, Concierge"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
-              {salesLineEnabled ? "Reservations Line Opening" : "First Message"}
-            </label>
-            <textarea
-              className="w-full min-h-[100px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
-              value={firstMessage}
-              onChange={(e) => setFirstMessage(e.target.value)}
-              placeholder="e.g. Hi, thank you for calling The Lakehouse. My name is Sarah, how can I help you today?"
-            />
-          </div>
-          {salesLineEnabled && (
-            <div>
-              <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
-                Sales Line Opening
-              </label>
-              <textarea
-                className="w-full min-h-[100px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
-                value={salesFirstMessage}
-                onChange={(e) => setSalesFirstMessage(e.target.value)}
-                placeholder="e.g. Thanks for calling The Lakehouse sales team — I can take down the details of your event."
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                What callers to the sales intake line hear first. Leave blank to use the
-                standard sales opening.
-              </p>
-            </div>
-          )}
+        <CardContent>
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+            Agent Name
+          </label>
+          <Input
+            value={agentName}
+            onChange={(e) => setAgentName(e.target.value)}
+            placeholder="e.g. Sarah, Alex, Concierge"
+          />
         </CardContent>
       </Card>
 
+      {bothLines ? (
+        <Tabs defaultValue="reservations" className="gap-4">
+          <TabsList>
+            <TabsTrigger value="reservations">Reservations line</TabsTrigger>
+            <TabsTrigger value="sales">Sales line</TabsTrigger>
+          </TabsList>
+          <TabsContent value="reservations" className="space-y-6">
+            {reservationsSection}
+          </TabsContent>
+          <TabsContent value="sales" className="space-y-6">
+            {salesSection}
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <>
+          {lines?.reservations && reservationsSection}
+          {lines?.sales && salesSection}
+        </>
+      )}
     </div>
   )
 }

@@ -16,7 +16,6 @@ const TOOL_LABELS: Record<string, string> = {
   get_not_booked_seasonality: "Not-booked seasonality",
   get_faqs: "FAQs",
   get_revenue_summary: "Revenue",
-  get_csat_feedback: "Guest feedback",
   search_calls: "Searching calls",
   top_facets: "Ranking themes",
   get_booking_funnel: "Booking funnel",

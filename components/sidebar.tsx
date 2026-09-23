@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/lib/current-user-context"
 import { featureFlags } from "@/lib/env"
 import { organizationScopeLabel, useHotel } from "@/lib/hotel-context"
+import { lineRequiredFor, routeAvailable } from "@/lib/product-lines"
 import { confirmDiscardUnsaved } from "@/lib/unsaved-guard"
 
 import { Button } from "@/components/ui/button"
@@ -90,7 +91,13 @@ const ACCENT: Record<Accent, { label: string; activeText: string; activeBg: stri
 export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const pathname = usePathname()
-  const { hotels, organizations, scope, setScope, loading, accessState } = useHotel()
+  const { hotels, organizations, scope, setScope, loading, accessState, scopeLines } = useHotel()
+  // Items tied to one product line show only when the scope has that line
+  // (the same rule the protected layout's page guard enforces). Until the
+  // hotel list loads, line-specific items stay hidden rather than flashing a
+  // reservations nav at a sales-only hotel.
+  const lineVisible = (href: string) =>
+    scopeLines ? routeAvailable(href, scopeLines) : lineRequiredFor(href) === null
   // <select> value: "hotel:<id>" or "org:<id>".
   const scopeValue = scope ? (scope.kind === "hotel" ? `hotel:${scope.hotelId}` : `org:${scope.organizationId}`) : ""
   const independentHotels = hotels.filter((h) => !h.organization_id)
@@ -174,7 +181,7 @@ export function Sidebar() {
 
       <nav aria-label="Main navigation" className="flex-1 px-3 pb-2 overflow-y-auto">
         {sections.map((section) => {
-          const items = section.items.filter((item) => item.visible)
+          const items = section.items.filter((item) => item.visible && lineVisible(item.href))
           if (items.length === 0) return null
           const accent = ACCENT[section.accent]
           return (
