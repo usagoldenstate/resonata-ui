@@ -355,6 +355,14 @@ export type CallListItem = {
   // matched no configured department (the row still reads as transferred).
   transferred: boolean
   transfer_department_name: string | null
+  // Orthogonal to `outcome` and `transferred`: "cancelled" when a
+  // reservation was cancelled on the call, "attempted" for any other
+  // cancellation activity, null for none. `cancellation_needs_verification`
+  // is its own flag — a call can cancel one reservation and leave another's
+  // outcome unknown.
+  cancellation_outcome: CancellationOutcome | null
+  cancellation_status: CancellationStatus | null
+  cancellation_needs_verification: boolean
   // Set only when a `q` search matched the transcript: the excerpt around
   // the first spoken match. null for id/summary-only matches (speaker is
   // null when the match precedes any speaker label).
@@ -386,6 +394,38 @@ export type CallOutcomeFilter =
   | "pending"
 
 export type CallLine = "reservations" | "sales"
+
+// A call's cancellation activity, derived at end of call from the cancellation
+// tools' results. Mirrors the backend's CancellationOutcome/CancellationStatus
+// (schemas/call_records.py).
+export type CancellationOutcome = "cancelled" | "attempted"
+export type CancellationStatus =
+  | "started"
+  | "not_found"
+  | "failed"
+  | "needs_staff"
+  | "eligible_not_completed"
+  | "already_cancelled"
+  | "outcome_unknown"
+  | "cancelled"
+
+// Call-log filter: `any` is either group; `needs_verification` is the
+// independent unknown-outcome flag.
+export type CancellationFilter = "cancelled" | "attempted" | "needs_verification" | "any"
+
+// One reservation the call's cancellation flow touched. Mirrors
+// CancellationAttemptSummary. `reason` is the tool's code, e.g.
+// "active_cancellation_penalty" (needs_staff) or "tool_failure" /
+// "no_result" / "outcome_unknown" (outcome_unknown).
+export type CancellationAttempt = {
+  confirmation_number: string | null
+  status: CancellationStatus
+  reason: string | null
+  lookups: number
+  cancellation_number: string | null
+  check_in: string | null
+  check_out: string | null
+}
 
 // The structured intake a sales-line call produced — one per call, written
 // mid-call by the submit_sales_inquiry tool. Mirrors the backend's
@@ -441,6 +481,10 @@ export type CallStats = {
   not_bookable: number
   pending: number
   transferred: number
+  // Orthogonal cancellation counts; needs_verification overlaps both groups.
+  cancelled: number
+  cancellation_attempted: number
+  cancellation_needs_verification: number
   // Mean over calls with a recorded duration; null when there are none.
   avg_duration_seconds: number | null
 }
@@ -480,6 +524,14 @@ export type CallDetail = {
   // Orthogonal to `outcome`: the call ended forwarded to a human.
   transferred: boolean
   transfer_department_name: string | null
+  // Cancellation outcome (see CallListItem) plus one entry per reservation.
+  // `cancellation_extraction_failed` = the call's history couldn't be read,
+  // so a null outcome then says nothing about whether a cancellation happened.
+  cancellation_outcome: CancellationOutcome | null
+  cancellation_status: CancellationStatus | null
+  cancellation_needs_verification: boolean
+  cancellation_extraction_failed: boolean
+  cancellation_attempts: CancellationAttempt[]
   created_at: string
   updated_at: string
 }
@@ -1348,6 +1400,8 @@ export function fetchCalls(
     // Narrows within whatever outcome filter is set (a transferred call keeps
     // its own outcome bucket); omit for both.
     transferred?: boolean
+    // Likewise narrows within the outcome / transfer filters.
+    cancellation?: CancellationFilter
   },
   opts: Pick<Options, "signal"> = {},
 ) {
@@ -1355,7 +1409,7 @@ export function fetchCalls(
 }
 
 // Honors hotel + date range only: the backend ignores outcome / transfer /
-// reason filters so a rate never collapses to 100% when its bucket is selected.
+// cancellation / reason filters so a rate never collapses to 100% when its bucket is selected.
 export function fetchCallStats(
   params: {
     hotel_id: string | string[]

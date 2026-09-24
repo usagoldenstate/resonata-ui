@@ -6,6 +6,7 @@ import useSWR from "swr"
 import {
   BadgeCheck,
   CalendarCheck,
+  CalendarX,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -21,6 +22,7 @@ import {
   Phone,
   PhoneForwarded,
   Search,
+  TriangleAlert,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -57,6 +59,10 @@ import {
   type CallListItem,
   type CallOutcomeFilter,
   type CallSearchSnippet,
+  type CancellationAttempt,
+  type CancellationFilter,
+  type CancellationOutcome,
+  type CancellationStatus,
   type SalesInquiry,
   type SentLink,
   deleteCall,
@@ -77,12 +83,17 @@ const PAGE_SIZE = 50
 // chosen, unlike the reporting pages' rolling 30-day default. The picker
 // itself shows the app-wide DATE_RANGE_PRESETS.
 
-// The outcome dropdown filters on two dimensions. The first six entries are the
-// server-derived outcome buckets; the last two filter on transfer instead, which
-// is orthogonal (a transferred call still lands in booked / link_sent / …), so
-// picking one of them clears the outcome narrowing and vice versa.
+// The outcome dropdown filters on three dimensions. The first six entries are
+// the server-derived outcome buckets; the next two filter on transfer and the
+// last three on cancellation instead, both orthogonal (a transferred or
+// cancelled call still lands in booked / not_bookable / …), so picking one
+// clears the outcome narrowing and vice versa.
 type TransferChoice = "transferred" | "not_transferred"
-type OutcomeFilter = "all" | CallOutcomeFilter | TransferChoice
+type CancellationChoice =
+  | "cancellation_cancelled"
+  | "cancellation_attempted"
+  | "cancellation_needs_verification"
+type OutcomeFilter = "all" | CallOutcomeFilter | TransferChoice | CancellationChoice
 
 const outcomeFilterOptions: Array<{ value: OutcomeFilter; label: string }> = [
   { value: "all", label: "All outcomes" },
@@ -93,22 +104,38 @@ const outcomeFilterOptions: Array<{ value: OutcomeFilter; label: string }> = [
   { value: "pending", label: "Pending" },
   { value: "transferred", label: "Transferred" },
   { value: "not_transferred", label: "Not transferred" },
+  { value: "cancellation_cancelled", label: "Cancelled" },
+  { value: "cancellation_attempted", label: "Cancellation attempted" },
+  { value: "cancellation_needs_verification", label: "Needs verification" },
 ]
 
 const outcomeFilterValues = new Set<string>(outcomeFilterOptions.map((o) => o.value))
 
-// The dropdown draws a divider above this entry: everything from here down
-// filters on transfer rather than on the outcome bucket.
+// The dropdown draws a divider above each of these entries: everything from
+// the first down filters on transfer, from the second on cancellation.
 const firstTransferChoice: OutcomeFilter = "transferred"
+const firstCancellationChoice: OutcomeFilter = "cancellation_cancelled"
 
-// Splits the single dropdown value back into the two backend query params.
+const cancellationChoiceParams: Record<CancellationChoice, CancellationFilter> = {
+  cancellation_cancelled: "cancelled",
+  cancellation_attempted: "attempted",
+  cancellation_needs_verification: "needs_verification",
+}
+
+function isCancellationChoice(filter: OutcomeFilter): filter is CancellationChoice {
+  return filter in cancellationChoiceParams
+}
+
+// Splits the single dropdown value back into the backend query params.
 function outcomeFilterParams(filter: OutcomeFilter): {
   outcome?: CallOutcomeFilter
   transferred?: boolean
+  cancellation?: CancellationFilter
 } {
   if (filter === "all") return {}
   if (filter === "transferred") return { transferred: true }
   if (filter === "not_transferred") return { transferred: false }
+  if (isCancellationChoice(filter)) return { cancellation: cancellationChoiceParams[filter] }
   return { outcome: filter }
 }
 
@@ -292,6 +319,156 @@ function TransferBadge({ department }: { department: string | null }) {
       <PhoneForwarded className="w-3 h-3" aria-hidden="true" />
       {department ? `Transferred → ${department}` : "Transferred"}
     </span>
+  )
+}
+
+// Additive tag, like TransferBadge: the call's cancellation activity. A red
+// "Verify" tag rides separately — one call can cancel one reservation and
+// leave another's outcome unknown, so it is never folded into the group.
+function CancellationBadges({
+  outcome,
+  status,
+  needsVerification,
+}: {
+  outcome: CancellationOutcome | null
+  status: CancellationStatus | null
+  needsVerification: boolean
+}) {
+  return (
+    <>
+      {outcome === "cancelled" && (
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-[#6b7a4a]/50 text-[#6b7a4a] whitespace-nowrap"
+          title="A reservation was cancelled on this call"
+        >
+          <CalendarX className="w-3 h-3" aria-hidden="true" />
+          Cancelled
+        </span>
+      )}
+      {outcome === "attempted" && (
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-border text-muted-foreground whitespace-nowrap"
+          title={status ? `Cancellation attempted: ${cancellationStatusLabel(status, null)}` : "Cancellation attempted"}
+        >
+          <CalendarX className="w-3 h-3" aria-hidden="true" />
+          Cancellation attempted
+        </span>
+      )}
+      {needsVerification && (
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-destructive/10 text-destructive whitespace-nowrap"
+          title="A cancel request may or may not have gone through — check the reservation in the PMS"
+        >
+          <TriangleAlert className="w-3 h-3" aria-hidden="true" />
+          Verify in PMS
+        </span>
+      )}
+    </>
+  )
+}
+
+function cancellationStatusLabel(status: CancellationStatus, reason: string | null): string {
+  switch (status) {
+    case "cancelled":
+      return "Cancelled"
+    case "already_cancelled":
+      return "Already cancelled before this call"
+    case "not_found":
+      return "Reservation not found"
+    case "needs_staff":
+      return reason === "active_cancellation_penalty"
+        ? "Cancellation fee applies — referred to the front desk"
+        : "Needs front desk review — not cancelled"
+    case "eligible_not_completed":
+      return "Eligible, but not cancelled (the caller declined or hung up)"
+    case "failed":
+      return "System error — nothing was cancelled"
+    case "outcome_unknown":
+      return "Outcome unknown — check the reservation in the PMS"
+    case "started":
+      return "No reservation was looked up"
+  }
+}
+
+function formatStay(attempt: CancellationAttempt): string | null {
+  if (attempt.check_in && attempt.check_out) {
+    return `${formatShortDate(attempt.check_in)} – ${formatShortDate(attempt.check_out)}`
+  }
+  return attempt.check_in ? `Arriving ${formatShortDate(attempt.check_in)}` : null
+}
+
+type CancellationState = {
+  outcome: CancellationOutcome | null
+  status: CancellationStatus | null
+  needsVerification: boolean
+  extractionFailed: boolean
+  attempts: CancellationAttempt[]
+}
+
+// What the call's cancellation flow did, one line per reservation, shown
+// above the transcript. Renders nothing for calls without cancellation
+// activity unless their history couldn't be read.
+function CancellationPanel({ cancellation }: { cancellation: CancellationState }) {
+  const { outcome, status, needsVerification, extractionFailed, attempts } = cancellation
+  if (!outcome && !extractionFailed) return null
+  return (
+    <div className="mb-6 max-w-2xl">
+      <h4 className="mb-3 text-sm font-semibold text-foreground">Cancellation</h4>
+      {needsVerification && (
+        <p className="mb-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          A cancel request on this call may or may not have gone through. Check the reservation in
+          the PMS and contact the guest if needed.
+        </p>
+      )}
+      {extractionFailed && !outcome && (
+        <p className="text-sm text-muted-foreground">
+          This call&apos;s cancellation details couldn&apos;t be read, so it isn&apos;t known whether a
+          cancellation was attempted.
+        </p>
+      )}
+      {outcome && attempts.length === 0 && (
+        <p className="text-sm text-card-foreground">
+          {status === "started"
+            ? "The caller asked to cancel, but the call ended or was transferred before a reservation was looked up."
+            : status
+              ? cancellationStatusLabel(status, null)
+              : "Cancellation attempted"}
+        </p>
+      )}
+      {attempts.length > 0 && (
+        <ul className="space-y-3">
+          {attempts.map((attempt, idx) => {
+            const stay = formatStay(attempt)
+            return (
+              <li key={idx} className="text-sm">
+                <p className="text-card-foreground">
+                  <span className="font-medium">
+                    {attempt.confirmation_number
+                      ? `Confirmation ${attempt.confirmation_number}`
+                      : "Reservation"}
+                  </span>
+                  {stay && <span className="text-muted-foreground"> · {stay}</span>}
+                </p>
+                <p
+                  className={
+                    attempt.status === "outcome_unknown"
+                      ? "text-destructive"
+                      : attempt.status === "cancelled"
+                        ? "text-[#6b7a4a]"
+                        : "text-muted-foreground"
+                  }
+                >
+                  {cancellationStatusLabel(attempt.status, attempt.reason)}
+                  {attempt.cancellation_number && ` · cancellation number ${attempt.cancellation_number}`}
+                  {attempt.lookups > 1 && ` · looked up ${attempt.lookups} times`}
+                </p>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -614,6 +791,7 @@ type TranscriptState = {
   // Sales-line calls only (null otherwise, or when no inquiry was recorded).
   salesInquiry: SalesInquiry | null
   sentLinks: SentLink[]
+  cancellation: CancellationState
 }
 
 // Vapi only keeps call audio for 14 days; past that the fetch fails upstream,
@@ -725,6 +903,10 @@ function CallLogPageInner() {
     const transferred = searchParams.get("transferred")
     if (transferred === "yes" || transferred === "true") return "transferred"
     if (transferred === "no" || transferred === "false") return "not_transferred"
+    const cancellation = searchParams.get("cancellation")
+    if (cancellation === "cancelled") return "cancellation_cancelled"
+    if (cancellation === "attempted") return "cancellation_attempted"
+    if (cancellation === "needs_verification") return "cancellation_needs_verification"
     return "all"
   })
   const [notBookedReasonFilter, setNotBookedReasonFilter] = useState(
@@ -882,6 +1064,13 @@ function CallLogPageInner() {
         hasRecording: transcriptDetail?.has_recording ?? false,
         salesInquiry: transcriptDetail?.sales_inquiry ?? null,
         sentLinks: transcriptDetail?.sent_links ?? [],
+        cancellation: {
+          outcome: transcriptDetail?.cancellation_outcome ?? null,
+          status: transcriptDetail?.cancellation_status ?? null,
+          needsVerification: transcriptDetail?.cancellation_needs_verification ?? false,
+          extractionFailed: transcriptDetail?.cancellation_extraction_failed ?? false,
+          attempts: transcriptDetail?.cancellation_attempts ?? [],
+        },
       }
     : null
 
@@ -931,6 +1120,11 @@ function CallLogPageInner() {
   // calls have no verdict yet, so they're left out of the denominator.
   const bookableCount = stats ? stats.booked + stats.link_sent + stats.not_booked : 0
   const decidedCount = stats ? statsTotal - stats.pending : 0
+  // Cancellation reporting appears only once the period has cancellation
+  // activity (the tile and the filter entries); an active cancellation filter
+  // keeps its entries so the dropdown can still show and clear it.
+  const cancellationCalls = stats ? stats.cancelled + stats.cancellation_attempted : 0
+  const showCancellationFilter = cancellationCalls > 0 || isCancellationChoice(outcomeFilter)
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -989,6 +1183,19 @@ function CallLogPageInner() {
             label="Transferred"
             detail={stats ? `${stats.transferred} of ${statsTotal} ${statsNoun}` : undefined}
           />
+          {stats && cancellationCalls > 0 && (
+            <StatTile
+              icon={CalendarX}
+              value={stats.cancelled.toLocaleString()}
+              label="Cancelled"
+              detail={[
+                `${stats.cancellation_attempted} more attempted`,
+                ...(stats.cancellation_needs_verification > 0
+                  ? [`${stats.cancellation_needs_verification} to verify`]
+                  : []),
+              ].join(" · ")}
+            />
+          )}
         </div>
 
         {/* Filters */}
@@ -1043,12 +1250,15 @@ function CallLogPageInner() {
                   <SelectValue placeholder="All outcomes" />
                 </SelectTrigger>
                 <SelectContent>
-                  {outcomeFilterOptions.map((option) => (
-                    <Fragment key={option.value}>
-                      {option.value === firstTransferChoice && <SelectSeparator />}
-                      <SelectItem value={option.value}>{option.label}</SelectItem>
-                    </Fragment>
-                  ))}
+                  {outcomeFilterOptions
+                    .filter((option) => showCancellationFilter || !isCancellationChoice(option.value))
+                    .map((option) => (
+                      <Fragment key={option.value}>
+                        {(option.value === firstTransferChoice ||
+                          option.value === firstCancellationChoice) && <SelectSeparator />}
+                        <SelectItem value={option.value}>{option.label}</SelectItem>
+                      </Fragment>
+                    ))}
                 </SelectContent>
               </Select>
               <Select
@@ -1209,6 +1419,11 @@ function CallLogPageInner() {
                               {call.transferred && (
                                 <TransferBadge department={call.transfer_department_name} />
                               )}
+                              <CancellationBadges
+                                outcome={call.cancellation_outcome}
+                                status={call.cancellation_status}
+                                needsVerification={call.cancellation_needs_verification}
+                              />
                             </div>
                           )}
                         </td>
@@ -1270,7 +1485,10 @@ function CallLogPageInner() {
                                 </div>
                               )}
                               {transcript && !transcript.loading && !transcript.error && (
-                                <SentLinksPanel links={transcript.sentLinks} />
+                                <>
+                                  <CancellationPanel cancellation={transcript.cancellation} />
+                                  <SentLinksPanel links={transcript.sentLinks} />
+                                </>
                               )}
                               <h4 className="text-sm font-semibold text-foreground mb-4">
                                 Call Transcript
