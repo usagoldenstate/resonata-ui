@@ -53,6 +53,7 @@ const LINE_RULES: LineRule[] = [
   { line: "reservations", matches: prefix("/faqs") },
   { line: "reservations", matches: prefix("/room-mapping") },
   { line: "sales", matches: prefix("/sales-inquiries") },
+  { line: "sales", matches: prefix("/sales-reports") },
 ]
 
 // The line a route needs, or null for a route every hotel has.

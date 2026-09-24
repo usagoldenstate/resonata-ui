@@ -163,7 +163,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   return <>
     <header className="flex items-center justify-between gap-4 border-b bg-card px-8 py-6">
       <div><h1 className="text-2xl font-semibold tracking-tight">Sales Inquiries</h1><p className="mt-1 text-sm text-muted-foreground">Every sales call captured. Every follow-up in one place.</p></div>
-      <Button variant="outline" size="sm" disabled={isValidating} onClick={() => { void mutate(); void staff.mutate(); void detail.mutate() }}><RefreshCw className={`size-4 ${isValidating ? "animate-spin" : ""}`} />Refresh</Button>
+      <div className="flex items-center gap-2"><Button variant="outline" size="sm" asChild><Link href="/sales-reports"><Mail className="size-4" />Weekly report</Link></Button><Button variant="outline" size="sm" disabled={isValidating} onClick={() => { void mutate(); void staff.mutate(); void detail.mutate() }}><RefreshCw className={`size-4 ${isValidating ? "animate-spin" : ""}`} />Refresh</Button></div>
     </header>
     <div className="space-y-6 p-6 lg:p-8">
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{cards.map(card => <div key={card.label} className="metric-card rounded-2xl border border-border/80 bg-card p-5 shadow-xs"><div className="flex items-center justify-between text-sm text-muted-foreground">{card.label}<card.icon className={`size-4 ${card.color}`} /></div><p className="metric-value mt-3 text-3xl font-semibold tabular-nums">{!data || error || invalidDates || invalidEventDates ? "—" : card.value}</p></div>)}</div>
