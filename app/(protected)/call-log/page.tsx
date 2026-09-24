@@ -616,18 +616,26 @@ type TranscriptState = {
   sentLinks: SentLink[]
 }
 
+// Vapi only keeps call audio for 14 days; past that the fetch fails upstream,
+// so older calls show the retention notice instead of requesting the audio.
+const RECORDING_RETENTION_DAYS = 14
+
 // Self-contained recording player: fetches the audio blob through the authed
 // proxy (cached by SWR, so re-expanding a row plays instantly without
 // refetching) and plays it with the native <audio> controls. The object URL
 // is local — created whenever the cached blob changes and revoked on cleanup,
 // so it's freed both when the blob changes and when the row collapses and
 // this unmounts.
-function CallRecordingPlayer({ callId }: { callId: string }) {
+function CallRecordingPlayer({ callId, createdAt }: { callId: string; createdAt: string }) {
+  const expired =
+    Date.now() - parseUtc(createdAt).getTime() > RECORDING_RETENTION_DAYS * 24 * 60 * 60 * 1000
   const {
     data: blob,
     isLoading,
     error,
-  } = useSWR(["call-recording", callId] as const, ([, id]) => fetchCallRecording(id))
+  } = useSWR(expired ? null : (["call-recording", callId] as const), ([, id]) =>
+    fetchCallRecording(id),
+  )
   const [url, setUrl] = useState<string | null>(null)
 
   useEffect(() => {
@@ -640,6 +648,13 @@ function CallRecordingPlayer({ callId }: { callId: string }) {
     return () => URL.revokeObjectURL(objectUrl)
   }, [blob])
 
+  if (expired) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {`Recordings are only stored for ${RECORDING_RETENTION_DAYS} days, so this call's recording is no longer available.`}
+      </p>
+    )
+  }
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1251,7 +1266,7 @@ function CallLogPageInner() {
                                   <h4 className="text-sm font-semibold text-foreground mb-3">
                                     Recording
                                   </h4>
-                                  <CallRecordingPlayer callId={call.id} />
+                                  <CallRecordingPlayer callId={call.id} createdAt={call.created_at} />
                                 </div>
                               )}
                               {transcript && !transcript.loading && !transcript.error && (
