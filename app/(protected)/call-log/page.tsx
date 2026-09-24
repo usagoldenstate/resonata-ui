@@ -12,6 +12,8 @@ import {
   ChevronRight,
   ChevronUp,
   Copy,
+  CircleHelp,
+  ExternalLink,
   Link2,
   Loader2,
   Mail,
@@ -36,6 +38,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   Select,
   SelectContent,
@@ -54,6 +57,7 @@ import {
   type CallListItem,
   type CallOutcomeFilter,
   type SalesInquiry,
+  type SentLink,
   deleteCall,
   fetchCallDetail,
   fetchCallRecording,
@@ -377,6 +381,127 @@ function formatCallerPhone(e164: string | null): string {
   return e164
 }
 
+const sentLinkKindLabels: Record<SentLink["kind"], string> = {
+  booking_link: "Booking link",
+  payment_link: "Payment link",
+}
+
+// "Booking link texted to (408) 596-9197" — or, when delivery didn't
+// confirm, the same statement plus a toned status so a failed send stands out.
+function deliveryStatement(link: SentLink): { verb: string; status: { text: string; tone: string } | null } {
+  const sms = link.channel === "sms"
+  if (link.delivery_status === "sent") return { verb: sms ? "texted" : "emailed", status: null }
+  const verb = sms ? "text" : "email"
+  switch (link.delivery_status) {
+    case "gave_up":
+      return { verb, status: { text: "not delivered", tone: "text-destructive" } }
+    case "failed":
+    case "unknown":
+      return { verb, status: { text: "failed, retrying", tone: "text-amber-700" } }
+    default:
+      return { verb, status: { text: "pending", tone: "text-muted-foreground" } }
+  }
+}
+
+function SentLinkRow({ link }: { link: SentLink }) {
+  const [copied, setCopied] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const safe = /^https?:\/\//i.test(link.url)
+  const recipient =
+    link.channel === "sms" ? formatCallerPhone(link.recipient) : (link.recipient ?? "—")
+  const { verb, status } = deliveryStatement(link)
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(link.url)
+      setCopied(true)
+      toast.success("Link copied")
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error("Couldn't copy link")
+    }
+  }
+
+  return (
+    <li className="min-w-0">
+      <h4 className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        {sentLinkKindLabels[link.kind]}{link.delivery_status === "sent" ? " sent" : ""}
+        <Tooltip open={helpOpen} onOpenChange={setHelpOpen}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`About ${sentLinkKindLabels[link.kind].toLowerCase()} validity`}
+              className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              onClick={event => {
+                event.preventDefault()
+                event.stopPropagation()
+                setHelpOpen(true)
+              }}
+            >
+              <CircleHelp className="size-3.5" aria-hidden="true" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-72 font-normal leading-relaxed" sideOffset={6}>
+            {link.kind === "booking_link"
+              ? "This link reflects availability when it was sent. Rates and availability may change, and the link may no longer work after the selected stay dates."
+              : "Payment links may expire. If the reservation hold has expired or been cancelled, this link may no longer work."}
+          </TooltipContent>
+        </Tooltip>
+      </h4>
+      <p className="min-w-0 break-words text-sm text-card-foreground">
+        {verb.charAt(0).toUpperCase() + verb.slice(1)} to {recipient}
+        {status && <span className={status.tone}> · {status.text}</span>}
+      </p>
+      <div className="-ml-2.5 mt-1.5 flex flex-wrap items-center gap-1">
+        {safe ? (
+          <Button asChild variant="ghost" size="sm" className="text-primary">
+            <a
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={link.url}
+              aria-label={`Open ${sentLinkKindLabels[link.kind].toLowerCase()} for ${recipient} in a new tab`}
+            >
+              Open link
+              <ExternalLink className="size-3.5" aria-hidden="true" />
+            </a>
+          </Button>
+        ) : (
+          <span className="text-xs text-muted-foreground">Preview unavailable</span>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleCopy}
+          title="Copy full link"
+          aria-label={`Copy ${sentLinkKindLabels[link.kind].toLowerCase()} for ${recipient}`}
+          className="text-muted-foreground"
+        >
+          {copied ? <Check className="size-3.5 text-primary" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
+          <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
+        </Button>
+      </div>
+    </li>
+  )
+}
+
+// The exact links the agent sent the caller, so staff can open one and check
+// it lands on the right room, dates and rate. Only http(s) URLs become
+// anchors; other URL schemes remain available to copy.
+function SentLinksPanel({ links }: { links: SentLink[] }) {
+  if (links.length === 0) return null
+  return (
+    <div className="mb-6 w-fit max-w-full">
+      <ul className="space-y-6">
+        {links.map((link, idx) => (
+          <SentLinkRow key={idx} link={link} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 type TranscriptTurn = { speaker: "Agent" | "Guest" | "System"; text: string }
 
 // The backend stores transcripts as "User: ..." / "Assistant: ..." lines
@@ -405,6 +530,7 @@ type TranscriptState = {
   hasRecording: boolean
   // Sales-line calls only (null otherwise, or when no inquiry was recorded).
   salesInquiry: SalesInquiry | null
+  sentLinks: SentLink[]
 }
 
 // Self-contained recording player: fetches the audio blob through the authed
@@ -653,6 +779,7 @@ function CallLogPageInner() {
         error: transcriptErrorRaw ? describeError(transcriptErrorRaw) : null,
         hasRecording: transcriptDetail?.has_recording ?? false,
         salesInquiry: transcriptDetail?.sales_inquiry ?? null,
+        sentLinks: transcriptDetail?.sent_links ?? [],
       }
     : null
 
@@ -1030,6 +1157,9 @@ function CallLogPageInner() {
                                   </h4>
                                   <CallRecordingPlayer callId={call.id} />
                                 </div>
+                              )}
+                              {transcript && !transcript.loading && !transcript.error && (
+                                <SentLinksPanel links={transcript.sentLinks} />
                               )}
                               <h4 className="text-sm font-semibold text-foreground mb-4">
                                 Call Transcript

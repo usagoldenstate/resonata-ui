@@ -436,6 +436,20 @@ export type CallStats = {
   avg_duration_seconds: number | null
 }
 
+// A link the agent sent the caller during the call — a booking-engine deep
+// link or a PMS card-hold pay link. Mirrors SentLinkSummary in the backend's
+// schemas/call_records.py. `delivery_status` is the ledger's raw status
+// ("sent" = the email/SMS provider accepted it).
+export type SentLink = {
+  kind: "booking_link" | "payment_link"
+  url: string
+  channel: "email" | "sms"
+  recipient: string | null
+  delivery_status: string
+  sent_at: string | null
+  created_at: string
+}
+
 export type CallDetail = {
   id: string
   provider_call_id: string
@@ -452,6 +466,8 @@ export type CallDetail = {
   // Sales-line calls only; null on reservations calls and on sales calls that
   // ended before the inquiry was submitted.
   sales_inquiry: SalesInquiry | null
+  // Every link sent to the caller on this call, oldest first.
+  sent_links: SentLink[]
   // Orthogonal to `outcome`: the call ended forwarded to a human.
   transferred: boolean
   transfer_department_name: string | null
