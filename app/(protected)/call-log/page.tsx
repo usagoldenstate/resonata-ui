@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState, Fragment } from "react"
+import { Suspense, useEffect, useRef, useState, Fragment } from "react"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
 import {
@@ -56,6 +56,7 @@ import {
   type CallLine,
   type CallListItem,
   type CallOutcomeFilter,
+  type CallSearchSnippet,
   type SalesInquiry,
   type SentLink,
   deleteCall,
@@ -504,6 +505,88 @@ function SentLinksPanel({ links }: { links: SentLink[] }) {
 
 type TranscriptTurn = { speaker: "Agent" | "Guest" | "System"; text: string }
 
+// Mirrors the backend (api/call_search.py): shorter search terms match call
+// ids only, so there are no words to highlight.
+const MIN_TEXT_SEARCH_LENGTH = 3
+
+function textSearchTerm(search: string): string | null {
+  const term = search.trim()
+  return term.length >= MIN_TEXT_SEARCH_LENGTH ? term : null
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+// Wraps every case-insensitive occurrence of `term` in a <mark>.
+function Highlighted({ text, term }: { text: string; term: string | null }) {
+  if (!term) return <>{text}</>
+  const parts = text.split(new RegExp(`(${escapeRegExp(term)})`, "gi"))
+  return (
+    <>
+      {parts.map((part, idx) =>
+        // split() with one capture group puts the matches at odd indexes.
+        idx % 2 === 1 ? (
+          <mark key={idx} className="rounded-sm bg-[#c4a84b]/30 px-0.5 text-inherit">
+            {part}
+          </mark>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  )
+}
+
+function SearchSnippet({ snippet, term }: { snippet: CallSearchSnippet; term: string | null }) {
+  return (
+    <p className="mt-1 line-clamp-2 whitespace-normal text-xs text-card-foreground">
+      {snippet.speaker && (
+        <span className="font-medium text-muted-foreground">
+          {snippet.speaker === "guest" ? "Guest" : "Agent"}:{" "}
+        </span>
+      )}
+      <Highlighted text={snippet.text} term={term} />
+    </p>
+  )
+}
+
+// The transcript turns, with the search term highlighted; on open the panel
+// scrolls (itself, not the page) to the first match.
+function TranscriptTurns({ turns, term }: { turns: TranscriptTurn[]; term: string | null }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const container = containerRef.current
+    const firstMatch = container?.querySelector("mark")
+    if (!container || !firstMatch) return
+    container.scrollTop =
+      firstMatch.getBoundingClientRect().top - container.getBoundingClientRect().top - 16
+  }, [turns, term])
+
+  return (
+    <div ref={containerRef} className="space-y-3 max-h-80 overflow-y-auto">
+      {turns.map((line, idx) => (
+        <div key={idx} className="flex gap-3">
+          <span
+            className={`text-xs font-medium px-2 py-1 rounded shrink-0 ${
+              line.speaker === "Agent"
+                ? "bg-[#6b7a4a]/10 text-[#6b7a4a]"
+                : line.speaker === "Guest"
+                  ? "bg-[#c4a84b]/10 text-[#a08930]"
+                  : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {line.speaker}
+          </span>
+          <p className="text-sm text-card-foreground leading-relaxed whitespace-pre-line">
+            <Highlighted text={line.text} term={term} />
+          </p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // The backend stores transcripts as "User: ..." / "Assistant: ..." lines
 // (voice/realtime/transcript.py::render). Unprefixed lines are continuations
 // of the previous turn.
@@ -642,7 +725,9 @@ function CallLogPageInner() {
   const [dateTimespan, setDateTimespan] = useState(() =>
     searchParams.get("date_from") || searchParams.get("date_to") ? "custom" : "all",
   )
-  const [callIdSearch, setCallIdSearch] = useState(() => searchParams.get("call_id") ?? "")
+  // One box: a call id fragment or words said on the call. Deep links from
+  // other pages pass a call id as `q`.
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "")
   const [lineFilter, setLineFilter] = useState<"all" | CallLine>(() => {
     const param = searchParams.get("line")
     return param && lineFilterValues.has(param as CallLine) ? (param as CallLine) : "all"
@@ -658,8 +743,10 @@ function CallLogPageInner() {
   // reservation calls only (the backend default) — say so on the tile.
   const statsNoun = effectiveLine === "sales" ? "sales calls" : "reservation calls"
 
-  // Debounce the Call ID box so we query once the user pauses, not per keystroke.
-  const debouncedCallId = useDebouncedValue(callIdSearch, 300)
+  // Debounce the search box so we query once the user pauses, not per keystroke.
+  const debouncedSearch = useDebouncedValue(search, 300)
+  // Highlights follow the settled term, so they match what the list shows.
+  const highlightTerm = textSearchTerm(debouncedSearch)
 
   const selectDateTimespan = (value: string) => {
     // Presets resolve to concrete dates ("All time" to empty ones, which the
@@ -700,7 +787,7 @@ function CallLogPageInner() {
   useEffect(() => {
     setOffset(0)
     setExpandedRow(null)
-  }, [scopeKey, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedCallId, effectiveLine])
+  }, [scopeKey, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedSearch, effectiveLine])
 
   const listKey = scopeKey
     ? ([
@@ -712,7 +799,7 @@ function CallLogPageInner() {
         notBookedSubcategoryFilter,
         dateFrom,
         dateTo,
-        debouncedCallId,
+        debouncedSearch,
         effectiveLine,
       ] as const)
     : null
@@ -721,7 +808,7 @@ function CallLogPageInner() {
     isValidating: loading,
     error: errorRaw,
     mutate: refreshCalls,
-  } = useSWR(listKey, ([, ids, off, filter, reason, subcategory, from, to, callId, line]) =>
+  } = useSWR(listKey, ([, ids, off, filter, reason, subcategory, from, to, q, line]) =>
     fetchCalls({
       hotel_id: ids.split(","),
       limit: PAGE_SIZE,
@@ -731,14 +818,14 @@ function CallLogPageInner() {
       not_booked_subcategory: subcategory === "all" ? undefined : subcategory,
       date_from: from || undefined,
       date_to: to || undefined,
-      call_id: callId.trim() || undefined,
+      q: q.trim() || undefined,
       line: line === "all" ? undefined : line,
     }),
   )
   const error = errorRaw ? describeError(errorRaw) : null
 
   // Tiles describe the whole period (hotel + date range only), so they don't
-  // move when the outcome / reason / call-id filters change. Non-fatal: on
+  // move when the outcome / reason / search filters change. Non-fatal: on
   // failure the rate tiles just show "—".
   // The tiles follow the line filter (omitted = reservations, the backend
   // default) so a sales-line view counts sales calls.
@@ -812,13 +899,16 @@ function CallLogPageInner() {
 
   const items = page?.items ?? []
   const total = page?.total ?? 0
+  // A search's count stops at a cap; the total is then a lower bound.
+  const totalCapped = page?.total_capped ?? false
+  const totalLabel = `${total.toLocaleString()}${totalCapped ? "+" : ""}`
   const hasFilters =
     outcomeFilter !== "all" ||
     notBookedReasonFilter !== "all" ||
     notBookedSubcategoryFilter !== "all" ||
     dateFrom !== "" ||
     dateTo !== "" ||
-    callIdSearch.trim() !== "" ||
+    search.trim() !== "" ||
     (bothLines && lineFilter !== "all")
 
   const statsTotal = stats?.total_calls ?? 0
@@ -847,7 +937,7 @@ function CallLogPageInner() {
         <div className="flex flex-wrap gap-4 mb-6">
           <StatTile
             icon={Phone}
-            value={String(total)}
+            value={totalLabel}
             label={hasFilters ? "Matching Calls" : "Total Calls"}
           />
           {/* Booking tiles are reservation concepts; a sales call never
@@ -892,16 +982,17 @@ function CallLogPageInner() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             <Input
               type="search"
-              value={callIdSearch}
-              onChange={(e) => setCallIdSearch(e.target.value)}
-              placeholder="Search by Call ID"
-              className="w-64 bg-card border-border pl-9 pr-8 text-sm"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by keyword or call ID"
+              aria-label="Search by keyword or call ID"
+              className="w-72 bg-card border-border pl-9 pr-8 text-sm"
             />
-            {callIdSearch && (
+            {search && (
               <button
                 type="button"
-                onClick={() => setCallIdSearch("")}
-                title="Clear Call ID search"
+                onClick={() => setSearch("")}
+                title="Clear search"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
                 <X className="w-4 h-4" />
@@ -1010,7 +1101,7 @@ function CallLogPageInner() {
                 setDateFrom("")
                 setDateTo("")
                 setDateTimespan("all")
-                setCallIdSearch("")
+                setSearch("")
               }}
               className="text-muted-foreground hover:text-foreground"
             >
@@ -1115,8 +1206,13 @@ function CallLogPageInner() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </td>
-                        <td className="p-4 text-muted-foreground max-w-xs truncate">
-                          {call.summary ?? "—"}
+                        <td className="p-4 text-muted-foreground max-w-xs">
+                          <p className="truncate">
+                            {call.summary ? <Highlighted text={call.summary} term={highlightTerm} /> : "—"}
+                          </p>
+                          {call.match_snippet && (
+                            <SearchSnippet snippet={call.match_snippet} term={highlightTerm} />
+                          )}
                         </td>
                         {isPlatformAdmin && (
                           <td className="p-4">
@@ -1172,26 +1268,7 @@ function CallLogPageInner() {
                               ) : transcript?.error ? (
                                 <p className="text-sm text-destructive">{transcript.error}</p>
                               ) : transcript?.turns && transcript.turns.length > 0 ? (
-                                <div className="space-y-3 max-h-80 overflow-y-auto">
-                                  {transcript.turns.map((line, idx) => (
-                                    <div key={idx} className="flex gap-3">
-                                      <span
-                                        className={`text-xs font-medium px-2 py-1 rounded shrink-0 ${
-                                          line.speaker === "Agent"
-                                            ? "bg-[#6b7a4a]/10 text-[#6b7a4a]"
-                                            : line.speaker === "Guest"
-                                              ? "bg-[#c4a84b]/10 text-[#a08930]"
-                                              : "bg-muted text-muted-foreground"
-                                        }`}
-                                      >
-                                        {line.speaker}
-                                      </span>
-                                      <p className="text-sm text-card-foreground leading-relaxed whitespace-pre-line">
-                                        {line.text}
-                                      </p>
-                                    </div>
-                                  ))}
-                                </div>
+                                <TranscriptTurns turns={transcript.turns} term={highlightTerm} />
                               ) : (
                                 <p className="text-sm text-muted-foreground">
                                   No transcript available for this call.
@@ -1222,7 +1299,11 @@ function CallLogPageInner() {
               </div>
             ) : items.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground">
-                {hasFilters ? "No calls found matching your criteria." : "No calls yet."}
+                {debouncedSearch.trim()
+                  ? `No calls match "${debouncedSearch.trim()}"${hasFilters ? " with these filters" : ""}.`
+                  : hasFilters
+                    ? "No calls found matching your criteria."
+                    : "No calls yet."}
               </div>
             ) : null}
           </CardContent>
@@ -1232,7 +1313,7 @@ function CallLogPageInner() {
         <div className="flex flex-wrap gap-3 items-center justify-between mt-4 text-sm text-muted-foreground">
           <span>
             {total > 0
-              ? `Showing ${offset + 1}–${offset + items.length} of ${total} calls`
+              ? `Showing ${(offset + 1).toLocaleString()}–${(offset + items.length).toLocaleString()} of ${totalLabel} calls`
               : "Showing 0 calls"}
           </span>
           <div className="flex items-center gap-2">
@@ -1250,7 +1331,10 @@ function CallLogPageInner() {
               variant="outline"
               size="sm"
               className="gap-1"
-              disabled={offset + PAGE_SIZE >= total || loading}
+              // Past a capped total, a full page means more may follow.
+              disabled={
+                (totalCapped ? items.length < PAGE_SIZE : offset + PAGE_SIZE >= total) || loading
+              }
               onClick={() => setOffset(offset + PAGE_SIZE)}
             >
               Next

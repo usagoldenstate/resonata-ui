@@ -785,7 +785,7 @@ function VariantOccurrences({
           <span>{formatOccurrenceDate(occ.asked_at)}</span>
           {occ.provider_call_id ? (
             <Link
-              href={`/call-log?call_id=${encodeURIComponent(occ.provider_call_id)}`}
+              href={`/call-log?q=${encodeURIComponent(occ.provider_call_id)}`}
               className="flex-shrink-0 underline-offset-2 hover:text-foreground hover:underline"
             >
               View call

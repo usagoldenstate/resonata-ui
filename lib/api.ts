@@ -355,13 +355,22 @@ export type CallListItem = {
   // matched no configured department (the row still reads as transferred).
   transferred: boolean
   transfer_department_name: string | null
+  // Set only when a `q` search matched the transcript: the excerpt around
+  // the first spoken match. null for id/summary-only matches (speaker is
+  // null when the match precedes any speaker label).
+  match_snippet: CallSearchSnippet | null
   created_at: string
   updated_at: string
 }
 
+export type CallSearchSnippet = { speaker: "guest" | "agent" | null; text: string }
+
 export type CallListPage = {
   items: CallListItem[]
+  // With a search active the backend stops counting at a cap; `total_capped`
+  // then means `total` is a lower bound ("1,000+") and more pages may exist.
   total: number
+  total_capped: boolean
   limit: number
   offset: number
 }
@@ -1332,7 +1341,9 @@ export function fetchCalls(
     not_booked_subcategory?: string
     date_from?: string
     date_to?: string
-    call_id?: string
+    // One box: a call id fragment, or words said on the call (transcript or
+    // summary, case-insensitive substring; under 3 characters matches ids only).
+    q?: string
     line?: CallLine
     // Narrows within whatever outcome filter is set (a transferred call keeps
     // its own outcome bucket); omit for both.

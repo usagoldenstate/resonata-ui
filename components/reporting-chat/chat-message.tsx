@@ -19,7 +19,7 @@ const CITATION_RE = /\[call:([A-Za-z0-9._-]+)\]/g
 function withCitationLinks(text: string): string {
   return text.replace(
     CITATION_RE,
-    (_match, id: string) => `[view call](/call-log?call_id=${encodeURIComponent(id)})`,
+    (_match, id: string) => `[view call](/call-log?q=${encodeURIComponent(id)})`,
   )
 }
 
