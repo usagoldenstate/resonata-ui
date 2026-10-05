@@ -1,5 +1,7 @@
 "use client"
 
+import { SalesCustomAnswers } from "@/components/sales-custom-answers"
+
 /**
  * The page behind the "Update inquiry" button in the sales notification email.
  *
@@ -235,6 +237,7 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
             )}
             {data.email && <Detail icon={<MessageSquareText className="size-4" />}>{data.email}</Detail>}
             <Detail icon={<Clock3 className="size-4" />}>Called {timestamp(data.created_at)}</Detail>
+      <SalesCustomAnswers answers={data.custom_answers} className="mt-4" />
             {data.notes && (
               <p className="mt-3 whitespace-pre-wrap rounded-lg border-l-2 border-muted-foreground/30 bg-muted/50 px-3 py-2 text-sm">
                 {data.notes}

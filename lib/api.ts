@@ -433,7 +433,16 @@ export type CancellationAttempt = {
 // mailbox: "failed" means the last send attempt did not go out and the
 // reconcile job will retry; "gave_up" means it exhausted its retries — the
 // row exists, a person has to forward it.
+export type SalesIntakeQuestion = { id: string; text: string }
+export type SalesIntakeQuestionInput = { id?: string; text: string }
+export type SalesInquiryCustomAnswer = {
+  question_id: string
+  question: string | null
+  answer: string
+}
+
 export type SalesInquiry = {
+  custom_answers?: SalesInquiryCustomAnswer[]
   id: string
   caller_name: string | null
   // Strictly the number the caller asked for, or null when they gave none or
@@ -814,6 +823,7 @@ export type HotelDetail = {
   // The hotel's sales team as plain name tags — who follow-up activity is
   // attributed to. Operator-editable, unlike the sales-line fields above.
   sales_rep_names: string[]
+  sales_intake_questions?: SalesIntakeQuestion[]
   // The sales line's own opener (null = the template) and the template
   // rendered for this hotel. Operator-editable via Agent Configuration.
   sales_first_message: string | null
@@ -1104,6 +1114,7 @@ export type HotelOperatorUpdate = {
   // Replaces the whole list. Normalized server-side (trimmed, blanks dropped,
   // case-insensitively de-duplicated, max 50).
   sales_rep_names?: string[]
+  sales_intake_questions?: SalesIntakeQuestionInput[]
   // Blank clears back to the shared template.
   sales_first_message?: string | null
 }
@@ -1753,6 +1764,7 @@ export function updateSalesInquiry(hotelId: string, id: string, body: SalesInqui
 // route). Everything the page renders comes back in one response.
 export type SalesFollowUpOutcome = "call_attempted" | "contacted" | "booked" | "closed"
 export type PublicSalesInquiry = {
+  custom_answers?: SalesInquiryCustomAnswer[]
   hotel_display_name: string
   caller_name: string | null
   callback_phone_e164: string | null

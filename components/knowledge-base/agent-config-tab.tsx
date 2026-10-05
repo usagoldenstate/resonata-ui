@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { api, ApiError } from "@/lib/api"
+import { SalesQuestionsEditor, questionPayload, type QuestionDraft } from "@/components/sales-questions-editor"
+import { api, ApiError, type SalesIntakeQuestion } from "@/lib/api"
 import { lineSetOf, type HotelLines, type LineSet } from "@/lib/product-lines"
 import { registerUnsavedGuard } from "@/lib/unsaved-guard"
 
@@ -92,6 +93,7 @@ type HotelDetail = {
   // rendered for this hotel, shown as the placeholder.
   sales_first_message?: string | null
   sales_first_message_default?: string
+  sales_intake_questions?: SalesIntakeQuestion[]
 }
 
 // Local edit-time shape. Carries the 3-field phone breakdown alongside the
@@ -336,6 +338,8 @@ export function AgentConfigTab({
   const [agentName, setAgentName] = useState("")
   const [firstMessage, setFirstMessage] = useState("")
   const [firstMessageDefault, setFirstMessageDefault] = useState("")
+  const [salesQuestions, setSalesQuestions] = useState<QuestionDraft[]>([])
+  const [saving, setSaving] = useState(false)
   const [salesFirstMessage, setSalesFirstMessage] = useState("")
   const [salesFirstMessageDefault, setSalesFirstMessageDefault] = useState("")
   // Which per-line sections this hotel gets. Null until the hotel loads.
@@ -353,6 +357,7 @@ export function AgentConfigTab({
         firstMessage,
         preferredRateCode,
         salesFirstMessage,
+        salesQuestions: questionPayload(salesQuestions),
       }),
     [
       departments,
@@ -360,6 +365,7 @@ export function AgentConfigTab({
       firstMessage,
       preferredRateCode,
       salesFirstMessage,
+      salesQuestions,
     ],
   )
   const dirty = savedJson !== null && formSnapshot !== savedJson
@@ -372,6 +378,8 @@ export function AgentConfigTab({
     const loadedAgentName = hotel.agent_name ?? ""
     const loadedFirstMessage = hotel.first_message ?? ""
     const loadedPreferredRateCode = String(hotel.preferred_rate_code ?? "")
+    const loadedSalesQuestions = (hotel.sales_intake_questions ?? []).map(q => ({ ...q, key: q.id }))
+    setSalesQuestions(loadedSalesQuestions)
     const loadedSalesFirstMessage = hotel.sales_first_message ?? ""
     const loadedDepartments = (hotel.transfer_departments ?? []).map(rowToDepartment)
     // Defensive: backend invariant is ≥1 department, but if a hotel ever
@@ -395,6 +403,7 @@ export function AgentConfigTab({
         firstMessage: loadedFirstMessage,
         preferredRateCode: loadedPreferredRateCode,
         salesFirstMessage: loadedSalesFirstMessage,
+        salesQuestions: questionPayload(loadedSalesQuestions),
       }),
     )
   }, [])
@@ -495,7 +504,16 @@ export function AgentConfigTab({
   const handleSave = async () => {
     // Nothing loaded yet (or the load failed): saving now would write the
     // empty form over the hotel's real settings.
-    if (savedJson === null || lines === null) return
+    if (savedJson === null || lines === null || saving) return
+    if (lines.sales) {
+      const texts = salesQuestions.map(q => q.text.replace(/\s+/g, " ").trim())
+      const invalid = texts.findIndex(text => !text || [...text].length > 200)
+      if (salesQuestions.length > 5 || invalid !== -1 || new Set(texts.map(t => t.toLowerCase())).size !== texts.length) {
+        onErrorChange("Use up to five different questions, each between 1 and 200 characters. Remove empty questions before saving.")
+        onStateChange("error")
+        return
+      }
+    }
     if (departments.length === 0) {
       onErrorChange("At least one transfer department is required.")
       onStateChange("error")
@@ -553,6 +571,7 @@ export function AgentConfigTab({
       })
     }
 
+    setSaving(true)
     onStateChange("saving")
     onErrorChange(null)
 
@@ -575,7 +594,7 @@ export function AgentConfigTab({
     try {
       // Only the fields of the lines this hotel has: a sales-only hotel's
       // hidden reservation fields (and vice versa) are left exactly as stored.
-      const hotelBody: Record<string, string | null> = {
+      const hotelBody: Record<string, unknown> = {
         agent_name: agentName || null,
       }
       if (lines?.reservations) {
@@ -585,12 +604,16 @@ export function AgentConfigTab({
       if (lines?.sales) {
         // Blank clears to the template server-side.
         hotelBody.sales_first_message = salesFirstMessage
+        hotelBody.sales_intake_questions = questionPayload(salesQuestions)
       }
-      await api(`/api/v1/admin/hotels/${hotelId}`, {
+      const savedHotel = await api<HotelDetail>(`/api/v1/admin/hotels/${hotelId}`, {
         method: "PUT",
         body: hotelBody,
       })
       hotelSaved = true
+      // Retain minted IDs even if the subsequent department save fails.
+      const savedQuestions = (savedHotel.sales_intake_questions ?? []).map(q => ({ ...q, key: q.id }))
+      setSalesQuestions(savedQuestions)
 
       await api(`/api/v1/admin/hotels/${hotelId}/transfer-departments`, {
         method: "PUT",
@@ -598,7 +621,7 @@ export function AgentConfigTab({
       })
       // Snapshot at save time matches the form right now; use it as the new
       // baseline so dirty drops back to false.
-      setSavedJson(formSnapshot)
+      setSavedJson(JSON.stringify({ ...JSON.parse(formSnapshot), salesQuestions: questionPayload(savedQuestions) }))
       onStateChange("saved")
       setTimeout(() => onStateChange((s) => (s === "saved" ? "idle" : s)), 3000)
     } catch (e) {
@@ -624,6 +647,8 @@ export function AgentConfigTab({
         onErrorChange(detail)
       }
       onStateChange("error")
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -703,6 +728,7 @@ export function AgentConfigTab({
 
   const salesSection = (
     <>
+      <SalesQuestionsEditor questions={salesQuestions} onChange={setSalesQuestions} />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -773,7 +799,7 @@ export function AgentConfigTab({
   )
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
+    <fieldset disabled={saving || savedJson === null} className="p-6 max-w-3xl mx-auto space-y-6 min-w-0 w-full">
       {loadError && (
         <Card>
           <CardContent className="py-4 text-sm text-destructive">
@@ -862,6 +888,6 @@ export function AgentConfigTab({
           {lines?.sales && salesSection}
         </>
       )}
-    </div>
+    </fieldset>
   )
 }

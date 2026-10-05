@@ -274,6 +274,12 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground"><Wallet className="size-4" /></span>
           <div className="min-w-0"><dt className="text-xs font-medium text-muted-foreground"><AiBudgetHelp label="AI-estimated total budget" /></dt><dd className="mt-1 break-words text-sm font-medium leading-relaxed tabular-nums">{formatAiBudget(row)}</dd></div>
         </div>
+        {row.custom_answers?.map((entry, index) => (
+          <div key={`${entry.question_id}-${index}`} className="flex items-start gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground"><MessageSquareText className="size-4" /></span>
+            <div className="min-w-0"><dt className="text-xs font-medium text-muted-foreground whitespace-pre-wrap break-words">{entry.question || "Additional question"}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed">{entry.answer}</dd></div>
+          </div>
+        ))}
       </dl>
       {row.notes && <div className="mx-5 mb-5 rounded-r-lg border-l-2 border-brand-insights/50 bg-brand-insights/5 px-3.5 py-3"><p className="mb-1 text-[11px] font-medium text-brand-insights">From the caller</p><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{row.notes}</p></div>}
     </section>

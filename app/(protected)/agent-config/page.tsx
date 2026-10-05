@@ -104,6 +104,7 @@ export default function AgentConfigPage() {
         {/* Content */}
         <div className="flex-1 overflow-auto bg-muted/30">
           <AgentConfigTab
+            key={hotelId}
             hotelId={hotelId}
             registerSave={registerConfigSave}
             onStateChange={setConfigSaveState}

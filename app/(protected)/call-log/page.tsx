@@ -17,7 +17,6 @@ import {
   ExternalLink,
   Link2,
   Loader2,
-  Mail,
   Megaphone,
   Phone,
   PhoneForwarded,
@@ -37,7 +36,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Card, CardContent } from "@/components/ui/card"
-import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -63,7 +61,6 @@ import {
   type CancellationFilter,
   type CancellationOutcome,
   type CancellationStatus,
-  type SalesInquiry,
   type SentLink,
   deleteCall,
   fetchCallDetail,
@@ -71,7 +68,6 @@ import {
   fetchCallStats,
   fetchCalls,
   fetchNotBookedTaxonomy,
-  formatHeadcount,
 } from "@/lib/api"
 import { useCurrentUser } from "@/lib/current-user-context"
 import { dateRangeError, formatShortDate, rangeForTimespan } from "@/lib/date-range"
@@ -162,116 +158,6 @@ function LineBadge({ line }: { line: CallLine }) {
       <Phone className="w-3 h-3" />
       Reservations
     </span>
-  )
-}
-
-function EmailStatusPill({ status }: { status: SalesInquiry["email_status"] }) {
-  const styles: Record<SalesInquiry["email_status"], string> = {
-    sent: "bg-[#6b7a4a]/10 text-[#6b7a4a]",
-    sending: "bg-muted text-muted-foreground",
-    failed: "bg-amber-500/10 text-amber-700",
-    gave_up: "bg-destructive/10 text-destructive",
-  }
-  const labels: Record<SalesInquiry["email_status"], string> = {
-    sent: "Emailed to sales",
-    sending: "Email pending",
-    failed: "Email failed, retrying",
-    gave_up: "Email not delivered",
-  }
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${styles[status]}`}>
-      <Mail className="w-3 h-3" />
-      {labels[status]}
-    </span>
-  )
-}
-
-function formatInquiryDates(inquiry: SalesInquiry): string {
-  const parsed =
-    inquiry.event_start_date && inquiry.event_end_date && inquiry.event_start_date !== inquiry.event_end_date
-      ? `${inquiry.event_start_date} – ${inquiry.event_end_date}`
-      : inquiry.event_start_date ?? null
-  const base = inquiry.event_dates_text
-    ? parsed && parsed !== inquiry.event_dates_text
-      ? `${inquiry.event_dates_text} (${parsed})`
-      : inquiry.event_dates_text
-    : parsed ?? "—"
-  return inquiry.dates_flexible ? `${base} · flexible` : base
-}
-
-// The structured intake a sales-line call produced, shown above the
-// transcript. A `failed` email status is the cue for staff to forward the
-// details manually — the inquiry itself is intact in the row.
-function SalesInquiryPanel({ inquiry }: { inquiry: SalesInquiry | null }) {
-  if (!inquiry) {
-    return (
-      <div className="mb-6 rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-        No inquiry was recorded on this sales call (the caller hung up or was transferred before the
-        intake finished).
-      </div>
-    )
-  }
-  // The callback number is strictly what the caller asked for; the number
-  // they called from is always on the row too, and gets its own line
-  // whenever it differs (or when no usable callback number was given).
-  const callerIdDiffers =
-    !!inquiry.caller_id_phone_e164 &&
-    inquiry.caller_id_phone_e164 !== inquiry.callback_phone_e164
-  const rows: Array<[string, string]> = [
-    ["Caller", inquiry.caller_name ?? "—"],
-    ["Callback number", formatCallerPhone(inquiry.callback_phone_e164)],
-    ...(callerIdDiffers
-      ? [["Calling from", formatCallerPhone(inquiry.caller_id_phone_e164)] as [string, string]]
-      : []),
-    ["Email", inquiry.email ?? "—"],
-    ["Event type", inquiry.event_type],
-    ["Dates", formatInquiryDates(inquiry)],
-    ["Party size", formatHeadcount(inquiry) ?? "—"],
-    ["Budget stated by caller", inquiry.budget_text ?? "—"],
-    [
-      "Guest rooms",
-      inquiry.needs_guest_rooms === null ? "—" : inquiry.needs_guest_rooms ? "Yes" : "No",
-    ],
-  ]
-  return (
-    <div className="mb-6">
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-semibold text-foreground">Sales Inquiry</h4>
-        <div className="flex items-center gap-2">
-          <EmailStatusPill status={inquiry.email_status} />
-          {inquiry.sent_to && (
-            <span className="text-xs text-muted-foreground">→ {inquiry.sent_to}</span>
-          )}
-        </div>
-      </div>
-      {inquiry.email_status === "gave_up" && (
-        <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          The inquiry email could not be delivered
-          {inquiry.email_error_class ? ` (${inquiry.email_error_class})` : ""}. Forward these details to
-          the sales team manually.
-        </p>
-      )}
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm md:grid-cols-4">
-        {rows.map(([label, value]) => (
-          <div key={label}>
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="text-card-foreground">{value}</dd>
-          </div>
-        ))}
-        <div>
-          <dt className="text-xs text-muted-foreground"><AiBudgetHelp label="AI-estimated total budget" /></dt>
-          <dd className="text-card-foreground tabular-nums">{formatAiBudget(inquiry)}</dd>
-        </div>
-      </dl>
-      {inquiry.notes && (
-        <div className="mt-3">
-          <p className="text-xs text-muted-foreground mb-1">Notes from the caller</p>
-          <p className="rounded-md border-l-2 border-border bg-muted/40 px-3 py-2 text-sm text-card-foreground whitespace-pre-line">
-            {inquiry.notes}
-          </p>
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -788,8 +674,6 @@ type TranscriptState = {
   turns: TranscriptTurn[] | null
   error: string | null
   hasRecording: boolean
-  // Sales-line calls only (null otherwise, or when no inquiry was recorded).
-  salesInquiry: SalesInquiry | null
   sentLinks: SentLink[]
   cancellation: CancellationState
 }
@@ -1062,7 +946,6 @@ function CallLogPageInner() {
         turns: transcriptDetail ? parseTranscript(transcriptDetail.transcript) : null,
         error: transcriptErrorRaw ? describeError(transcriptErrorRaw) : null,
         hasRecording: transcriptDetail?.has_recording ?? false,
-        salesInquiry: transcriptDetail?.sales_inquiry ?? null,
         sentLinks: transcriptDetail?.sent_links ?? [],
         cancellation: {
           outcome: transcriptDetail?.cancellation_outcome ?? null,
@@ -1473,9 +1356,6 @@ function CallLogPageInner() {
                         <tr key={`${call.id}-transcript`} className="bg-muted/20">
                           <td colSpan={(isPlatformAdmin ? 10 : 9) + (portfolio ? 1 : 0)} className="p-0">
                             <div className="p-6 border-b border-border">
-                              {call.line === "sales" && !transcript?.loading && !transcript?.error && (
-                                <SalesInquiryPanel inquiry={transcript?.salesInquiry ?? null} />
-                              )}
                               {transcript?.hasRecording && (
                                 <div className="mb-6">
                                   <h4 className="text-sm font-semibold text-foreground mb-3">
