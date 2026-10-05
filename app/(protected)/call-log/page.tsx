@@ -1,6 +1,7 @@
 "use client"
 
 import { Suspense, useEffect, useRef, useState, Fragment } from "react"
+import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
 import {
@@ -752,7 +753,7 @@ export default function CallLogPage() {
 }
 
 function CallLogPageInner() {
-  const { scope, scopeHotels, scopeLabel, scopeLines, loading: hotelLoading, accessState } = useHotel()
+  const { scope, scopeHotels, scopeLabel, scopeLines, setHotelId, loading: hotelLoading, accessState } = useHotel()
   // Which lines this scope has decides how much of the line split shows. Only
   // a scope with both lines gets the Line column and filter; a single-line
   // scope is pinned to its line (a sales-only hotel also drops the
@@ -1245,6 +1246,7 @@ function CallLogPageInner() {
                 {items.map((call) => {
                   const startedAt = parseUtc(call.created_at)
                   const outcome = deriveOutcome(call)
+                  const callHotelId = call.hotel_id
                   const transcript = expandedRow === call.id ? transcriptForExpandedRow : null
                   return (
                     <Fragment key={call.id}>
@@ -1295,7 +1297,23 @@ function CallLogPageInner() {
                         </td>
                         <td className="p-4">
                           {call.line === "sales" ? (
-                            <span className="text-muted-foreground">—</span>
+                            callHotelId ? (
+                              <Link
+                                href={`/sales-inquiries?${new URLSearchParams({ hotel_id: callHotelId, call_id: call.provider_call_id })}`}
+                                onClick={(event) => {
+                                  // Client-side navigation preserves the current hotel provider,
+                                  // so explicitly scope the inquiry view to this call's hotel.
+                                  event.stopPropagation()
+                                  setHotelId(callHotelId)
+                                }}
+                                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                              >
+                                View inquiry
+                                <ExternalLink className="size-3.5" aria-hidden="true" />
+                              </Link>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )
                           ) : (
                             <div className="flex flex-wrap items-center gap-1.5">
                               <OutcomeBadge outcome={outcome} />
