@@ -15,6 +15,7 @@ import { X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { splitEmailFrom, composeEmailFrom } from "@/lib/email-sender"
 import {
   patchSetupProgress,
   updateHotelOperatorSettings,
@@ -32,6 +33,9 @@ import {
 
 export function SalesStep({ ctx }: { ctx: StepContext }) {
   const { hotelId, detail, reload, goNext, goBack, hasBack } = ctx
+  const initialSender = splitEmailFrom(detail.sales_email_from)
+  const [senderName, setSenderName] = React.useState(initialSender.name)
+  const [senderEmail, setSenderEmail] = React.useState(initialSender.email)
   const [email, setEmail] = React.useState(detail.sales_inquiry_email ?? "")
   const [reps, setReps] = React.useState<string[]>(detail.sales_rep_names ?? [])
   const [repDraft, setRepDraft] = React.useState("")
@@ -54,10 +58,17 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
       setError("A sales inquiry email is required — the intake has nowhere to send inquiries otherwise.")
       return
     }
+    if (senderName.trim() && !senderEmail.trim()) {
+      setError("Enter a sales sender email address, or clear both sender fields to use the default.")
+      return
+    }
     setSaving(true)
     setError(null)
     try {
-      await updateHotelOperatorSettings(hotelId, { sales_rep_names: reps })
+      await updateHotelOperatorSettings(hotelId, {
+        sales_rep_names: reps,
+        sales_email_from: composeEmailFrom(senderName, senderEmail),
+      })
       await updateHotelPlatformSettings(hotelId, {
         sales_inquiry_email: email.trim(),
       })
@@ -77,8 +88,29 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
         title="Sales intake line"
         description="A second number that answers when the sales department doesn't. The agent takes a short structured intake, records the inquiry, and emails it."
       >
+        <Field label="Sales sender name" htmlFor="salesSenderName">
+          <Input
+            id="salesSenderName"
+            value={senderName}
+            onChange={(e) => setSenderName(e.target.value)}
+            placeholder="Hotel Group Sales"
+          />
+        </Field>
         <Field
-          label="Sales inquiry email"
+          label="Sales sender email address"
+          htmlFor="salesSenderEmail"
+          hint="The From address on sales inquiry emails. Use a verified sending domain. Leave both sender fields blank to use the reservations sender or platform default."
+        >
+          <Input
+            id="salesSenderEmail"
+            type="email"
+            value={senderEmail}
+            onChange={(e) => setSenderEmail(e.target.value)}
+            placeholder="groups@example.com"
+          />
+        </Field>
+        <Field
+          label="Sales inquiry recipient email"
           htmlFor="salesEmail"
           hint="Where each recorded inquiry is sent (Reply-To is the caller). Usually a shared sales mailbox."
         >

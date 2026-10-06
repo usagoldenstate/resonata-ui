@@ -801,6 +801,7 @@ export type HotelDetail = {
   agent_name: string | null
   first_message: string | null
   email_from: string | null
+  sales_email_from: string | null
   preferred_rate_code: string | null
   commission_rate_basis_points: number
   currency: string
@@ -901,6 +902,7 @@ export type HotelCreateBody = {
   booking_engine_provider?: string | null
   booking_engine_config?: Record<string, unknown> | null
   email_from?: string | null
+  sales_email_from?: string | null
   preferred_rate_code?: string | null
   max_call_minutes?: number | null
   commission_rate_basis_points: number
@@ -1111,6 +1113,7 @@ export type HotelOperatorUpdate = {
   // page composes this from the Sender Name + Email Address fields. Operator-
   // editable on the backend (PUT), not a platform-settings field.
   email_from?: string | null
+  sales_email_from?: string | null
   // Replaces the whole list. Normalized server-side (trimmed, blanks dropped,
   // case-insensitively de-duplicated, max 50).
   sales_rep_names?: string[]
