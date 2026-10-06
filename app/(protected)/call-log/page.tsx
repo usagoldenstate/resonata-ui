@@ -865,20 +865,29 @@ function CallLogPageInner() {
   const subcategoryOptions =
     (taxonomy ?? []).find((c) => c.name === notBookedReasonFilter)?.subcategories ?? []
 
+  // A sales-only scope hides the outcome / not-booked controls, so their
+  // state must not reach the request either: a filter picked on a
+  // reservations hotel would otherwise silently empty this log with nothing
+  // on screen to explain or clear it. The state itself is kept, so switching
+  // back to a reservations scope restores the user's filters.
+  const appliedOutcomeFilter: OutcomeFilter = salesOnly ? "all" : outcomeFilter
+  const appliedReasonFilter = salesOnly ? "all" : notBookedReasonFilter
+  const appliedSubcategoryFilter = salesOnly ? "all" : notBookedSubcategoryFilter
+
   // Any filter or hotel change restarts pagination from the first page.
   useEffect(() => {
     setOffset(0)
     setExpandedRow(null)
-  }, [scopeKey, outcomeFilter, notBookedReasonFilter, notBookedSubcategoryFilter, dateFrom, dateTo, debouncedSearch, effectiveLine])
+  }, [scopeKey, appliedOutcomeFilter, appliedReasonFilter, appliedSubcategoryFilter, dateFrom, dateTo, debouncedSearch, effectiveLine])
 
   const listKey = scopeKey
     ? ([
         "call-log",
         scopeKey,
         offset,
-        outcomeFilter,
-        notBookedReasonFilter,
-        notBookedSubcategoryFilter,
+        appliedOutcomeFilter,
+        appliedReasonFilter,
+        appliedSubcategoryFilter,
         dateFrom,
         dateTo,
         debouncedSearch,
@@ -991,9 +1000,9 @@ function CallLogPageInner() {
   const totalCapped = page?.total_capped ?? false
   const totalLabel = `${total.toLocaleString()}${totalCapped ? "+" : ""}`
   const hasFilters =
-    outcomeFilter !== "all" ||
-    notBookedReasonFilter !== "all" ||
-    notBookedSubcategoryFilter !== "all" ||
+    appliedOutcomeFilter !== "all" ||
+    appliedReasonFilter !== "all" ||
+    appliedSubcategoryFilter !== "all" ||
     dateFrom !== "" ||
     dateTo !== "" ||
     search.trim() !== "" ||

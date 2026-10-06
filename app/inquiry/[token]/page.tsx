@@ -15,7 +15,7 @@ import { SalesCustomAnswers } from "@/components/sales-custom-answers"
  * than a dropdown, and nothing is written until Save is pressed.
  */
 
-import { use, useEffect, useMemo, useState } from "react"
+import { use, useEffect, useMemo, useRef, useState } from "react"
 import useSWR from "swr"
 import {
   AlertTriangle,
@@ -90,17 +90,24 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
 
   // Remember who they are between visits — the same person usually works the
   // mailbox, and re-picking a name on every voicemail is friction for nothing.
+  // The name answers "who is viewing", so it comes only from this browser's
+  // own earlier pick, never from the inquiry's assignee: the mailbox is
+  // shared, and prefilling the owner would log Bob's call as Alice's. No
+  // remembered name (or one since removed from the roster) → pick explicitly.
+  // Initialized once, so clearing the picker doesn't snap it back.
   // Never authoritative: the server still validates against the roster.
+  const repInitialized = useRef(false)
   useEffect(() => {
-    if (!data || rep) return
+    if (!data || repInitialized.current) return
+    repInitialized.current = true
     let remembered: string | null = null
     try {
       remembered = window.localStorage.getItem("resonata.sales_rep_name")
     } catch {
       // Private browsing / blocked storage — just start with nobody selected.
     }
-    setRep(data.assigned_rep || (remembered && data.sales_reps.includes(remembered) ? remembered : ""))
-  }, [data, rep])
+    if (remembered && data.sales_reps.includes(remembered)) setRep(remembered)
+  }, [data])
 
   const history = useMemo(() => [...(data?.activity ?? [])].reverse(), [data])
 
@@ -276,6 +283,11 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
                   </option>
                 ))}
               </select>
+              {data.assigned_rep && rep && rep !== data.assigned_rep && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Assigned to {data.assigned_rep}. Saving assigns it to you.
+                </p>
+              )}
 
               <fieldset className="mt-5">
                 <legend className="text-sm font-medium">What happened?</legend>

@@ -87,7 +87,7 @@ function parseRepNames(text: string): string[] {
 type SettingsTab = "general" | "reservations" | "sales"
 
 export default function SettingsPage() {
-  const { hotelId, hotels, accessState } = useHotel()
+  const { hotelId, hotels, accessState, refresh: refreshHotels } = useHotel()
   const { isPlatformAdmin } = useCurrentUser()
 
   // ── Backend-backed hotel state ────────────────────────────────────────────
@@ -272,6 +272,10 @@ export default function SettingsPage() {
 
       if (latest) {
         applyDetail(latest)
+        // Nav, page guards and the hotel picker read the shared /me/hotels
+        // list, not this page's state: re-read it so a change of product
+        // lines (or name/timezone) shows up without a full reload.
+        void refreshHotels({ quiet: true })
         toast.success("Settings saved.")
         setSaved(true)
         setTimeout(() => setSaved(false), 2000)
