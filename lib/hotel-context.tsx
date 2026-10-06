@@ -86,7 +86,10 @@ type Ctx = {
   loading: boolean
   error: string | null
   accessState: HotelAccessState
-  refresh: () => Promise<void>
+  // `quiet` re-reads the list without flipping loading/accessState — for a
+  // page that just changed a hotel's own capabilities (product lines, name)
+  // and must not flash the app shell skeleton while nav catches up.
+  refresh: (options?: { quiet?: boolean }) => Promise<void>
 }
 
 const HotelContext = React.createContext<Ctx | null>(null)
@@ -193,10 +196,13 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
   const [accessState, setAccessState] =
     React.useState<HotelAccessState>("loading")
 
-  const refresh = React.useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    setAccessState("loading")
+  const refresh = React.useCallback(async (options?: { quiet?: boolean }) => {
+    const quiet = options?.quiet ?? false
+    if (!quiet) {
+      setLoading(true)
+      setError(null)
+      setAccessState("loading")
+    }
     try {
       const list = await api<HotelListItem[]>("/api/v1/me/hotels")
       setHotels(list)
@@ -220,6 +226,8 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
       // can't load.
       if (next) writeStoredScope(next)
     } catch (e) {
+      // A failed background re-read keeps the list we already have.
+      if (quiet) return
       setError(e instanceof Error ? e.message : String(e))
       // A 403/404 means the user authenticated fine but the backend has no
       // record granting them hotel access — treat as no-access, not a failure.
@@ -228,7 +236,7 @@ export function HotelProvider({ children }: { children: React.ReactNode }) {
         e instanceof ApiError && (e.status === 403 || e.status === 404)
       setAccessState(noAccess ? "no-access" : "error")
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }, [])
 
