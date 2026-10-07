@@ -435,6 +435,19 @@ export type CancellationAttempt = {
 // row exists, a person has to forward it.
 export type SalesIntakeQuestion = { id: string; text: string }
 export type SalesIntakeQuestionInput = { id?: string; text: string }
+// One sales department inquiries can be routed to (Hotel.sales_departments).
+// The intake picks one per inquiry from name + description; anything it
+// can't place goes to the single `catch_all` department. `id` is server-
+// minted and survives renames — echo it back on save, omit it for a new one.
+export type SalesDepartment = {
+  id: string
+  name: string
+  description: string
+  to: string[]
+  cc: string[]
+  catch_all: boolean
+}
+export type SalesDepartmentInput = Omit<SalesDepartment, "id"> & { id?: string }
 export type SalesInquiryCustomAnswer = {
   question_id: string
   question: string | null
@@ -472,7 +485,13 @@ export type SalesInquiry = {
   budget_estimation_model: string | null
   budget_estimation_prompt_version: string | null
   notes: string | null
+  // The sales department it was routed to, as named when it was recorded.
+  // Null on inquiries recorded before routing existed.
+  department_id?: string | null
+  department_name?: string | null
+  // Recipients, each list ", "-joined.
   sent_to: string | null
+  sent_cc?: string | null
   email_status: "sending" | "sent" | "failed" | "gave_up"
   email_error_class: string | null
   sent_at: string | null
@@ -817,10 +836,11 @@ export type HotelDetail = {
   // Platform-admin only.
   twilio_from_number: string | null
   // Sales intake line — the hotel's second Vapi number (the sales department's
-  // no-answer forward). Platform-admin only. Enabling requires the email.
+  // no-answer forward). Platform-admin only. Enabling requires a department.
   sales_line_enabled: boolean
   sales_vapi_phone_number_id: string | null
-  sales_inquiry_email: string | null
+  // Where inquiries are emailed, per department. Operator-editable.
+  sales_departments: SalesDepartment[]
   // The hotel's sales team as plain name tags — who follow-up activity is
   // attributed to. Operator-editable, unlike the sales-line fields above.
   sales_rep_names: string[]
@@ -1118,6 +1138,9 @@ export type HotelOperatorUpdate = {
   // case-insensitively de-duplicated, max 50).
   sales_rep_names?: string[]
   sales_intake_questions?: SalesIntakeQuestionInput[]
+  // Replaces the whole list. A non-empty list needs exactly one catch_all;
+  // an empty one is refused while the sales line is on.
+  sales_departments?: SalesDepartmentInput[]
   // Blank clears back to the shared template.
   sales_first_message?: string | null
 }
@@ -1131,7 +1154,6 @@ export type HotelPlatformUpdate = {
   twilio_from_number?: string | null
   sales_line_enabled?: boolean
   sales_vapi_phone_number_id?: string | null
-  sales_inquiry_email?: string | null
   // Validated with the sales-line fields: the line can only be on for
   // "sales" | "both", so the two travel in one PATCH on launch day.
   lines?: HotelLines
@@ -1752,6 +1774,12 @@ export function fetchSalesInquiries(hotelIds: string | string[], filters: Record
 }
 export function fetchSalesAssignees(hotelId: string) {
   return api<string[]>(withQuery("/api/v1/sales-inquiries/assignees", { hotel_id: hotelId }))
+}
+// The department filter's choices across the scoped hotels; `current: false`
+// marks a department since deleted (its inquiries stay findable).
+export type SalesDepartmentOption = { id: string; name: string; hotel_id: string; current: boolean }
+export function fetchSalesDepartmentOptions(hotelIds: string | string[]) {
+  return api<SalesDepartmentOption[]>(withQuery("/api/v1/sales-inquiries/departments", { hotel_id: hotelIds }))
 }
 export function fetchSalesInquiry(hotelId: string, id: string) {
   return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }))

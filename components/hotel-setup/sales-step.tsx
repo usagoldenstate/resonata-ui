@@ -1,7 +1,7 @@
 "use client"
 
 // Step 7 — the sales intake line's intake details: where inquiries are sent
-// and who can be credited with following one up.
+// (the sales departments) and who can be credited with following one up.
 //
 // This step deliberately does NOT switch the line on. The backend refuses
 // `sales_line_enabled` without a `sales_vapi_phone_number_id`, because the
@@ -16,11 +16,15 @@ import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { splitEmailFrom, composeEmailFrom } from "@/lib/email-sender"
+import { patchSetupProgress, updateHotelOperatorSettings } from "@/lib/api"
 import {
-  patchSetupProgress,
-  updateHotelOperatorSettings,
-  updateHotelPlatformSettings,
-} from "@/lib/api"
+  SalesDepartmentsEditor,
+  defaultDepartmentDraft,
+  departmentDrafts,
+  departmentPayload,
+  validateDepartments,
+  type DepartmentDraft,
+} from "@/components/sales-departments-editor"
 
 import {
   Field,
@@ -36,7 +40,11 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
   const initialSender = splitEmailFrom(detail.sales_email_from)
   const [senderName, setSenderName] = React.useState(initialSender.name)
   const [senderEmail, setSenderEmail] = React.useState(initialSender.email)
-  const [email, setEmail] = React.useState(detail.sales_inquiry_email ?? "")
+  const [departments, setDepartments] = React.useState<DepartmentDraft[]>(() =>
+    detail.sales_departments?.length
+      ? departmentDrafts(detail.sales_departments)
+      : [defaultDepartmentDraft()],
+  )
   const [reps, setReps] = React.useState<string[]>(detail.sales_rep_names ?? [])
   const [repDraft, setRepDraft] = React.useState("")
   const [saving, setSaving] = React.useState(false)
@@ -54,8 +62,13 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
   }
 
   const save = async () => {
-    if (!email.trim()) {
-      setError("A sales inquiry email is required — the intake has nowhere to send inquiries otherwise.")
+    if (departments.length === 0) {
+      setError("Add a sales department — the intake has nowhere to send inquiries otherwise.")
+      return
+    }
+    const problem = validateDepartments(departments)
+    if (problem) {
+      setError(problem)
       return
     }
     if (senderName.trim() && !senderEmail.trim()) {
@@ -68,9 +81,7 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
       await updateHotelOperatorSettings(hotelId, {
         sales_rep_names: reps,
         sales_email_from: composeEmailFrom(senderName, senderEmail),
-      })
-      await updateHotelPlatformSettings(hotelId, {
-        sales_inquiry_email: email.trim(),
+        sales_departments: departmentPayload(departments),
       })
       await patchSetupProgress(hotelId, { step: "sales", status: "done" })
       await reload()
@@ -109,19 +120,13 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
             placeholder="groups@example.com"
           />
         </Field>
-        <Field
-          label="Sales inquiry recipient email"
-          htmlFor="salesEmail"
-          hint="Where each recorded inquiry is sent (Reply-To is the caller). Usually a shared sales mailbox."
-        >
-          <Input
-            id="salesEmail"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="sales@example.com"
-          />
-        </Field>
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Sales departments — where each recorded inquiry is emailed (Reply-To is the caller).
+            Usually one shared sales mailbox; add more departments later under Settings → Sales.
+          </p>
+          <SalesDepartmentsEditor departments={departments} onChange={setDepartments} />
+        </div>
 
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">Sales team</p>

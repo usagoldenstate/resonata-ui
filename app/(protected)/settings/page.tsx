@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Building2, Globe, Layers, Megaphone, Save, Loader2, Lock, TriangleAlert, Users } from "lucide-react"
+import { Building2, Globe, Inbox, Layers, Megaphone, Save, Loader2, Lock, TriangleAlert, Users } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -31,6 +31,15 @@ import { Sidebar } from "@/components/sidebar"
 import { SetupHealthCard } from "@/components/hotel-setup/setup-health-card"
 import { OperaCancellationCard } from "@/components/opera-cancellation-card"
 import { StaynTouchCancellationCard } from "@/components/stayntouch-cancellation-card"
+import {
+  SalesDepartmentsEditor,
+  defaultDepartmentDraft,
+  departmentDrafts,
+  departmentPayload,
+  departmentsChanged,
+  validateDepartments,
+  type DepartmentDraft,
+} from "@/components/sales-departments-editor"
 import { useHotel } from "@/lib/hotel-context"
 import { useCurrentUser } from "@/lib/current-user-context"
 import { lineSetOf, type HotelLines } from "@/lib/product-lines"
@@ -117,7 +126,9 @@ export default function SettingsPage() {
   // Sales intake line (platform-admin only) — see the "Sales Intake Line" card.
   const [salesLineEnabled, setSalesLineEnabled] = useState(false)
   const [salesVapiPhoneNumberId, setSalesVapiPhoneNumberId] = useState("")
-  const [salesInquiryEmail, setSalesInquiryEmail] = useState("")
+  // Where inquiries are emailed — operator-editable. A hotel with none yet
+  // starts from one catch-all "Sales Department" draft.
+  const [salesDepartments, setSalesDepartments] = useState<DepartmentDraft[]>([])
   // Which products the hotel bought (platform-admin only). Sections below
   // follow the SAVED value, so fields don't vanish mid-edit.
   const [productLines, setProductLines] = useState<HotelLines>("reservations")
@@ -143,7 +154,9 @@ export default function SettingsPage() {
     setTwilioFromNumber(d.twilio_from_number ?? "")
     setSalesLineEnabled(d.sales_line_enabled ?? false)
     setSalesVapiPhoneNumberId(d.sales_vapi_phone_number_id ?? "")
-    setSalesInquiryEmail(d.sales_inquiry_email ?? "")
+    setSalesDepartments(
+      d.sales_departments?.length ? departmentDrafts(d.sales_departments) : [defaultDepartmentDraft()],
+    )
     setProductLines(d.lines ?? "reservations")
     setSalesRepNames((d.sales_rep_names ?? []).join("\n"))
     setTimezone(d.timezone)
@@ -224,6 +237,18 @@ export default function SettingsPage() {
       if (nextReps.join("\n") !== (detail.sales_rep_names ?? []).join("\n")) {
         opBody.sales_rep_names = nextReps
       }
+      // The untouched starter draft (no address yet) on a hotel with no
+      // departments isn't a change — only save departments someone edited.
+      const untouchedStarter =
+        !(detail.sales_departments?.length) &&
+        salesDepartments.length === 1 &&
+        salesDepartments[0].to.length === 0 &&
+        salesDepartments[0].cc.length === 0
+      if (!untouchedStarter && departmentsChanged(salesDepartments, detail.sales_departments)) {
+        const problem = validateDepartments(salesDepartments)
+        if (problem) throw new Error(problem)
+        opBody.sales_departments = departmentPayload(salesDepartments)
+      }
       if (Object.keys(opBody).length > 0) {
         latest = await updateHotelOperatorSettings(hotelId, opBody)
       }
@@ -247,18 +272,15 @@ export default function SettingsPage() {
         if (nextTwilio !== (detail.twilio_from_number ?? null)) {
           pfBody.twilio_from_number = nextTwilio
         }
-        // Sales intake line. The backend validates the three together (enabling
-        // requires an address), so send whatever changed in one PATCH.
+        // Sales intake line. The backend validates these together (enabling
+        // requires a sales department, saved by the PUT above), so send
+        // whatever changed in one PATCH.
         if (salesLineEnabled !== (detail.sales_line_enabled ?? false)) {
           pfBody.sales_line_enabled = salesLineEnabled
         }
         const nextSalesVapiId = salesVapiPhoneNumberId.trim() || null
         if (nextSalesVapiId !== (detail.sales_vapi_phone_number_id ?? null)) {
           pfBody.sales_vapi_phone_number_id = nextSalesVapiId
-        }
-        const nextSalesEmail = salesInquiryEmail.trim() || null
-        if (nextSalesEmail !== (detail.sales_inquiry_email ?? null)) {
-          pfBody.sales_inquiry_email = nextSalesEmail
         }
         // Validated together with the sales-line switch, so adding the sales
         // line and switching it on can be one save.
@@ -567,14 +589,14 @@ export default function SettingsPage() {
                           disabled={
                             !salesLineEnabled &&
                             (!lineSetOf(productLines).sales ||
-                              !salesInquiryEmail.trim() ||
+                              !salesDepartments.some((d) => d.to.length > 0) ||
                               !salesVapiPhoneNumberId.trim())
                           }
                         />
                       </div>
                       {!salesLineEnabled && (
                         <p className="text-[11px] text-muted-foreground">
-                          To turn this on, include Sales in Lines, then save the inquiry email and
+                          To turn this on, include Sales in Lines, then add a sales department and the
                           Vapi phone number on the Sales tab.
                         </p>
                       )}
@@ -696,6 +718,25 @@ export default function SettingsPage() {
             {savedLines.sales && (
               <TabsContent value="sales">
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  {/* Hotel operators decide how their sales team splits inquiries. */}
+                  <Card className="border-border lg:col-span-2">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
+                          <Inbox className="w-5 h-5 text-[#6b7a4a]" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">Sales Departments</CardTitle>
+                          <CardDescription className="text-xs">
+                            Where each recorded inquiry is emailed (Reply-To is the caller)
+                          </CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <SalesDepartmentsEditor departments={salesDepartments} onChange={setSalesDepartments} />
+                    </CardContent>
+                  </Card>
                   <Card className="border-border">
                     <CardHeader className="pb-4">
                       <CardTitle className="text-base">Sales Email Sender</CardTitle>
@@ -736,7 +777,7 @@ export default function SettingsPage() {
                       <p className="text-[11px] text-muted-foreground">
                         Use an address on a domain verified for sending emails. Leave both fields blank to use
                         the reservations sender, or the platform default if no reservations sender is set.
-                        The sales inquiry recipient is configured separately under Sales Intake Line.
+                        Where inquiries are sent is configured under Sales Departments.
                       </p>
                     </CardContent>
                   </Card>
@@ -791,23 +832,6 @@ export default function SettingsPage() {
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="salesInquiryEmail" className="text-xs text-muted-foreground">
-                            Sales Inquiry Email
-                          </Label>
-                          <Input
-                            id="salesInquiryEmail"
-                            type="email"
-                            value={salesInquiryEmail}
-                            onChange={(e) => setSalesInquiryEmail(e.target.value)}
-                            placeholder="sales@example.com"
-                            className="bg-card border-border"
-                          />
-                          <p className="text-[11px] text-muted-foreground">
-                            Where each recorded inquiry is emailed (Reply-To is the caller). Required while the
-                            line is enabled.
-                          </p>
-                        </div>
                         <div className="space-y-2">
                           <Label htmlFor="salesVapiPhoneNumberId" className="text-xs text-muted-foreground">
                             Sales Vapi Phone Number ID

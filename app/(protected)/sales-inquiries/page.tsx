@@ -17,7 +17,7 @@ import { useHotel, type HotelListItem } from "@/lib/hotel-context"
 type Selection = { id: string; hotelId: string }
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { confirmDiscardUnsaved, registerUnsavedGuard } from "@/lib/unsaved-guard"
-import { ApiError, fetchSalesAssignees, formatHeadcount, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
+import { ApiError, fetchSalesAssignees, fetchSalesDepartmentOptions, formatHeadcount, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
 
 const statuses: Record<SalesFollowUpStatus, string> = { new: "New", call_attempted: "Call attempted", contacted: "Spoke with caller", booked: "Booked / Won", closed: "Closed / Not proceeding" }
 const statusStyle: Record<SalesFollowUpStatus, string> = {
@@ -104,6 +104,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   const [eventType, setEventType] = useState("")
   const [status, setStatus] = useState("")
   const [owner, setOwner] = useState("")
+  const [department, setDepartment] = useState("")
   const [email, setEmail] = useState("")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
@@ -125,7 +126,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   const event = useDebouncedValue(eventType, 300)
   const invalidDates = !!(dateFrom && dateTo && dateFrom > dateTo)
   const invalidEventDates = !!(eventFrom && eventTo && eventFrom > eventTo)
-  const filters = { q, event_type: event, status, assigned_rep: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", email_status: email, date_from: dateFrom, date_to: dateTo, event_from: eventFrom, event_to: eventTo, budget_value_gte: budgetMinimum, sort, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+  const filters = { q, event_type: event, status, assigned_rep: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", department_id: department || undefined, email_status: email, date_from: dateFrom, date_to: dateTo, event_from: eventFrom, event_to: eventTo, budget_value_gte: budgetMinimum, sort, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
   const { data, error, isLoading, isValidating, mutate } = useSWR(invalidDates || invalidEventDates ? null : ["sales-inquiries", hotelIds.join(","), filters], () => fetchSalesInquiries(hotelIds, filters), { refreshInterval: 30000 })
   const staff = useSWR<Rosters>(["sales-assignees", hotelIds.join(",")], async () => Object.fromEntries(await Promise.all(hotelIds.map(async id => [id, await fetchSalesAssignees(id)] as const))))
   const linkedRow = !dismissed && callId ? data?.items[0] : undefined
@@ -133,6 +134,11 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   const selectedId = current?.id ?? null
   const detail = useSWR(current ? ["sales-inquiry", current.hotelId, current.id] : null, () => fetchSalesInquiry(current!.hotelId, current!.id), { refreshInterval: 30000 })
   const reps = mergeRosters(staff.data, hotelIds)
+  // Current departments plus any its inquiries were routed to before being
+  // deleted. Only worth a filter once there is more than one.
+  const departments = useSWR(["sales-departments", hotelIds.join(",")], () => fetchSalesDepartmentOptions(hotelIds))
+  const departmentLabel = (option: { name: string; hotel_id: string; current: boolean }) =>
+    `${option.name}${portfolio ? ` · ${nameOf(option.hotel_id)}` : ""}${option.current ? "" : " (removed)"}`
   async function save(row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) {
     if (saving.current) return false
     saving.current = true
@@ -152,7 +158,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
       return false
     } finally { saving.current = false; setBusy(null) }
   }
-  function clearFilters() { setSearch(""); setEventType(""); setStatus(""); setOwner(""); setEmail(""); setDateFrom(""); setDateTo(""); setEventFrom(""); setEventTo(""); setBudgetMinimum(""); setSort("newest"); setCallId(null); setPage(0) }
+  function clearFilters() { setSearch(""); setEventType(""); setStatus(""); setOwner(""); setDepartment(""); setEmail(""); setDateFrom(""); setDateTo(""); setEventFrom(""); setEventTo(""); setBudgetMinimum(""); setSort("newest"); setCallId(null); setPage(0) }
   const counts = data?.counts
   const cards = [
     { label: "New inquiries", value: counts?.new || 0, icon: Inbox, color: "text-blue-600" },
@@ -174,6 +180,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
             <label className="relative min-w-60 flex-1"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Search inquiries" placeholder="Search name, phone, email, or request…" value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-9" /></label>
             <select aria-label="Filter by status" className={selectClass} value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}><option value="">All statuses</option>{Object.entries(statuses).map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select>
             <select aria-label="Filter by salesperson" className={selectClass} value={owner} onChange={e => { setOwner(e.target.value); setPage(0) }}><option value="">All salespeople</option><option value="unassigned">Unassigned</option>{reps.map(name => <option key={name} value={name}>{name}</option>)}</select>
+            {(departments.data?.length ?? 0) > 1 && <select aria-label="Filter by department" className={selectClass} value={department} onChange={e => { setDepartment(e.target.value); setPage(0) }}><option value="">All departments</option>{departments.data!.map(option => <option key={`${option.hotel_id}:${option.id}`} value={option.id}>{departmentLabel(option)}</option>)}</select>}
             <select aria-label="Filter by email send status" className={selectClass} value={email} onChange={e => { setEmail(e.target.value); setPage(0) }}><option value="">All email statuses</option><option value="sent">Sent</option><option value="sending">Sending</option><option value="failed">Retrying</option><option value="gave_up">Not delivered</option></select>
             <select aria-label="Sort inquiries" className={selectClass} value={sort} onChange={e => { setSort(e.target.value); setPage(0) }}><option value="newest">Newest first</option><option value="budget_desc">Highest AI-estimated budget</option><option value="event_date_asc">Soonest event</option><option value="headcount_desc">Largest party</option></select>
           </div>
@@ -188,13 +195,14 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
           </div>
           {staff.error && <p role="alert" className="text-sm text-destructive">Employees could not be loaded. <button className="underline" onClick={() => void staff.mutate()}>Retry</button></p>}
         </div>
-        {invalidDates || invalidEventDates ? <p role="alert" className="p-8 text-sm text-destructive">{invalidDates ? "The received-from date must be on or before the end date." : "The event-from date must be on or before the event-through date."}</p> : error ? <div role="alert" className="p-10 text-center"><AlertTriangle className="mx-auto mb-3 size-6 text-destructive" /><p>Could not load sales inquiries.</p><Button className="mt-4" variant="outline" onClick={() => void mutate()}>Try again</Button></div> : isLoading ? <div role="status" className="flex justify-center gap-2 p-16 text-muted-foreground"><Loader2 className="size-5 animate-spin" />Loading inquiries…</div> : !data?.items.length ? <div className="p-16 text-center"><Inbox className="mx-auto mb-4 size-8 text-muted-foreground" /><h3 className="font-medium">{search || status || owner || email || dateFrom || dateTo || eventFrom || eventTo || budgetMinimum || eventType || callId ? "No inquiries match these filters" : "Your sales inquiries will appear here"}</h3><p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">When your voice agent captures a sales request, its details and email-send status are added automatically.</p>{!!data?.total && <Button variant="outline" className="mt-4" onClick={() => setPage(0)}>Return to first page</Button>}</div> : <>
-          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/40 text-xs text-muted-foreground"><tr>{["Received", ...(portfolio ? ["Hotel"] : []), "Caller", "Request / dates", "AI-estimated budget", "Status", "Assigned to", "Email"].map(h => <th key={h} className="whitespace-nowrap px-5 py-3 font-medium">{h === "AI-estimated budget" ? <AiBudgetHelp /> : h}</th>)}</tr></thead>
+        {invalidDates || invalidEventDates ? <p role="alert" className="p-8 text-sm text-destructive">{invalidDates ? "The received-from date must be on or before the end date." : "The event-from date must be on or before the event-through date."}</p> : error ? <div role="alert" className="p-10 text-center"><AlertTriangle className="mx-auto mb-3 size-6 text-destructive" /><p>Could not load sales inquiries.</p><Button className="mt-4" variant="outline" onClick={() => void mutate()}>Try again</Button></div> : isLoading ? <div role="status" className="flex justify-center gap-2 p-16 text-muted-foreground"><Loader2 className="size-5 animate-spin" />Loading inquiries…</div> : !data?.items.length ? <div className="p-16 text-center"><Inbox className="mx-auto mb-4 size-8 text-muted-foreground" /><h3 className="font-medium">{search || status || owner || department || email || dateFrom || dateTo || eventFrom || eventTo || budgetMinimum || eventType || callId ? "No inquiries match these filters" : "Your sales inquiries will appear here"}</h3><p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">When your voice agent captures a sales request, its details and email-send status are added automatically.</p>{!!data?.total && <Button variant="outline" className="mt-4" onClick={() => setPage(0)}>Return to first page</Button>}</div> : <>
+          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/40 text-xs text-muted-foreground"><tr>{["Received", ...(portfolio ? ["Hotel"] : []), "Caller", "Request / dates", "Department", "AI-estimated budget", "Status", "Assigned to", "Email"].map(h => <th key={h} className="whitespace-nowrap px-5 py-3 font-medium">{h === "AI-estimated budget" ? <AiBudgetHelp /> : h}</th>)}</tr></thead>
             <tbody className="divide-y">{data.items.map(row => <tr key={row.id} className="cursor-pointer transition-colors hover:bg-muted/30" onClick={() => { setSelected({ id: row.id, hotelId: row.hotel_id }); setDismissed(false) }}>
               <td className="whitespace-nowrap px-5 py-5 text-xs text-muted-foreground">{timestamp(row.created_at, tzOf(row.hotel_id))}</td>
               {portfolio && <td className="whitespace-nowrap px-5 py-5"><span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{nameOf(row.hotel_id)}</span></td>}
               <td className="px-5 py-5"><button className="text-left font-medium hover:underline focus-visible:outline-ring" onClick={() => setSelected({ id: row.id, hotelId: row.hotel_id })}>{row.caller_name || "Name not provided"}</button><p className="mt-1 text-xs text-muted-foreground">{row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || "No contact provided"}</p></td>
               <td className="max-w-64 px-5 py-5"><p className="font-medium">{row.event_type}{formatHeadcount(row) ? ` · ${formatHeadcount(row)} guests` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{dates(row)}</p></td>
+              <td className="whitespace-nowrap px-5 py-5 text-sm">{row.department_name || <span className="text-muted-foreground">—</span>}</td>
               <td className="whitespace-nowrap px-5 py-5 font-medium tabular-nums">{formatAiBudget(row)}</td>
               <td className="px-5 py-5" onClick={e => e.stopPropagation()}><StatusSelect row={row} disabled={!!busy} onChange={v => void save(row, { follow_up_status: v })} /></td>
               <td className="px-5 py-5" onClick={e => e.stopPropagation()}><OwnerSelect row={row} reps={staff.data?.[row.hotel_id] ?? []} disabled={!!busy || !staff.data} onChange={name => void save(row, { assigned_rep: name })} /></td>
@@ -287,7 +295,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
     <section className="rounded-xl border bg-card px-4 py-3.5 shadow-xs">
       <div className="flex items-start gap-3">
         <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ${row.email_status === "gave_up" ? "bg-destructive/10 text-destructive" : "bg-brand-insights/10 text-brand-insights"}`}>{row.email_status === "sent" ? <CheckCircle2 className="size-4" /> : <Mail className="size-4" />}</span>
-        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Sales team notification</h3><EmailBadge row={row} /></div><p className="mt-1 break-all text-xs text-muted-foreground">{row.sent_to || "Recipient not recorded"}</p>{row.sent_at && <p className="mt-1 text-[11px] text-muted-foreground">Sent {timestamp(row.sent_at, timezone)}</p>}</div>
+        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Sales team notification</h3><EmailBadge row={row} /></div>{row.department_name && <p className="mt-1 text-xs"><span className="text-muted-foreground">Routed to </span><span className="font-medium">{row.department_name}</span></p>}<p className="mt-1 break-all text-xs text-muted-foreground">{row.sent_to ? <>To: {row.sent_to}</> : "Recipient not recorded"}</p>{row.sent_cc && <p className="mt-0.5 break-all text-xs text-muted-foreground">CC: {row.sent_cc}</p>}{row.sent_at && <p className="mt-1 text-[11px] text-muted-foreground">Sent {timestamp(row.sent_at, timezone)}</p>}</div>
       </div>
       {row.email_status === "gave_up" && <p className="mt-3 rounded-lg bg-destructive/5 p-3 text-xs leading-relaxed text-destructive">The notification could not be delivered after repeated attempts. The inquiry is saved here so your team can follow up.</p>}
       {row.email_status === "failed" && <p className="mt-3 rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">The last send attempt failed. It is retried automatically every 10 minutes for about an hour.</p>}
