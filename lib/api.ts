@@ -492,11 +492,18 @@ export type SalesInquiry = {
   // Recipients, each list ", "-joined.
   sent_to: string | null
   sent_cc?: string | null
-  email_status: "sending" | "sent" | "failed" | "gave_up"
+  // "not_sent": a partial inquiry (source "recovered") — the call ended
+  // before the intake finished, so no email was ever sent.
+  email_status: "sending" | "sent" | "failed" | "gave_up" | "not_sent"
   email_error_class: string | null
   sent_at: string | null
   created_at: string
+  // "intake_tool" = recorded by the agent on the call. "recovered" = a
+  // partial inquiry pulled from the transcript of a call that ended before
+  // the intake finished; may be incomplete, never emailed.
+  source?: SalesInquirySource
 }
+export type SalesInquirySource = "intake_tool" | "recovered"
 
 // Aggregate counts behind the call-log stat tiles. Outcome buckets sum to
 // total_calls; `transferred` is orthogonal. Mirrors CallStats in the backend's
@@ -844,6 +851,11 @@ export type HotelDetail = {
   // The hotel's sales team as plain name tags — who follow-up activity is
   // attributed to. Operator-editable, unlike the sales-line fields above.
   sales_rep_names: string[]
+  // The hotel's own numbers to ignore as caller IDs (a phone-system trunk
+  // that forwarded calls show). Operator-editable, stored E.164. The
+  // automatic list is the hotel's numbers already on file — read-only.
+  sales_ignored_caller_numbers?: string[]
+  sales_automatic_ignored_numbers?: string[]
   sales_intake_questions?: SalesIntakeQuestion[]
   // The sales line's own opener (null = the template) and the template
   // rendered for this hotel. Operator-editable via Agent Configuration.
@@ -1137,6 +1149,9 @@ export type HotelOperatorUpdate = {
   // Replaces the whole list. Normalized server-side (trimmed, blanks dropped,
   // case-insensitively de-duplicated, max 50).
   sales_rep_names?: string[]
+  // Replaces the whole list. Normalized server-side to E.164; an invalid
+  // number is refused with a 422 naming it.
+  sales_ignored_caller_numbers?: string[]
   sales_intake_questions?: SalesIntakeQuestionInput[]
   // Replaces the whole list. A non-empty list needs exactly one catch_all;
   // an empty one is refused while the sales line is on.
@@ -1760,6 +1775,11 @@ export type SalesInquiryDetail = SalesInquiryItem & {
   // The no-login link the notification email carried, re-derived so it can be
   // handed out again. Null once the inquiry has been erased.
   follow_up_url: string | null
+  // The persisted call it came from, for playing the recording through
+  // fetchCallRecording. Null until the call's end-of-call report lands.
+  call_record_id?: string | null
+  call_created_at?: string | null
+  has_recording?: boolean
 }
 export type SalesInquiryPage = { items: SalesInquiryItem[]; total: number; counts: Partial<Record<SalesFollowUpStatus, number>> }
 export type SalesInquiryPatch = {
@@ -1822,6 +1842,7 @@ export type PublicSalesInquiry = {
   budget_estimation_prompt_version: string | null
   notes: string | null
   created_at: string
+  source?: SalesInquirySource
   follow_up_status: SalesFollowUpStatus
   follow_up_status_label: string
   assigned_rep: string | null

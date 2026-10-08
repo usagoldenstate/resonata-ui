@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
-import { AlertTriangle, ArrowUpRight, CheckCircle2, ChevronLeft, ChevronRight, Inbox, Link2, Loader2, Mail, Phone, RefreshCw, Search, Users, CalendarDays, BedDouble, MessageSquareText, Clock3, UserRound, Sparkles, Send, History, Wallet, X } from "lucide-react"
+import { AlertTriangle, ArrowUpRight, CheckCircle2, Headphones, ChevronLeft, ChevronRight, Inbox, Link2, Loader2, Mail, Phone, RefreshCw, Search, Users, CalendarDays, BedDouble, MessageSquareText, Clock3, UserRound, Sparkles, Send, History, Wallet, X } from "lucide-react"
 import { toast } from "sonner"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet"
 import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
+import { CallRecordingPlayer } from "@/components/call-recording-player"
 import { useHotel, type HotelListItem } from "@/lib/hotel-context"
 type Selection = { id: string; hotelId: string }
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
@@ -40,21 +41,38 @@ function dates(row: SalesInquiryItem) {
   const parts = row.event_dates_text || [row.event_start_date, row.event_end_date !== row.event_start_date ? row.event_end_date : null].filter(Boolean).join(" – ") || "Dates not provided"
   return `${parts}${row.dates_flexible ? " · Flexible" : ""}`
 }
-// The notification is sent by a background task once the inquiry row is
-// committed, so "sending" normally lasts seconds. One that has sat there for
-// minutes means the process died mid-send (there is no retry cron), and it
-// needs the same manual forwarding a failed send does.
-const STALE_SEND_MS = 5 * 60 * 1000
-function emailStale(row: Pick<SalesInquiryItem, "email_status" | "created_at">): boolean {
-  return row.email_status === "sending" && Date.now() - new Date(row.created_at).getTime() > STALE_SEND_MS
+// What a hotelier needs to know about the sales-team email, in three states.
+// The stored status is more detailed (sending / failed / sent / gave_up /
+// not_sent) and stays visible to ops in the API and logs; for the hotel,
+// "still going out" and "retrying" are the same thing — nothing to do — and
+// a delivery that gave up or an email that was never composed is the same
+// action: work the inquiry from here. The reason is in the detail panel.
+type EmailView = "emailed" | "sending" | "not_sent"
+const EMAIL_VIEW_STATUSES: Record<EmailView, SalesInquiryItem["email_status"][]> = {
+  emailed: ["sent"],
+  sending: ["sending", "failed"],
+  not_sent: ["not_sent", "gave_up"],
 }
-function EmailBadge({ row }: { row: Pick<SalesInquiryItem, "email_status" | "created_at"> }) {
-  const status = row.email_status
-  const stale = emailStale(row)
-  const problem = status === "gave_up" || stale
-  return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${problem ? "text-destructive" : "text-muted-foreground"}`}>
-    {problem ? <AlertTriangle className="size-3.5" /> : <Mail className="size-3.5" />}
-    {status === "sent" ? "Sent" : status === "gave_up" ? "Not delivered" : status === "failed" ? "Retrying" : stale ? "Send stuck" : "Sending"}
+function emailView(status: SalesInquiryItem["email_status"]): EmailView {
+  return status === "sent" ? "emailed" : status === "not_sent" || status === "gave_up" ? "not_sent" : "sending"
+}
+const EMAIL_VIEW_LABEL: Record<EmailView, string> = { emailed: "Emailed", sending: "Sending", not_sent: "Email not sent" }
+const pillTone: Record<EmailView, string> = {
+  emailed: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+  not_sent: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200",
+  sending: "border-border bg-muted text-muted-foreground",
+}
+// Why an inquiry has no email, shown as a banner at the top of its panel.
+function notSentReason(row: Pick<SalesInquiryItem, "email_status">): string | null {
+  if (row.email_status === "not_sent") return "The call ended before the intake finished, so no email was sent. These details were pulled from the call transcript and may be incomplete — listen to the call before calling back."
+  if (row.email_status === "gave_up") return "The email to your sales team could not be delivered after repeated attempts. Check the department's email address in Settings, and follow up from here."
+  return null
+}
+function EmailBadge({ row }: { row: Pick<SalesInquiryItem, "email_status"> }) {
+  const view = emailView(row.email_status)
+  return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium ${pillTone[view]}`}>
+    {view === "not_sent" ? <AlertTriangle className="size-3.5" /> : view === "emailed" ? <CheckCircle2 className="size-3.5" /> : <Mail className="size-3.5" />}
+    {EMAIL_VIEW_LABEL[view]}
   </span>
 }
 function StatusSelect({ row, disabled, onChange }: { row: SalesInquiryItem; disabled: boolean; onChange: (status: SalesFollowUpStatus) => void }) {
@@ -126,7 +144,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   const event = useDebouncedValue(eventType, 300)
   const invalidDates = !!(dateFrom && dateTo && dateFrom > dateTo)
   const invalidEventDates = !!(eventFrom && eventTo && eventFrom > eventTo)
-  const filters = { q, event_type: event, status, assigned_rep: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", department_id: department || undefined, email_status: email, date_from: dateFrom, date_to: dateTo, event_from: eventFrom, event_to: eventTo, budget_value_gte: budgetMinimum, sort, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+  const filters = { q, event_type: event, status, assigned_rep: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", department_id: department || undefined, email_status: email ? EMAIL_VIEW_STATUSES[email as EmailView] : undefined, date_from: dateFrom, date_to: dateTo, event_from: eventFrom, event_to: eventTo, budget_value_gte: budgetMinimum, sort, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
   const { data, error, isLoading, isValidating, mutate } = useSWR(invalidDates || invalidEventDates ? null : ["sales-inquiries", hotelIds.join(","), filters], () => fetchSalesInquiries(hotelIds, filters), { refreshInterval: 30000 })
   const staff = useSWR<Rosters>(["sales-assignees", hotelIds.join(",")], async () => Object.fromEntries(await Promise.all(hotelIds.map(async id => [id, await fetchSalesAssignees(id)] as const))))
   const linkedRow = !dismissed && callId ? data?.items[0] : undefined
@@ -181,7 +199,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
             <select aria-label="Filter by status" className={selectClass} value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}><option value="">All statuses</option>{Object.entries(statuses).map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select>
             <select aria-label="Filter by salesperson" className={selectClass} value={owner} onChange={e => { setOwner(e.target.value); setPage(0) }}><option value="">All salespeople</option><option value="unassigned">Unassigned</option>{reps.map(name => <option key={name} value={name}>{name}</option>)}</select>
             {(departments.data?.length ?? 0) > 1 && <select aria-label="Filter by department" className={selectClass} value={department} onChange={e => { setDepartment(e.target.value); setPage(0) }}><option value="">All departments</option>{departments.data!.map(option => <option key={`${option.hotel_id}:${option.id}`} value={option.id}>{departmentLabel(option)}</option>)}</select>}
-            <select aria-label="Filter by email send status" className={selectClass} value={email} onChange={e => { setEmail(e.target.value); setPage(0) }}><option value="">All email statuses</option><option value="sent">Sent</option><option value="sending">Sending</option><option value="failed">Retrying</option><option value="gave_up">Not delivered</option></select>
+            <select aria-label="Filter by email send status" className={selectClass} value={email} onChange={e => { setEmail(e.target.value); setPage(0) }}><option value="">All email statuses</option><option value="emailed">Emailed</option><option value="sending">Sending</option><option value="not_sent">Email not sent</option></select>
             <select aria-label="Sort inquiries" className={selectClass} value={sort} onChange={e => { setSort(e.target.value); setPage(0) }}><option value="newest">Newest first</option><option value="budget_desc">Highest AI-estimated budget</option><option value="event_date_asc">Soonest event</option><option value="headcount_desc">Largest party</option></select>
           </div>
           <div className="flex flex-wrap items-end gap-3 text-xs text-muted-foreground">
@@ -250,6 +268,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
   ]
   const panelControl = "h-11! w-full min-w-0 rounded-lg border-border bg-card text-sm shadow-xs focus-visible:ring-brand-insights/20"
   return <div className="space-y-5 p-4 sm:p-6">
+    {notSentReason(row) && <p role="status" className="flex gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-relaxed text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-100"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span><span className="font-semibold">Email not sent.</span> {notSentReason(row)}</span></p>}
     <section className="relative overflow-hidden rounded-2xl border border-brand-insights/20 bg-card shadow-sm">
       <div className="h-1 bg-brand-insights" />
       <div className="bg-linear-to-br from-brand-insights/10 via-brand-insights/5 to-transparent p-5">
@@ -292,14 +311,21 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
       {row.notes && <div className="mx-5 mb-5 rounded-r-lg border-l-2 border-brand-insights/50 bg-brand-insights/5 px-3.5 py-3"><p className="mb-1 text-[11px] font-medium text-brand-insights">From the caller</p><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{row.notes}</p></div>}
     </section>
 
+    {row.call_record_id && <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <div className="flex items-center gap-2 border-b px-5 py-3.5"><Headphones className="size-4 text-brand-insights" /><h3 className="text-sm font-semibold">Call recording</h3></div>
+      <div className="p-5">
+        {row.has_recording && row.call_created_at
+          ? <CallRecordingPlayer callId={row.call_record_id} createdAt={row.call_created_at} />
+          : <p className="text-sm text-muted-foreground">No recording is available for this call.</p>}
+      </div>
+    </section>}
+
     <section className="rounded-xl border bg-card px-4 py-3.5 shadow-xs">
       <div className="flex items-start gap-3">
-        <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ${row.email_status === "gave_up" ? "bg-destructive/10 text-destructive" : "bg-brand-insights/10 text-brand-insights"}`}>{row.email_status === "sent" ? <CheckCircle2 className="size-4" /> : <Mail className="size-4" />}</span>
-        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Sales team notification</h3><EmailBadge row={row} /></div>{row.department_name && <p className="mt-1 text-xs"><span className="text-muted-foreground">Routed to </span><span className="font-medium">{row.department_name}</span></p>}<p className="mt-1 break-all text-xs text-muted-foreground">{row.sent_to ? <>To: {row.sent_to}</> : "Recipient not recorded"}</p>{row.sent_cc && <p className="mt-0.5 break-all text-xs text-muted-foreground">CC: {row.sent_cc}</p>}{row.sent_at && <p className="mt-1 text-[11px] text-muted-foreground">Sent {timestamp(row.sent_at, timezone)}</p>}</div>
+        <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ${row.email_status === "gave_up" || row.email_status === "not_sent" ? "bg-destructive/10 text-destructive" : "bg-brand-insights/10 text-brand-insights"}`}>{row.email_status === "sent" ? <CheckCircle2 className="size-4" /> : <Mail className="size-4" />}</span>
+        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Sales team notification</h3><EmailBadge row={row} /></div>{row.department_name && row.email_status !== "not_sent" && <p className="mt-1 text-xs"><span className="text-muted-foreground">Routed to </span><span className="font-medium">{row.department_name}</span></p>}<p className="mt-1 break-all text-xs text-muted-foreground">{row.email_status === "not_sent" ? "No email was sent." : row.sent_to ? <>To: {row.sent_to}</> : "Recipient not recorded"}</p>{row.sent_cc && <p className="mt-0.5 break-all text-xs text-muted-foreground">CC: {row.sent_cc}</p>}{row.sent_at && <p className="mt-1 text-[11px] text-muted-foreground">Sent {timestamp(row.sent_at, timezone)}</p>}</div>
       </div>
-      {row.email_status === "gave_up" && <p className="mt-3 rounded-lg bg-destructive/5 p-3 text-xs leading-relaxed text-destructive">The notification could not be delivered after repeated attempts. The inquiry is saved here so your team can follow up.</p>}
-      {row.email_status === "failed" && <p className="mt-3 rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">The last send attempt failed. It is retried automatically every 10 minutes for about an hour.</p>}
-      {emailStale(row) && <p className="mt-3 rounded-lg bg-destructive/5 p-3 text-xs leading-relaxed text-destructive">The notification never finished sending. The inquiry is saved here — forward it to your sales team manually.</p>}
+      {emailView(row.email_status) === "sending" && <p className="mt-3 rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">The email is on its way. If a send fails it is retried automatically for about an hour — there is nothing you need to do.</p>}
     </section>
 
     {row.erased && <p role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-xs leading-relaxed text-destructive">This inquiry was erased under a privacy request. Its caller details are gone and it can no longer be updated.</p>}

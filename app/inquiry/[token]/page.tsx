@@ -189,6 +189,16 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
           <h1 className="mt-1 text-xl font-semibold">Sales inquiry follow-up</h1>
         </header>
 
+        {data.source === "recovered" && (
+          <p role="status" className="flex gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>
+              <span className="font-semibold">Call ended early.</span> This call ended before the
+              intake finished, so these details were pulled from the call and may be incomplete.
+            </span>
+          </p>
+        )}
+
         {/* Who called and what they want — enough to know which inquiry this
             is without opening the original email again. */}
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
