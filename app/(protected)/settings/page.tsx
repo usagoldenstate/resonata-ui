@@ -1,14 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Building2, Globe, Inbox, Layers, Megaphone, Save, Loader2, Lock, TriangleAlert, Users } from "lucide-react"
+import { TagInput } from "@/components/tag-input"
+import { Building2, Globe, Inbox, Layers, Megaphone, PhoneOff, Save, Loader2, Lock, TriangleAlert, Users } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   AlertDialog,
@@ -84,13 +84,18 @@ function describeError(error: unknown): string {
 // One name per line, trimmed, blanks dropped, de-duplicated case-insensitively.
 // Mirrors the server's normalization so the saved-state diff doesn't report a
 // change the backend would have collapsed anyway.
-function parseRepNames(text: string): string[] {
-  const seen = new Map<string, string>()
-  for (const line of text.split("\n")) {
-    const name = line.trim()
-    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name)
-  }
-  return [...seen.values()]
+// Mirrors the backend roster and hotel-number limits (api/admin.py).
+const MAX_SALES_REPS = 50
+const MAX_SALES_REP_NAME = 80
+const MAX_IGNORED_NUMBERS = 20
+
+// A loose client-side check; the backend normalizes to E.164 and refuses
+// anything it can't parse, with the offending value in the message.
+function phoneProblem(value: string): string | null {
+  const digits = value.replace(/\D/g, "")
+  return /^[+\d\s().-]+$/.test(value) && digits.length >= 7 && digits.length <= 15
+    ? null
+    : `“${value}” isn't a valid phone number.`
 }
 
 type SettingsTab = "general" | "reservations" | "sales"
@@ -133,9 +138,11 @@ export default function SettingsPage() {
   // follow the SAVED value, so fields don't vanish mid-edit.
   const [productLines, setProductLines] = useState<HotelLines>("reservations")
   // Sales team roster — operator-editable (unlike the sales-line fields
-  // above). Held as newline-separated text so the whole list edits like a
-  // note; split and normalized on save.
-  const [salesRepNames, setSalesRepNames] = useState("")
+  // above). Edited as tags; normalized server-side on save.
+  const [salesRepNames, setSalesRepNames] = useState<string[]>([])
+  // The hotel's own numbers (a phone-system trunk) never treated as a guest's
+  // caller ID. Edited as tags; the backend stores them E.164.
+  const [ignoredNumbers, setIgnoredNumbers] = useState<string[]>([])
   const [timezone, setTimezone] = useState("America/New_York")
   const currency = detail?.currency ?? ""
 
@@ -158,7 +165,8 @@ export default function SettingsPage() {
       d.sales_departments?.length ? departmentDrafts(d.sales_departments) : [defaultDepartmentDraft()],
     )
     setProductLines(d.lines ?? "reservations")
-    setSalesRepNames((d.sales_rep_names ?? []).join("\n"))
+    setSalesRepNames(d.sales_rep_names ?? [])
+    setIgnoredNumbers(d.sales_ignored_caller_numbers ?? [])
     setTimezone(d.timezone)
   }, [])
 
@@ -233,9 +241,11 @@ export default function SettingsPage() {
         const nextEmailFrom = composeEmailFrom(senderName, email)
         if (nextEmailFrom !== (detail.email_from ?? null)) opBody.email_from = nextEmailFrom
       }
-      const nextReps = parseRepNames(salesRepNames)
-      if (nextReps.join("\n") !== (detail.sales_rep_names ?? []).join("\n")) {
-        opBody.sales_rep_names = nextReps
+      if (salesRepNames.join("\n") !== (detail.sales_rep_names ?? []).join("\n")) {
+        opBody.sales_rep_names = salesRepNames
+      }
+      if (ignoredNumbers.join("\n") !== (detail.sales_ignored_caller_numbers ?? []).join("\n")) {
+        opBody.sales_ignored_caller_numbers = ignoredNumbers
       }
       // The untouched starter draft (no address yet) on a hotel with no
       // departments isn't a change — only save departments someone edited.
@@ -797,23 +807,56 @@ export default function SettingsPage() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                      <Label htmlFor="salesRepNames" className="text-xs text-muted-foreground">
-                        Salesperson names — one per line
-                      </Label>
-                      <Textarea
+                      <TagInput
                         id="salesRepNames"
-                        value={salesRepNames}
-                        onChange={(e) => setSalesRepNames(e.target.value)}
-                        placeholder={"Maria Santos\nDaniel Okafor"}
-                        rows={5}
-                        className="bg-card border-border font-normal"
+                        label="Salesperson names"
+                        hint="Type a name and press Enter. The sales notification email goes to a shared mailbox, so whoever follows up picks their name from this list on the “Update inquiry” page — no sign-in needed — and the inquiry is assigned to them. Removing a name here never changes inquiries already logged against it."
+                        values={salesRepNames}
+                        onChange={setSalesRepNames}
+                        placeholder="Maria Santos"
+                        max={MAX_SALES_REPS}
+                        noun="names"
+                        validate={(value) =>
+                          value.length > MAX_SALES_REP_NAME
+                            ? `Names can be at most ${MAX_SALES_REP_NAME} characters.`
+                            : null
+                        }
                       />
-                      <p className="text-[11px] text-muted-foreground">
-                        The sales notification email goes to a shared mailbox, so whoever follows up picks
-                        their name from this list on the &ldquo;Update inquiry&rdquo; page — no sign-in needed — and the
-                        inquiry is assigned to them. Removing a name here never changes inquiries already
-                        logged against it.
-                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
+                          <PhoneOff className="w-5 h-5 text-[#6b7a4a]" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">Hotel Phone Numbers</CardTitle>
+                          <CardDescription className="text-xs">
+                            Your own numbers, never treated as a caller&apos;s number
+                          </CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <TagInput
+                        id="ignoredNumbers"
+                        label="Phone numbers"
+                        hint="Type a number and press Enter. Calls forwarded from your phone system sometimes show your own number as the caller ID; add any such numbers here so they are never treated as a guest's callback number."
+                        values={ignoredNumbers}
+                        onChange={setIgnoredNumbers}
+                        placeholder="(407) 555-0100"
+                        max={MAX_IGNORED_NUMBERS}
+                        noun="numbers"
+                        inputType="tel"
+                        validate={phoneProblem}
+                      />
+                      {!!detail?.sales_automatic_ignored_numbers?.length && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Already ignored automatically:{" "}
+                          {detail.sales_automatic_ignored_numbers.join(", ")}
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
                   {isPlatformAdmin && (

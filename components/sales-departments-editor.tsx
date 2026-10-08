@@ -8,12 +8,13 @@
 // Settings → Sales and the setup wizard's Sales step, which own saving.
 
 import * as React from "react"
-import { Inbox, Plus, Trash2, X } from "lucide-react"
+import { Inbox, Plus, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { TagInput } from "@/components/tag-input"
 import { Textarea } from "@/components/ui/textarea"
 import type { SalesDepartment, SalesDepartmentInput } from "@/lib/api"
 
@@ -250,9 +251,8 @@ export function SalesDepartmentsEditor({
   )
 }
 
-// Type an address and press Enter (or comma) to add it as a tag. Pasting a
-// list splits it; leaving the field adds whatever valid address was typed,
-// so a save never silently drops one.
+// Recipient addresses as removable tags. Emails never contain spaces, so
+// whitespace splits a pasted list as well as commas and semicolons.
 function EmailTagInput({
   id,
   label,
@@ -268,95 +268,20 @@ function EmailTagInput({
   onChange: (addresses: string[]) => void
   disabled: boolean
 }) {
-  const [draft, setDraft] = React.useState("")
-  const [error, setError] = React.useState<string | null>(null)
-
-  const commit = (raw: string): boolean => {
-    const parts = raw.split(/[\s,;]+/).map((p) => p.trim()).filter(Boolean)
-    if (parts.length === 0) return true
-    const invalid = parts.filter((p) => !EMAIL_RE.test(p))
-    const seen = new Set(addresses.map((a) => a.toLowerCase()))
-    const added: string[] = []
-    for (const part of parts) {
-      if (!EMAIL_RE.test(part) || seen.has(part.toLowerCase())) continue
-      seen.add(part.toLowerCase())
-      added.push(part)
-    }
-    const next = [...addresses, ...added]
-    if (next.length > MAX_RECIPIENTS) {
-      setError(`At most ${MAX_RECIPIENTS} addresses.`)
-      return false
-    }
-    if (added.length) onChange(next)
-    if (invalid.length) {
-      setDraft(invalid.join(", "))
-      setError(`“${invalid[0]}” isn't a valid email address.`)
-      return false
-    }
-    setDraft("")
-    setError(null)
-    return true
-  }
-
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-xs text-muted-foreground">
-        {label}
-      </Label>
-      <div
-        className={`flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 focus-within:ring-2 focus-within:ring-ring/50 ${
-          error ? "border-destructive" : "border-input"
-        } ${disabled ? "opacity-70" : ""}`}
-      >
-        {addresses.map((address) => (
-          <span
-            key={address}
-            className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs"
-          >
-            <span className="truncate">{address}</span>
-            {!disabled && (
-              <button
-                type="button"
-                onClick={() => onChange(addresses.filter((a) => a !== address))}
-                aria-label={`Remove ${address}`}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                <X className="size-3" />
-              </button>
-            )}
-          </span>
-        ))}
-        <input
-          id={id}
-          type="email"
-          value={draft}
-          disabled={disabled}
-          aria-invalid={Boolean(error)}
-          placeholder={addresses.length ? "" : "name@example.com"}
-          className="min-w-[10rem] flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground"
-          onChange={(e) => {
-            setDraft(e.target.value)
-            if (error) setError(null)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === ",") {
-              e.preventDefault()
-              commit(draft)
-            } else if (e.key === "Backspace" && !draft && addresses.length) {
-              onChange(addresses.slice(0, -1))
-            }
-          }}
-          onPaste={(e) => {
-            const text = e.clipboardData.getData("text")
-            if (/[\s,;]/.test(text.trim())) {
-              e.preventDefault()
-              commit(`${draft} ${text}`)
-            }
-          }}
-          onBlur={() => commit(draft)}
-        />
-      </div>
-      <p className={`text-[11px] ${error ? "text-destructive" : "text-muted-foreground"}`}>{error ?? hint}</p>
-    </div>
+    <TagInput
+      id={id}
+      label={label}
+      hint={hint}
+      values={addresses}
+      onChange={onChange}
+      disabled={disabled}
+      placeholder="name@example.com"
+      max={MAX_RECIPIENTS}
+      noun="addresses"
+      separators={/[\s,;]+/}
+      inputType="email"
+      validate={(value) => (EMAIL_RE.test(value) ? null : `“${value}” isn't a valid email address.`)}
+    />
   )
 }
