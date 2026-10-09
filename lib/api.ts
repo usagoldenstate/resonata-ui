@@ -1391,6 +1391,7 @@ export type UserInvitationResult = {
   invitation_id: string
   email: string
   status: string
+  renewed: boolean
   role: "operator" | "platform_admin"
   hotel_ids: string[]
   organization_ids: string[]

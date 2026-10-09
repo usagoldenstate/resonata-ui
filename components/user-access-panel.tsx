@@ -191,7 +191,7 @@ export function UserAccessPanel() {
         organization_ids: inviteRole === "platform_admin" ? [] : inviteOrgs,
       })
       toast.success(
-        `Invitation sent to ${result.email} — they'll get an email to set up their account.`,
+        `${result.renewed ? "Fresh invitation" : "Invitation"} sent to ${result.email} — they'll get an email to set up their account.`,
       )
       setInviteEmail("")
       setInviteHotels([])
@@ -371,7 +371,7 @@ export function UserAccessPanel() {
         <p className="mb-5 text-sm text-muted-foreground">
           Enter an email and Clerk will send them a sign-up link. Their role and
           hotel access are applied automatically once they finish signing up — no
-          Clerk User ID needed.
+          Clerk User ID needed. An expired invitation can be sent again here.
         </p>
 
         <div className="grid gap-4 lg:grid-cols-[1fr_240px_240px]">
