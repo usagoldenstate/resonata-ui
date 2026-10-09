@@ -314,8 +314,8 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
     {row.call_record_id && <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
       <div className="flex items-center gap-2 border-b px-5 py-3.5"><Headphones className="size-4 text-brand-insights" /><h3 className="text-sm font-semibold">Call recording</h3></div>
       <div className="p-5">
-        {row.has_recording && row.call_created_at
-          ? <CallRecordingPlayer callId={row.call_record_id} createdAt={row.call_created_at} />
+        {row.has_recording
+          ? <CallRecordingPlayer callId={row.call_record_id} />
           : <p className="text-sm text-muted-foreground">No recording is available for this call.</p>}
       </div>
     </section>}

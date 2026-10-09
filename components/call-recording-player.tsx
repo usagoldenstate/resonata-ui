@@ -5,20 +5,17 @@
 // can't send the Clerk bearer on an <audio src>), cached by SWR so reopening
 // plays instantly, and played with the native controls. The object URL is
 // created whenever the cached blob changes and revoked on cleanup.
+//
+// Retention is the backend's call: recordings live in our own storage, and a
+// recording that is gone (expired, deleted, or never uploaded) comes back as a
+// 404 whose detail ("Recording not available") is shown as-is. There is no
+// client-side age cutoff.
 
 import { useEffect, useState } from "react"
 import useSWR from "swr"
 import { Loader2 } from "lucide-react"
 
 import { ApiError, fetchCallRecording } from "@/lib/api"
-
-// Vapi only keeps call audio for 14 days; past that the fetch fails upstream,
-// so older calls show the retention notice instead of requesting the audio.
-export const RECORDING_RETENTION_DAYS = 14
-
-function parseUtc(value: string): Date {
-  return new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`)
-}
 
 function describeError(error: unknown): string {
   if (error instanceof ApiError) {
@@ -29,15 +26,21 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export function CallRecordingPlayer({ callId, createdAt }: { callId: string; createdAt: string }) {
-  const expired =
-    Date.now() - parseUtc(createdAt).getTime() > RECORDING_RETENTION_DAYS * 24 * 60 * 60 * 1000
+// A 4xx (no recording, no access) won't change on retry; only transient
+// failures (5xx, network) are worth SWR's backoff retries.
+function isPermanentError(error: unknown): boolean {
+  return error instanceof ApiError && error.status >= 400 && error.status < 500
+}
+
+export function CallRecordingPlayer({ callId }: { callId: string }) {
   const {
     data: blob,
     isLoading,
     error,
-  } = useSWR(expired ? null : (["call-recording", callId] as const), ([, id]) =>
-    fetchCallRecording(id),
+  } = useSWR(
+    ["call-recording", callId] as const,
+    ([, id]) => fetchCallRecording(id),
+    { shouldRetryOnError: (err) => !isPermanentError(err) },
   )
   const [url, setUrl] = useState<string | null>(null)
 
@@ -51,13 +54,6 @@ export function CallRecordingPlayer({ callId, createdAt }: { callId: string; cre
     return () => URL.revokeObjectURL(objectUrl)
   }, [blob])
 
-  if (expired) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        {`Recordings are only stored for ${RECORDING_RETENTION_DAYS} days, so this call's recording is no longer available.`}
-      </p>
-    )
-  }
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -67,7 +63,13 @@ export function CallRecordingPlayer({ callId, createdAt }: { callId: string; cre
     )
   }
   if (error) {
-    return <p className="text-sm text-destructive">{describeError(error)}</p>
+    // A missing recording is an expected state, not a failure.
+    const missing = error instanceof ApiError && error.status === 404
+    return (
+      <p className={missing ? "text-sm text-muted-foreground" : "text-sm text-destructive"}>
+        {describeError(error)}
+      </p>
+    )
   }
   if (!url) return null
   return <audio controls src={url} className="w-full" />

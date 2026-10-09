@@ -12,7 +12,9 @@ import { lineSetOf, type HotelLines, type LineSet } from "@/lib/product-lines"
 import { registerUnsavedGuard } from "@/lib/unsaved-guard"
 
 // ─── Agent Config Tab ───
-// VAPI's transferCall destination requires strict E.164. The input is split
+// Transfers dial the stored number over SIP as a `tel:<E.164>` URI (a SIP
+// REFER via LiveKit's TransferSIPParticipant for a cold transfer, an outbound
+// SIP call for a warm one), so it must be strict E.164. The input is split
 // into three fields (country code, area code, 7-digit number) — optimized
 // for NANP, which is what this hotel agent serves — and recombined into an
 // E.164 string on save. Country code 1 + 10 national digits = 11 digits

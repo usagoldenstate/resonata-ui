@@ -652,8 +652,8 @@ function TranscriptTurns({ turns, term }: { turns: TranscriptTurn[]; term: strin
 }
 
 // The backend stores transcripts as "User: ..." / "Assistant: ..." lines
-// (voice/realtime/transcript.py::render). Unprefixed lines are continuations
-// of the previous turn.
+// (rendered by voice/agent/history.py; older rows were normalized to the same
+// shape when stored). Unprefixed lines are continuations of the previous turn.
 function parseTranscript(raw: string | null): TranscriptTurn[] {
   if (!raw) return []
   const turns: TranscriptTurn[] = []
@@ -1334,7 +1334,7 @@ function CallLogPageInner() {
                                   <h4 className="text-sm font-semibold text-foreground mb-3">
                                     Recording
                                   </h4>
-                                  <CallRecordingPlayer callId={call.id} createdAt={call.created_at} />
+                                  <CallRecordingPlayer callId={call.id} />
                                 </div>
                               )}
                               {transcript && !transcript.loading && !transcript.error && (

@@ -1,35 +1,32 @@
 "use client"
 
-// Step 10 — bind each line's Vapi number to this tenant and hand over the
-// exact values to paste into the Vapi dashboard.
+// Step 10 — record the number the AI agent answers on for each line.
 //
-// The webhook secret is shown exactly once: only its SHA-256 hash is stored.
-// Between the rotate and pasting it into Vapi, that hotel's calls 401 — so
-// the warning is not decoration.
+// Calls reach Resonata over a Twilio Elastic SIP trunk into LiveKit, and each
+// call is matched to a hotel + line by the number dialed. So one number is one
+// line of one hotel: the backend 409s a number another hotel holds and 422s the
+// same number on both lines. There is no per-hotel URL or secret to hand over;
+// what's left happens in the Twilio console and the LiveKit telephony
+// provisioning, which the setup checklist ("Outside this app") lists.
 //
 // This is also where the SALES LINE is switched on, in the same PATCH that
-// saves its binding: the backend refuses `sales_line_enabled` without a
-// `sales_vapi_phone_number_id`, because with no binding on file any Vapi
-// number presenting the shared webhook secret would be served this hotel's
-// sales assistant.
+// saves its number: the backend refuses `sales_line_enabled` without a
+// `sales_agent_phone_number`, because an enabled sales line with no number
+// never rings — activating the hotel would ship a sales line that answers
+// nothing.
 
 import * as React from "react"
-import { KeyRound, TriangleAlert } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   ApiError,
-  apiBaseUrl,
   patchSetupProgress,
-  rotateVapiWebhookSecret,
   updateHotelPlatformSettings,
   type HotelPlatformUpdate,
 } from "@/lib/api"
 
 import {
-  CopyBox,
   Field,
   Notice,
   StepCard,
@@ -40,50 +37,74 @@ import {
   type StepContext,
 } from "./shared"
 
+// Same check as the other wizard steps; the backend normalizes and re-validates.
+const E164_RE = /^\+[1-9]\d{9,14}$/
+
 export function TelephonyStep({ ctx }: { ctx: StepContext }) {
   const { hotelId, detail, linesMode, reload, goNext, goBack, hasBack } = ctx
-  const base = apiBaseUrl() || "<API base URL>"
 
-  const [reservationsId, setReservationsId] = React.useState(
-    detail.vapi_phone_number_id ?? "",
+  const [reservationsNumber, setReservationsNumber] = React.useState(
+    detail.agent_phone_number ?? "",
   )
-  const [salesId, setSalesId] = React.useState(detail.sales_vapi_phone_number_id ?? "")
-  const [secret, setSecret] = React.useState<string | null>(null)
-  const [rotating, setRotating] = React.useState(false)
+  const [salesNumber, setSalesNumber] = React.useState(detail.sales_agent_phone_number ?? "")
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-
-  const rotate = async () => {
-    setRotating(true)
-    setError(null)
-    try {
-      const res = await rotateVapiWebhookSecret(hotelId)
-      setSecret(res.vapi_webhook_secret)
-    } catch (e) {
-      setError(describeApiError(e))
-    } finally {
-      setRotating(false)
-    }
-  }
 
   const salesEnabled = detail.sales_line_enabled
   const salesPending = includesSales(linesMode) && !salesEnabled
 
+  // Skipping writes nothing, so only a line with no saved number is affected.
+  const skipWarnings: string[] = []
+  if (includesReservations(linesMode) && !detail.agent_phone_number) {
+    skipWarnings.push(
+      "Skipping leaves the reservations line without a number: no calls reach this hotel's reservations agent until one is set.",
+    )
+  }
+  if (salesPending) {
+    skipWarnings.push(
+      skipWarnings.length > 0
+        ? "It also leaves the sales line switched off — it cannot be enabled until its number is set."
+        : "Skipping leaves the sales line switched off — it cannot be enabled until its number is set.",
+    )
+  }
+
+  const validate = (): string | null => {
+    const reservations = includesReservations(linesMode) ? reservationsNumber.trim() : ""
+    const sales = includesSales(linesMode) ? salesNumber.trim() : ""
+    if (reservations && !E164_RE.test(reservations)) {
+      return "The reservations agent number must be E.164, e.g. +14075551234."
+    }
+    if (sales && !E164_RE.test(sales)) {
+      return "The sales agent number must be E.164, e.g. +14075551234."
+    }
+    if (reservations && reservations === sales) {
+      return "The reservations and sales agent numbers must differ — one number is one line."
+    }
+    return null
+  }
+
   const finish = async (status: "done" | "skipped") => {
+    if (status === "done") {
+      const problem = validate()
+      if (problem) {
+        setError(problem)
+        return
+      }
+    }
     setSaving(true)
     setError(null)
     try {
       if (status === "done") {
         const body: HotelPlatformUpdate = {}
         if (includesReservations(linesMode)) {
-          body.vapi_phone_number_id = reservationsId.trim() || null
+          body.agent_phone_number = reservationsNumber.trim() || null
         }
         if (includesSales(linesMode)) {
-          body.sales_vapi_phone_number_id = salesId.trim() || null
-          // One PATCH: the binding and the switch land together, which is the
-          // only ordering the backend accepts. With no id yet, the line stays
-          // off rather than failing the save.
-          if (salesId.trim()) body.sales_line_enabled = true
+          body.sales_agent_phone_number = salesNumber.trim() || null
+          // One PATCH: the number and the switch land together, which is the
+          // only ordering the backend accepts. With no number yet, the line
+          // stays off rather than failing the save.
+          if (salesNumber.trim()) body.sales_line_enabled = true
         }
         await updateHotelPlatformSettings(hotelId, body)
       }
@@ -109,22 +130,22 @@ export function TelephonyStep({ ctx }: { ctx: StepContext }) {
       {includesReservations(linesMode) ? (
         <StepCard
           title="Reservations number"
-          description="In the Vapi dashboard: Phone Numbers → pick the number → copy its ID, and set its Server URL to the address below."
+          description="The phone number the AI agent answers for reservations. Calls to it come in through the LiveKit SIP trunk and are matched to this hotel by the number dialed."
         >
           <Field
-            label="Vapi phone number ID"
-            htmlFor="vapiId"
-            hint="When set, webhooks arriving from any other Vapi number are rejected. A wrong value blocks this hotel's calls — make a test call after saving."
+            label="Reservations agent number"
+            htmlFor="agentPhoneNumber"
+            hint="E.164. It can belong to only one hotel, and can differ from the guest-facing number when the hotel forwards its own line here. A wrong number means callers reach no one — make a test call after saving."
           >
             <Input
-              id="vapiId"
-              value={reservationsId}
-              onChange={(e) => setReservationsId(e.target.value)}
-              placeholder="00000000-0000-4000-8000-000000000000"
+              id="agentPhoneNumber"
+              type="tel"
+              value={reservationsNumber}
+              onChange={(e) => setReservationsNumber(e.target.value)}
+              placeholder="+14075551234"
               className="font-mono"
             />
           </Field>
-          <CopyBox label="Server URL" value={`${base}/webhooks/vapi/${hotelId}`} />
         </StepCard>
       ) : null}
 
@@ -147,63 +168,47 @@ export function TelephonyStep({ ctx }: { ctx: StepContext }) {
               )}
             </span>
           }
-          description="A second Vapi number, same Server URL Secret, with /sales appended to the Server URL."
+          description="The number the sales department's phone system forwards unanswered calls to. The AI agent answers it as this hotel's sales intake line."
         >
           <Field
-            label="Sales Vapi phone number ID"
-            htmlFor="salesVapiId"
-            hint="Must differ from the reservations number's ID. Saving this is what turns the sales line on — the backend refuses to enable it without the binding, since an unbound line would answer for any number carrying the webhook secret."
+            label="Sales agent number"
+            htmlFor="salesAgentPhoneNumber"
+            hint="E.164, and must differ from the reservations number. Saving it is what turns the sales line on — the backend refuses to enable the line without its number."
           >
             <Input
-              id="salesVapiId"
-              value={salesId}
-              onChange={(e) => setSalesId(e.target.value)}
-              placeholder="00000000-0000-4000-8000-000000000000"
+              id="salesAgentPhoneNumber"
+              type="tel"
+              value={salesNumber}
+              onChange={(e) => setSalesNumber(e.target.value)}
+              placeholder="+14075551234"
               className="font-mono"
             />
           </Field>
-          <CopyBox label="Server URL" value={`${base}/webhooks/vapi/${hotelId}/sales`} />
           {salesPending ? (
             <Notice tone="warn">
               The sales line is <strong>off</strong>. It switches on when you save this
-              step with the number id filled in; until then the sales webhook path 404s
-              and no inquiries are taken.
+              step with the number filled in; until then calls to the sales number
+              aren&apos;t answered and no inquiries are taken.
             </Notice>
           ) : null}
         </StepCard>
       ) : null}
 
-      <StepCard
-        title="Webhook secret"
-        description="Both lines share one Server URL Secret. Generating a new one takes effect immediately."
-      >
-        <Button type="button" variant="outline" onClick={rotate} disabled={rotating}>
-          <KeyRound className="mr-2 h-4 w-4" />
-          {rotating ? "Generating…" : "Generate webhook secret"}
-        </Button>
-        {secret ? (
-          <div className="space-y-2">
-            <Notice tone="warn">
-              <span className="inline-flex items-start gap-2">
-                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>
-                  Shown once — only its hash is stored, so this value cannot be recovered.
-                  Paste it into <strong>every</strong> one of this hotel&apos;s Vapi numbers
-                  as the Server URL Secret now: calls 401 until you do.
-                </span>
-              </span>
-            </Notice>
-            <CopyBox label="Server URL Secret" value={secret} />
-          </div>
-        ) : null}
-      </StepCard>
-
       <StepCard title="If the number is a Twilio number">
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Point its Voice webhook at Vapi&apos;s inbound endpoint rather than at Resonata —
-          Vapi runs the call and announces the recording consent itself.
+          In the Twilio console, assign the number to the Elastic SIP trunk that routes calls
+          to LiveKit (Elastic SIP Trunking → the LiveKit trunk → Numbers). Assigning it to the
+          trunk replaces the number&apos;s Voice webhook. That trunk is shared by every hotel
+          and must have Call Transfer (SIP REFER) enabled so the agent can transfer callers to
+          the hotel&apos;s departments. The agent plays the recording disclosure itself, before
+          its greeting.
         </p>
-        <CopyBox value="https://api.vapi.ai/twilio/inbound_call" />
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          The number also has to be on LiveKit&apos;s inbound trunk with its routing rule:
+          re-run the LiveKit telephony provisioning after saving, and after any later change to
+          these numbers. The exact steps are listed under &ldquo;Outside this app&rdquo; on the
+          Review step.
+        </p>
       </StepCard>
 
       <StepNav
@@ -214,13 +219,7 @@ export function TelephonyStep({ ctx }: { ctx: StepContext }) {
         saving={saving}
         error={error}
       />
-      <Notice tone="warn">
-        Skipping leaves the tenant binding off: any Vapi number carrying the shared secret
-        can write calls into this hotel.
-        {salesPending
-          ? " It also leaves the sales line switched off — it cannot be enabled until its number is bound."
-          : ""}
-      </Notice>
+      {skipWarnings.length > 0 ? <Notice tone="warn">{skipWarnings.join(" ")}</Notice> : null}
     </div>
   )
 }

@@ -98,6 +98,13 @@ function phoneProblem(value: string): string | null {
     : `“${value}” isn't a valid phone number.`
 }
 
+// The AI agent numbers must be strict E.164, the same check the setup wizard
+// uses. Only a changed value is checked: the saved one was normalized by the
+// backend, which re-validates (and refuses a number another hotel holds).
+const E164_RE = /^\+[1-9]\d{9,14}$/
+
+type AgentNumberChange = { line: string; current: string | null; next: string | null }
+
 type SettingsTab = "general" | "reservations" | "sales"
 
 export default function SettingsPage() {
@@ -120,7 +127,9 @@ export default function SettingsPage() {
   const [salesSenderEmail, setSalesSenderEmail] = useState("")
   const [email, setEmail] = useState("")
   const [inboundNumber, setInboundNumber] = useState("")
-  const [vapiPhoneNumberId, setVapiPhoneNumberId] = useState("")
+  // The number the AI agent answers on for reservations (platform-admin only).
+  // Calls are matched to a hotel by the number dialed.
+  const [agentPhoneNumber, setAgentPhoneNumber] = useState("")
   // Organization membership (platform-admin only). "" = independent hotel.
   // The org list loads once for admins; the select is the only writer.
   const [organizationId, setOrganizationId] = useState("")
@@ -130,7 +139,7 @@ export default function SettingsPage() {
   const [twilioFromNumber, setTwilioFromNumber] = useState("")
   // Sales intake line (platform-admin only) — see the "Sales Intake Line" card.
   const [salesLineEnabled, setSalesLineEnabled] = useState(false)
-  const [salesVapiPhoneNumberId, setSalesVapiPhoneNumberId] = useState("")
+  const [salesAgentPhoneNumber, setSalesAgentPhoneNumber] = useState("")
   // Where inquiries are emailed — operator-editable. A hotel with none yet
   // starts from one catch-all "Sales Department" draft.
   const [salesDepartments, setSalesDepartments] = useState<DepartmentDraft[]>([])
@@ -156,11 +165,11 @@ export default function SettingsPage() {
     setSenderName(name)
     setEmail(email)
     setInboundNumber(d.inbound_phone_number ?? "")
-    setVapiPhoneNumberId(d.vapi_phone_number_id ?? "")
+    setAgentPhoneNumber(d.agent_phone_number ?? "")
     setOrganizationId(d.organization_id ?? "")
     setTwilioFromNumber(d.twilio_from_number ?? "")
     setSalesLineEnabled(d.sales_line_enabled ?? false)
-    setSalesVapiPhoneNumberId(d.sales_vapi_phone_number_id ?? "")
+    setSalesAgentPhoneNumber(d.sales_agent_phone_number ?? "")
     setSalesDepartments(
       d.sales_departments?.length ? departmentDrafts(d.sales_departments) : [defaultDepartmentDraft()],
     )
@@ -204,13 +213,45 @@ export default function SettingsPage() {
     return () => controller.abort()
   }, [hotelId, applyDetail])
 
-  const [showVapiConfirm, setShowVapiConfirm] = useState(false)
+  const [showNumberConfirm, setShowNumberConfirm] = useState(false)
+
+  // The agent numbers decide which calls reach this hotel at all, so changing
+  // either line's number goes through the confirm dialog.
+  const agentNumberChanges: AgentNumberChange[] = []
+  if (detail && isPlatformAdmin) {
+    const nextAgent = agentPhoneNumber.trim() || null
+    if (nextAgent !== (detail.agent_phone_number ?? null)) {
+      agentNumberChanges.push({
+        line: "Reservations",
+        current: detail.agent_phone_number ?? null,
+        next: nextAgent,
+      })
+    }
+    const nextSalesAgent = salesAgentPhoneNumber.trim() || null
+    if (nextSalesAgent !== (detail.sales_agent_phone_number ?? null)) {
+      agentNumberChanges.push({
+        line: "Sales",
+        current: detail.sales_agent_phone_number ?? null,
+        next: nextSalesAgent,
+      })
+    }
+  }
 
   const handleSaveClick = () => {
     if (!detail) return
-    const nextVapiId = vapiPhoneNumberId.trim() || null
-    if (isPlatformAdmin && nextVapiId !== (detail.vapi_phone_number_id ?? null)) {
-      setShowVapiConfirm(true)
+    if (agentNumberChanges.length > 0) {
+      for (const change of agentNumberChanges) {
+        if (change.next && !E164_RE.test(change.next)) {
+          toast.error(`The ${change.line.toLowerCase()} agent number must be E.164, e.g. +14075551234.`)
+          return
+        }
+      }
+      const reservations = agentPhoneNumber.trim()
+      if (reservations && reservations === salesAgentPhoneNumber.trim()) {
+        toast.error("The reservations and sales agent numbers must differ — one number is one line.")
+        return
+      }
+      setShowNumberConfirm(true)
       return
     }
     void handleSave()
@@ -270,9 +311,9 @@ export default function SettingsPage() {
         if (nextInbound !== (detail.inbound_phone_number ?? null)) {
           pfBody.inbound_phone_number = nextInbound
         }
-        const nextVapiId = vapiPhoneNumberId.trim() || null
-        if (nextVapiId !== (detail.vapi_phone_number_id ?? null)) {
-          pfBody.vapi_phone_number_id = nextVapiId
+        const nextAgent = agentPhoneNumber.trim() || null
+        if (nextAgent !== (detail.agent_phone_number ?? null)) {
+          pfBody.agent_phone_number = nextAgent
         }
         const nextOrg = organizationId || null
         if (nextOrg !== (detail.organization_id ?? null)) {
@@ -283,14 +324,14 @@ export default function SettingsPage() {
           pfBody.twilio_from_number = nextTwilio
         }
         // Sales intake line. The backend validates these together (enabling
-        // requires a sales department, saved by the PUT above), so send
-        // whatever changed in one PATCH.
+        // requires a sales department, saved by the PUT above, and the sales
+        // agent number), so send whatever changed in one PATCH.
         if (salesLineEnabled !== (detail.sales_line_enabled ?? false)) {
           pfBody.sales_line_enabled = salesLineEnabled
         }
-        const nextSalesVapiId = salesVapiPhoneNumberId.trim() || null
-        if (nextSalesVapiId !== (detail.sales_vapi_phone_number_id ?? null)) {
-          pfBody.sales_vapi_phone_number_id = nextSalesVapiId
+        const nextSalesAgent = salesAgentPhoneNumber.trim() || null
+        if (nextSalesAgent !== (detail.sales_agent_phone_number ?? null)) {
+          pfBody.sales_agent_phone_number = nextSalesAgent
         }
         // Validated together with the sales-line switch, so adding the sales
         // line and switching it on can be one save.
@@ -364,31 +405,42 @@ export default function SettingsPage() {
           </Button>
         </div>
 
-        <AlertDialog open={showVapiConfirm} onOpenChange={setShowVapiConfirm}>
+        <AlertDialog open={showNumberConfirm} onOpenChange={setShowNumberConfirm}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <TriangleAlert className="h-5 w-5 text-destructive" />
-                Change Vapi Phone Number ID?
+                {agentNumberChanges.length > 1
+                  ? "Change the AI agent phone numbers?"
+                  : "Change the AI agent phone number?"}
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-2 text-left">
                   <p>
-                    This UUID must exactly match the number in the Vapi dashboard. If it&apos;s
-                    wrong, every inbound and outbound call for this hotel will break until it&apos;s
-                    fixed.
+                    These are the numbers the AI agent answers on. Calls reach them through the
+                    LiveKit SIP trunk and are matched to this hotel by the number dialed, so if a
+                    number is wrong, callers to the real one reach no one until it&apos;s fixed.
                   </p>
-                  <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">Current: </span>
-                      <span className="font-mono">{detail?.vapi_phone_number_id || "(none)"}</span>
+                  {agentNumberChanges.map((change) => (
+                    <div
+                      key={change.line}
+                      className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs"
+                    >
+                      <div className="font-medium text-foreground">{change.line} line</div>
+                      <div>
+                        <span className="text-muted-foreground">Current: </span>
+                        <span className="font-mono">{change.current || "(none)"}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">New: </span>
+                        <span className="font-mono">{change.next || "(none)"}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">New: </span>
-                      <span className="font-mono">{vapiPhoneNumberId.trim() || "(none)"}</span>
-                    </div>
-                  </div>
-                  <p>Make a test call to this hotel&apos;s number right after saving.</p>
+                  ))}
+                  <p>
+                    After saving, re-run the LiveKit telephony provisioning so the change reaches
+                    LiveKit&apos;s routing, then make a test call to the number.
+                  </p>
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -396,7 +448,7 @@ export default function SettingsPage() {
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
-                  setShowVapiConfirm(false)
+                  setShowNumberConfirm(false)
                   void handleSave()
                 }}
                 className="bg-destructive text-white hover:bg-destructive/90"
@@ -579,9 +631,9 @@ export default function SettingsPage() {
                       </select>
                       <p className="text-[11px] text-muted-foreground">
                         A sales-only hotel sees Call Log, Sales Inquiries, Knowledge Base, Agent
-                        Configuration and Settings, and its reservations webhook refuses new calls. The sales
-                        line can only be switched on when this includes sales; to remove sales, switch the
-                        line off first. Existing calls keep their line either way.
+                        Configuration and Settings, and calls to its reservations number aren&apos;t
+                        answered. The sales line can only be switched on when this includes sales; to remove
+                        sales, switch the line off first. Existing calls keep their line either way.
                       </p>
                       <div className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2">
                         <div className="space-y-0.5">
@@ -589,7 +641,8 @@ export default function SettingsPage() {
                             Sales line enabled
                           </Label>
                           <p className="text-[11px] text-muted-foreground">
-                            While off, the sales webhook path returns 404 and no inquiries are taken.
+                            While off, calls to the sales number aren&apos;t answered and no inquiries are
+                            taken.
                           </p>
                         </div>
                         <Switch
@@ -600,14 +653,14 @@ export default function SettingsPage() {
                             !salesLineEnabled &&
                             (!lineSetOf(productLines).sales ||
                               !salesDepartments.some((d) => d.to.length > 0) ||
-                              !salesVapiPhoneNumberId.trim())
+                              !salesAgentPhoneNumber.trim())
                           }
                         />
                       </div>
                       {!salesLineEnabled && (
                         <p className="text-[11px] text-muted-foreground">
                           To turn this on, include Sales in Lines, then add a sales department and the
-                          Vapi phone number on the Sales tab.
+                          sales agent phone number on the Sales tab.
                         </p>
                       )}
                     </CardContent>
@@ -645,21 +698,23 @@ export default function SettingsPage() {
                       </div>
                       {isPlatformAdmin && (
                         <div className="space-y-2">
-                          <Label htmlFor="vapiPhoneNumberId" className="text-xs text-muted-foreground">
-                            Vapi Phone Number ID
+                          <Label htmlFor="agentPhoneNumber" className="text-xs text-muted-foreground">
+                            AI Agent Phone Number
                           </Label>
                           <Input
-                            id="vapiPhoneNumberId"
-                            value={vapiPhoneNumberId}
-                            onChange={(e) => setVapiPhoneNumberId(e.target.value)}
-                            placeholder="00000000-0000-4000-8000-000000000000"
-                            className="bg-card border-border"
+                            id="agentPhoneNumber"
+                            type="tel"
+                            value={agentPhoneNumber}
+                            onChange={(e) => setAgentPhoneNumber(e.target.value)}
+                            placeholder="+14075551234"
+                            className="bg-card border-border font-mono"
                           />
                           <p className="text-[11px] text-muted-foreground">
-                            UUID of this hotel&apos;s phone number in the Vapi dashboard (Phone Numbers →
-                            select the number → copy the ID). When set, webhooks from any other Vapi
-                            number are rejected — a wrong value blocks this hotel&apos;s calls, so make a
-                            test call after changing it. Leave blank to disable the check.
+                            The number the AI agent answers for reservations, in E.164. Calls to it come
+                            in through the LiveKit SIP trunk and are matched to this hotel by the number
+                            dialed, so it can belong to only one hotel. It can differ from the guest-facing
+                            number when the hotel forwards its own line here. Leave blank and no calls
+                            reach this hotel&apos;s reservations agent.
                           </p>
                         </div>
                       )}
@@ -869,28 +924,29 @@ export default function SettingsPage() {
                           <div>
                             <CardTitle className="text-base">Sales Intake Line</CardTitle>
                             <CardDescription className="text-xs">
-                              A second Vapi number that takes sales inquiries when the sales team doesn&apos;t answer
+                              A second number the AI agent answers, taking sales inquiries when the sales team
+                              doesn&apos;t answer
                             </CardDescription>
                           </div>
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div className="space-y-2">
-                          <Label htmlFor="salesVapiPhoneNumberId" className="text-xs text-muted-foreground">
-                            Sales Vapi Phone Number ID
+                          <Label htmlFor="salesAgentPhoneNumber" className="text-xs text-muted-foreground">
+                            Sales AI Agent Phone Number
                           </Label>
                           <Input
-                            id="salesVapiPhoneNumberId"
-                            value={salesVapiPhoneNumberId}
-                            onChange={(e) => setSalesVapiPhoneNumberId(e.target.value)}
-                            placeholder="00000000-0000-4000-8000-000000000000"
-                            className="bg-card border-border"
+                            id="salesAgentPhoneNumber"
+                            type="tel"
+                            value={salesAgentPhoneNumber}
+                            onChange={(e) => setSalesAgentPhoneNumber(e.target.value)}
+                            placeholder="+14075551234"
+                            className="bg-card border-border font-mono"
                           />
                           <p className="text-[11px] text-muted-foreground">
-                            UUID of the <em>sales</em> number in the Vapi dashboard. Its Server URL must be the
-                            hotel&apos;s webhook URL with <span className="font-mono">/sales</span> appended, using
-                            the same Server URL Secret. Must differ from the reservations number&apos;s ID. Leave
-                            blank to disable the tenant check for this line.
+                            The number the sales department&apos;s phone system forwards unanswered calls to,
+                            in E.164. It comes in through the LiveKit SIP trunk like the reservations number
+                            and must differ from it. The sales line can only be switched on once this is set.
                           </p>
                         </div>
                       </CardContent>

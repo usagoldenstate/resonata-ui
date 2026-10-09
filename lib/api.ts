@@ -548,8 +548,9 @@ export type CallDetail = {
   duration_seconds: number | null
   // Plaintext caller ID (E.164); null for blocked/withheld callers or erased rows.
   caller_phone_e164: string | null
-  // Server-derived: a playable Twilio recording is attached. The raw sid is never
-  // exposed; audio is fetched by call_id through the authed proxy below.
+  // Server-derived: a playable recording is stored for this call. Its storage
+  // key is never exposed; audio is fetched by call_id through the authed proxy
+  // below.
   has_recording: boolean
   // Sales-line calls only; null on reservations calls and on sales calls that
   // ended before the inquiry was submitted.
@@ -834,18 +835,22 @@ export type HotelDetail = {
   max_call_minutes: number | null
   // E.164 inbound DID callers dial to reach this hotel. Platform-admin only.
   inbound_phone_number: string | null
-  // Vapi phoneNumberId (UUID) this hotel's calls arrive on. When set, the
-  // backend rejects Vapi webhooks whose payload carries a different id
-  // (tenant-binding guard). Platform-admin only; null disables the check.
-  vapi_phone_number_id: string | null
+  // E.164 number the AI agent answers on for the reservations line. Calls
+  // arrive over the LiveKit SIP trunk and are matched to a hotel + line by the
+  // number dialed, so one number belongs to one line of one hotel (the backend
+  // 409s a number another hotel holds). Can differ from inbound_phone_number
+  // when the hotel forwards its own line to us. Platform-admin only; null =
+  // no calls reach this hotel's reservations agent.
+  agent_phone_number: string | null
   // Twilio sender (E.164) for outbound guest SMS. Its presence is what turns
   // on the text-or-email choice for booking-link delivery; null = email only.
   // Platform-admin only.
   twilio_from_number: string | null
-  // Sales intake line — the hotel's second Vapi number (the sales department's
-  // no-answer forward). Platform-admin only. Enabling requires a department.
+  // Sales intake line — the hotel's second agent number (the sales department's
+  // no-answer forward). Platform-admin only. Enabling requires a department and
+  // sales_agent_phone_number, which must differ from agent_phone_number (422).
   sales_line_enabled: boolean
-  sales_vapi_phone_number_id: string | null
+  sales_agent_phone_number: string | null
   // Where inquiries are emailed, per department. Operator-editable.
   sales_departments: SalesDepartment[]
   // The hotel's sales team as plain name tags — who follow-up activity is
@@ -1018,7 +1023,9 @@ export type SetupStep = {
   detail: string | null
 }
 
-// Work that happens outside this app (Vapi dashboard, StayNTouch portal, …).
+// Work that happens outside this app (Twilio console, LiveKit, StayNTouch
+// portal, …). Rendered verbatim: `key` is backend-defined and only a React key,
+// and `url_hint` is either a link or a value to copy (e.g. a `sip:` address).
 export type SetupExternalTask = {
   key: string
   title: string
@@ -1123,16 +1130,6 @@ export function fetchHotelRoomTypes(
   return api<HotelRoomTypeList>(`/api/v1/admin/hotels/${hotelId}/room-types`, opts)
 }
 
-// ── Vapi webhook secret (wizard's telephony step) ───────────────────────────
-// Plaintext comes back exactly once; only its SHA-256 hash is stored. Calls
-// 401 between the rotate and pasting it into the Vapi dashboard.
-export function rotateVapiWebhookSecret(hotelId: string) {
-  return api<{ vapi_webhook_secret: string }>(
-    `/api/v1/admin/hotels/${hotelId}/vapi-webhook-secret/rotate`,
-    { method: "POST" },
-  )
-}
-
 // Operator-safe partial update (PUT /admin/hotels/{id}). Only send changed keys.
 export type HotelOperatorUpdate = {
   display_name?: string
@@ -1165,10 +1162,14 @@ export type HotelPlatformUpdate = {
   // An existing organization id, or null/"" to make the hotel independent.
   organization_id?: string | null
   inbound_phone_number?: string | null
-  vapi_phone_number_id?: string | null
+  // E.164; normalized server-side. 409 when another hotel holds the number,
+  // 422 when both lines are given the same one.
+  agent_phone_number?: string | null
   twilio_from_number?: string | null
+  // Enabling requires sales_agent_phone_number (already saved, or in this
+  // same PATCH).
   sales_line_enabled?: boolean
-  sales_vapi_phone_number_id?: string | null
+  sales_agent_phone_number?: string | null
   // Validated with the sales-line fields: the line can only be on for
   // "sales" | "both", so the two travel in one PATCH on launch day.
   lines?: HotelLines
@@ -1186,8 +1187,8 @@ export type HotelPlatformUpdate = {
   commission_rate_basis_points?: number
 }
 
-// Base URL of the FastAPI backend, used to render the exact webhook URLs an
-// operator pastes into Vapi / StayNTouch. Empty when unconfigured.
+// Base URL of the FastAPI backend, used to render the exact webhook URL an
+// operator pastes into StayNTouch. Empty when unconfigured.
 export function apiBaseUrl(): string {
   return env.apiUrl.replace(/\/$/, "")
 }
@@ -1480,7 +1481,7 @@ export function fetchCallDetail(callId: string, opts: Pick<Options, "signal"> = 
 }
 
 // Platform-admin only: hard-deletes the call and everything hanging off it
-// (analytics, FAQ occurrences, identifiers, surveys, Vapi recording).
+// (analytics, FAQ occurrences, identifiers, surveys, stored recording).
 export function deleteCall(callId: string) {
   return api<void>(`/api/v1/calls/${callId}`, {
     method: "DELETE",
@@ -1489,8 +1490,10 @@ export function deleteCall(callId: string) {
 }
 
 // The generic api() helper always parses JSON, so recording audio needs its own
-// path: same auth headers, but it returns the raw audio/mpeg body as a Blob for
-// <audio> playback (the browser can't send the Clerk bearer on an <audio src>).
+// path: same auth headers, but it returns the raw audio body (audio/mpeg) as a
+// Blob for <audio> playback (the browser can't send the Clerk bearer on an
+// <audio src>). Error bodies are still parsed, so a 404's `detail` (e.g.
+// "Recording not available") reaches the player.
 export async function fetchCallRecording(
   callId: string,
   opts: Pick<Options, "signal"> = {},
@@ -1510,7 +1513,13 @@ export async function fetchCallRecording(
     if (res.status === 401 && unauthorizedHandler) {
       await unauthorizedHandler()
     }
-    throw new ApiError(res.status, url, `API ${res.status} for ${path}`)
+    let body: unknown = undefined
+    try {
+      body = await res.json()
+    } catch {
+      // non-JSON error body — keep going
+    }
+    throw new ApiError(res.status, url, `API ${res.status} for ${path}`, body)
   }
   return res.blob()
 }
@@ -1687,7 +1696,6 @@ export type DemoHotelResult = {
   knowledge_entries_written: number
   departments_written: number
   room_mapping_refreshed: boolean
-  webhook_url: string
 }
 
 export type DemoSpecTemplate = {
@@ -1776,7 +1784,7 @@ export type SalesInquiryDetail = SalesInquiryItem & {
   // handed out again. Null once the inquiry has been erased.
   follow_up_url: string | null
   // The persisted call it came from, for playing the recording through
-  // fetchCallRecording. Null until the call's end-of-call report lands.
+  // fetchCallRecording. Null until the call is finalized.
   call_record_id?: string | null
   call_created_at?: string | null
   has_recording?: boolean

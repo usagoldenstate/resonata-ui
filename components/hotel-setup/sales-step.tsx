@@ -4,11 +4,11 @@
 // (the sales departments) and who can be credited with following one up.
 //
 // This step deliberately does NOT switch the line on. The backend refuses
-// `sales_line_enabled` without a `sales_vapi_phone_number_id`, because the
-// tenant-binding guard is mismatch-only: with no binding on file, any Vapi
-// number presenting the webhook secret would be served this hotel's sales
-// assistant. The switch therefore lives on the Telephony step, next to the
-// binding it depends on.
+// `sales_line_enabled` without a `sales_agent_phone_number`, because calls are
+// matched to a hotel + line by the number dialed: an enabled sales line with no
+// number never rings, so activating the hotel would ship a sales line that
+// answers nothing. The switch therefore lives on the Telephony step, next to
+// the number it depends on.
 
 import * as React from "react"
 import { X } from "lucide-react"
@@ -176,8 +176,7 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
         </div>
 
         <Notice>
-          The sales line is switched on in the Telephony step, once its Vapi number is
-          bound.
+          The sales line is switched on in the Telephony step, once its number is set.
         </Notice>
       </StepCard>
       <StepNav

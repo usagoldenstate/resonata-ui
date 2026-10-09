@@ -1121,18 +1121,6 @@ function DoneStep({
   onGoTo: (path: string) => void
   onCreateAnother: () => void
 }) {
-  const [copied, setCopied] = React.useState(false)
-
-  const copyWebhook = async () => {
-    try {
-      await navigator.clipboard.writeText(result.webhook_url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      toast.error("Couldn't copy to clipboard.")
-    }
-  }
-
   return (
     <div className="space-y-5">
       <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
@@ -1181,21 +1169,19 @@ function DoneStep({
           Go live on the phone
         </h3>
         <p className="mb-3 text-sm text-muted-foreground">
-          In the Vapi dashboard, set this demo phone number&apos;s Server URL
-          to the value below to make the demo hotel live on the phone. This
-          is a manual step — Resonata doesn&apos;t call the Vapi API.
+          To put this demo hotel on the phone, give it a number in Settings →
+          Reservations → AI Agent Phone Number. A number answers for only one
+          hotel, so to reuse a shared demo number, clear it on the demo hotel
+          that has it first. Then re-run the LiveKit telephony provisioning so
+          the number routes here, and make a test call.
         </p>
-        <div className="flex items-center gap-2">
-          <Input readOnly value={result.webhook_url} className="font-mono text-xs" />
-          <Button type="button" variant="outline" onClick={copyWebhook}>
-            {copied ? (
-              <Check className="h-4 w-4" />
-            ) : (
-              <Copy className="h-4 w-4" />
-            )}
-            {copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onGoTo("/settings")}
+        >
+          Open Settings
+        </Button>
       </div>
 
       <div className="flex flex-wrap gap-2">
