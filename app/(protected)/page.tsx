@@ -314,7 +314,6 @@ export default function Dashboard() {
           <div>
             <p className="app-eyebrow mb-3">Performance overview</p>
             <h1 className="text-2xl font-semibold text-foreground">Your hotel, at a glance.</h1>
-            <p className="text-sm text-muted-foreground">Turn everyday conversations into a clearer picture of your business.</p>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <DateRangeFilter
                 variant="header"
