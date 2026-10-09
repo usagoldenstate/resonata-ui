@@ -27,11 +27,13 @@ import {
   Loader2,
   MessageSquareText,
   Phone,
+  UserRound,
   Users,
   Wallet,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { OptionSelect } from "@/components/ui/option-select"
 import { Textarea } from "@/components/ui/textarea"
 import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import {
@@ -42,6 +44,7 @@ import {
   type SalesFollowUpOutcome,
   formatHeadcount,
 } from "@/lib/api"
+import { EVENT_CATEGORY_LABELS, INQUIRY_KIND_LABELS } from "@/lib/sales-inquiry-labels"
 
 function timestamp(value: string) {
   // SQLite fixtures return naive UTC; production returns timezone-aware dates.
@@ -140,6 +143,7 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
 
   const canSave = Boolean(rep) && Boolean(outcome) && !saving
   const noRoster = data.sales_reps.length === 0
+  const existing = data.inquiry_kind === "existing_inquiry"
 
   async function save() {
     if (!data || !outcome || !rep) return
@@ -186,7 +190,7 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {data.hotel_display_name}
           </p>
-          <h1 className="mt-1 text-xl font-semibold">Sales inquiry follow-up</h1>
+          <h1 className="mt-1 text-xl font-semibold">Sales inquiry response</h1>
         </header>
 
         {data.source === "recovered" && (
@@ -205,7 +209,11 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="truncate text-lg font-semibold">{data.caller_name || "Caller"}</h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">{data.event_type}</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {existing ? INQUIRY_KIND_LABELS.existing_inquiry : data.event_type || "Event not specified"}
+                {existing && data.event_type ? ` · ${data.event_type}` : ""}
+                {data.event_category ? ` · ${EVENT_CATEGORY_LABELS[data.event_category]}` : ""}
+              </p>
             </div>
             <span className="shrink-0 rounded-full border bg-muted px-2.5 py-1 text-xs font-medium">
               {data.follow_up_status_label}
@@ -241,12 +249,21 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
           )}
 
           <div className="mt-4 space-y-2 border-t pt-4">
-            <Detail icon={<CalendarDays className="size-4" />}>{stayDates(data)}</Detail>
+            {existing && (
+              <Detail icon={<UserRound className="size-4" />}>
+                <span><span className="block text-xs">Working with</span>{data.existing_contact_name || "Caller did not remember"}</span>
+              </Detail>
+            )}
+            {/* An existing inquiry skipped the event questions; show only what
+                the caller volunteered. */}
+            {(!existing || data.event_dates_text || data.event_start_date) && (
+              <Detail icon={<CalendarDays className="size-4" />}>{stayDates(data)}</Detail>
+            )}
             {formatHeadcount(data) && (
               <Detail icon={<Users className="size-4" />}>{formatHeadcount(data)} people</Detail>
             )}
             {data.budget_text && <Detail icon={<Wallet className="size-4" />}><span><span className="block text-xs">Budget stated by caller</span>{data.budget_text}</span></Detail>}
-            <Detail icon={<Wallet className="size-4" />}><span><AiBudgetHelp label="AI-estimated total budget" /><span className="block text-foreground tabular-nums">{formatAiBudget(data)}</span></span></Detail>
+            {!existing && <Detail icon={<Wallet className="size-4" />}><span><AiBudgetHelp label="AI-estimated total budget" /><span className="block text-foreground tabular-nums">{formatAiBudget(data)}</span></span></Detail>}
             {data.needs_guest_rooms !== null && (
               <Detail icon={<BedDouble className="size-4" />}>
                 {data.needs_guest_rooms ? "Needs guest rooms" : "No guest rooms needed"}
@@ -277,22 +294,17 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
               <label className="mt-4 block text-sm font-medium" htmlFor="rep">
                 Who are you?
               </label>
-              <select
+              <OptionSelect
                 id="rep"
                 value={rep}
-                onChange={(e) => {
-                  setRep(e.target.value)
+                onValueChange={(v) => {
+                  setRep(v)
                   setSaved(false)
                 }}
-                className="mt-1.5 h-11 w-full rounded-lg border border-input bg-background px-3 text-base focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="">Select your name…</option>
-                {data.sales_reps.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
+                placeholder="Select your name…"
+                className="mt-1.5 h-11 rounded-lg text-base"
+                options={data.sales_reps.map((name) => ({ value: name, label: name }))}
+              />
               {data.assigned_rep && rep && rep !== data.assigned_rep && (
                 <p className="mt-1.5 text-xs text-muted-foreground">
                   Assigned to {data.assigned_rep}. Saving assigns it to you.
@@ -363,7 +375,7 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
                 </p>
               )}
               {saved && !saveError && (
-                <p className="mt-3 flex items-center gap-2 text-sm text-[#6b7a4a]">
+                <p className="mt-3 flex items-center gap-2 text-sm text-primary">
                   <CheckCircle2 className="size-4 shrink-0" />
                   Update saved. You can log another any time from the same email link.
                 </p>

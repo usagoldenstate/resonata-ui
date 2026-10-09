@@ -133,7 +133,7 @@ export function DateRangeFilter({
                 }`}
               >
                 {option.label}
-                {selected ? <Check className="h-4 w-4 text-[#6b7a4a]" /> : null}
+                {selected ? <Check className="h-4 w-4 text-primary" /> : null}
               </button>
             )
           })}
@@ -146,7 +146,7 @@ export function DateRangeFilter({
               }`}
             >
               Custom range
-              {timespan === "custom" ? <Check className="h-4 w-4 text-[#6b7a4a]" /> : null}
+              {timespan === "custom" ? <Check className="h-4 w-4 text-primary" /> : null}
             </button>
           ) : null}
         </div>

@@ -148,7 +148,7 @@ const lineFilterValues = new Set(lineFilterOptions.map((o) => o.value))
 function LineBadge({ line }: { line: CallLine }) {
   if (line === "sales") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-[#c4a84b]/15 px-2.5 py-1 text-xs font-medium text-[#8a7428]">
+      <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2.5 py-1 text-xs font-medium text-warning">
         <Megaphone className="w-3 h-3" />
         Sales
       </span>
@@ -181,8 +181,8 @@ function deriveOutcome(call: CallListItem): OutcomeLabel {
 
 function OutcomeBadge({ outcome }: { outcome: OutcomeLabel }) {
   const styles: Record<OutcomeLabel, string> = {
-    Booked: "bg-[#6b7a4a]/10 text-[#6b7a4a] border border-[#6b7a4a]/20",
-    "Link Sent": "bg-[#c4a84b]/10 text-[#a08930] border border-[#c4a84b]/20 whitespace-nowrap",
+    Booked: "bg-success/10 text-success border border-success/20",
+    "Link Sent": "bg-warning/10 text-warning border border-warning/20 whitespace-nowrap",
     "Not Booked": "bg-[#9ca3af]/10 text-[#6b7280] border border-[#9ca3af]/20 whitespace-nowrap",
     "Not Bookable": "bg-muted text-muted-foreground border border-border whitespace-nowrap",
     Pending: "bg-muted text-muted-foreground border border-border",
@@ -200,7 +200,7 @@ function OutcomeBadge({ outcome }: { outcome: OutcomeLabel }) {
 function TransferBadge({ department }: { department: string | null }) {
   return (
     <span
-      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-[#a08930]/50 text-[#a08930] whitespace-nowrap"
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-warning/50 text-warning whitespace-nowrap"
       title={department ? `Transferred to ${department}` : "Transferred to a human"}
     >
       <PhoneForwarded className="w-3 h-3" aria-hidden="true" />
@@ -225,7 +225,7 @@ function CancellationBadges({
     <>
       {outcome === "cancelled" && (
         <span
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-[#6b7a4a]/50 text-[#6b7a4a] whitespace-nowrap"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-primary/50 text-primary whitespace-nowrap"
           title="A reservation was cancelled on this call"
         >
           <CalendarX className="w-3 h-3" aria-hidden="true" />
@@ -342,7 +342,7 @@ function CancellationPanel({ cancellation }: { cancellation: CancellationState }
                     attempt.status === "outcome_unknown"
                       ? "text-destructive"
                       : attempt.status === "cancelled"
-                        ? "text-[#6b7a4a]"
+                        ? "text-primary"
                         : "text-muted-foreground"
                   }
                 >
@@ -385,7 +385,7 @@ function CopyableCallId({ callId }: { callId: string }) {
     >
       <span className="truncate">{callId}</span>
       {copied ? (
-        <Check className="w-3.5 h-3.5 shrink-0 text-[#6b7a4a]" />
+        <Check className="w-3.5 h-3.5 shrink-0 text-primary" />
       ) : (
         <Copy className="w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
       )}
@@ -591,7 +591,7 @@ function Highlighted({ text, term }: { text: string; term: string | null }) {
       {parts.map((part, idx) =>
         // split() with one capture group puts the matches at odd indexes.
         idx % 2 === 1 ? (
-          <mark key={idx} className="rounded-sm bg-[#c4a84b]/30 px-0.5 text-inherit">
+          <mark key={idx} className="rounded-sm bg-warning/30 px-0.5 text-inherit">
             {part}
           </mark>
         ) : (
@@ -634,9 +634,9 @@ function TranscriptTurns({ turns, term }: { turns: TranscriptTurn[]; term: strin
           <span
             className={`text-xs font-medium px-2 py-1 rounded shrink-0 ${
               line.speaker === "Agent"
-                ? "bg-[#6b7a4a]/10 text-[#6b7a4a]"
+                ? "bg-primary/10 text-primary"
                 : line.speaker === "Guest"
-                  ? "bg-[#c4a84b]/10 text-[#a08930]"
+                  ? "bg-warning/10 text-warning"
                   : "bg-muted text-muted-foreground"
             }`}
           >
@@ -973,7 +973,9 @@ function CallLogPageInner() {
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
-            <h2 className="text-2xl font-semibold text-foreground">Call Log</h2>
+            <p className="app-eyebrow mb-2">Conversations</p>
+            <h1 className="text-2xl font-semibold text-foreground">Call log</h1>
+            <p className="text-sm text-muted-foreground">Every conversation. All the context you need.</p>
             {scopeLabel && (
               <p className="text-sm text-muted-foreground mt-1">{scopeLabel}</p>
             )}
@@ -1175,10 +1177,10 @@ function CallLogPageInner() {
         </div>
 
         {/* Calls Table */}
-        <Card className="border-border">
+        <Card className="overflow-hidden border-border py-0">
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full">
-              <thead>
+              <thead className="bg-muted/50 [&_th]:whitespace-nowrap">
                 <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
                   <th className="p-4 font-medium">Call Date</th>
                   <th className="p-4 font-medium">Time</th>
@@ -1209,7 +1211,7 @@ function CallLogPageInner() {
                         onClick={() => toggleRow(call.id)}
                         className={`border-b border-border hover:bg-muted/50 transition-colors cursor-pointer ${expandedRow === call.id ? "bg-muted/30" : ""}`}
                       >
-                        <td className="p-4 font-medium text-card-foreground">
+                        <td className="p-4 whitespace-nowrap font-medium text-card-foreground">
                           <div className="flex items-center gap-2">
                             {expandedRow === call.id ? (
                               <ChevronUp className="w-4 h-4 text-muted-foreground" />
@@ -1224,7 +1226,7 @@ function CallLogPageInner() {
                             })}
                           </div>
                         </td>
-                        <td className="p-4 text-muted-foreground">
+                        <td className="p-4 whitespace-nowrap text-muted-foreground">
                           {startedAt.toLocaleTimeString(undefined, {
                             hour: "numeric",
                             minute: "2-digit",
@@ -1247,7 +1249,7 @@ function CallLogPageInner() {
                         <td className="p-4">
                           <CopyableCallId callId={call.provider_call_id} />
                         </td>
-                        <td className="p-4 text-muted-foreground">
+                        <td className="p-4 whitespace-nowrap text-muted-foreground">
                           {formatDuration(call.duration_seconds)}
                         </td>
                         <td className="p-4">

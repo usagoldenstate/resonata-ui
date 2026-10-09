@@ -464,7 +464,18 @@ export type SalesInquiry = {
   callback_phone_e164: string | null
   caller_id_phone_e164: string | null
   email: string | null
-  event_type: string
+  // Which intake the call took: a new event, or a caller following up with a
+  // rep they already work with (event questions skipped; the rep's name as
+  // the caller said it in `existing_contact_name`).
+  inquiry_kind?: SalesInquiryKind
+  existing_contact_name?: string | null
+  // The caller's own words. Null when an existing-inquiry caller never named
+  // the event, and after erasure.
+  event_type: string | null
+  // A fixed category assigned after the call from the transcript; null until
+  // the classifier has run.
+  event_category?: SalesEventCategory | null
+  event_category_status?: "pending" | "complete" | "failed"
   event_dates_text: string | null
   event_start_date: string | null
   event_end_date: string | null
@@ -504,6 +515,15 @@ export type SalesInquiry = {
   source?: SalesInquirySource
 }
 export type SalesInquirySource = "intake_tool" | "recovered"
+export type SalesInquiryKind = "initial_inquiry" | "existing_inquiry"
+export type SalesEventCategory =
+  | "wedding"
+  | "social_event"
+  | "corporate_event"
+  | "conference"
+  | "group_room_block"
+  | "other"
+  | "not_specified"
 
 // Aggregate counts behind the call-log stat tiles. Outcome buckets sum to
 // total_calls; `transferred` is orthogonal. Mirrors CallStats in the backend's
@@ -1746,7 +1766,7 @@ export function refreshHotelRoomTypes(hotelId: string) {
 }
 
 // Automatically captured sales inquiries and shared follow-up tracking.
-export type SalesFollowUpStatus = "new" | "call_attempted" | "contacted" | "booked" | "closed"
+export type SalesFollowUpStatus = "not_started" | "call_attempted" | "contacted" | "booked" | "closed"
 export type SalesInquiryItem = SalesInquiry & {
   // The list may span an organization; detail/patch and the roster used to
   // edit an assignment are keyed by the row's own hotel.
@@ -1822,7 +1842,17 @@ export type PublicSalesInquiry = {
   callback_phone_e164: string | null
   caller_id_phone_e164: string | null
   email: string | null
-  event_type: string
+  // Which intake the call took: a new event, or a caller following up with a
+  // rep they already work with (event questions skipped; the rep's name as
+  // the caller said it in `existing_contact_name`).
+  inquiry_kind?: SalesInquiryKind
+  existing_contact_name?: string | null
+  // The caller's own words. Null when an existing-inquiry caller never named
+  // the event, and after erasure.
+  event_type: string | null
+  // A fixed category assigned after the call from the transcript; null until
+  // the classifier has run.
+  event_category?: SalesEventCategory | null
   event_dates_text: string | null
   event_start_date: string | null
   event_end_date: string | null

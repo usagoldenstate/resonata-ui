@@ -10,6 +10,9 @@ import { Button } from "@/components/ui/button"
 import { Sidebar } from "@/components/sidebar"
 import {
   AlertTriangle,
+  ArrowUpRight,
+  PhoneCall,
+  BookOpen,
   ChevronRight,
   Clock,
   DollarSign,
@@ -42,9 +45,9 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value"
 // Presentation-only color mapping, keyed on the backend taxonomy category name.
 // Mirrors the Not Booked reporting page so the dashboard tile matches the detail view.
 const COLOR_BY_CATEGORY: Record<string, string> = {
-  Price: "bg-[#6b7a4a]",
-  Availability: "bg-[#c4a84b]",
-  Amenities: "bg-[#8b5a3c]",
+  Price: "bg-primary",
+  Availability: "bg-warning",
+  Amenities: "bg-destructive",
   Policy: "bg-[#64748b]",
   Other: "bg-[#9ca3af]",
 }
@@ -307,10 +310,11 @@ export default function Dashboard() {
       <Sidebar />
       <main className="app-content flex-1 p-8">
         {/* Header */}
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
+        <div className="dashboard-intro flex flex-wrap items-start justify-between gap-4 mb-8">
           <div>
-            <h2 className="text-2xl font-semibold text-foreground">Dashboard</h2>
-            <p className="text-sm text-muted-foreground">Your hotel’s performance, at a glance.</p>
+            <p className="app-eyebrow mb-3">Performance overview</p>
+            <h1 className="text-2xl font-semibold text-foreground">Your hotel, at a glance.</h1>
+            <p className="text-sm text-muted-foreground">Turn everyday conversations into a clearer picture of your business.</p>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <DateRangeFilter
                 variant="header"
@@ -353,7 +357,7 @@ export default function Dashboard() {
               onClick={handleToggleComparison}
               disabled={!comparisonAvailable}
               title={comparisonAvailable ? undefined : "Pick a dated range to compare periods"}
-              className={showComparison ? "bg-[#6b7a4a] hover:bg-[#5a6940]" : "border-border"}
+              className={showComparison ? "bg-foreground text-background hover:bg-foreground/90" : "border-border"}
             >
               <GitCompareArrows className="w-4 h-4 mr-2" />
               Compare Periods
@@ -380,7 +384,7 @@ export default function Dashboard() {
         ) : null}
 
         {/* Main Grid - 2x2 */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <div className="dashboard-grid grid grid-cols-1 xl:grid-cols-2 gap-5">
           {/* Call Volume Section */}
           <Card className="metric-card border-border hover:border-primary/35 hover:shadow-md transition-[border-color,box-shadow] duration-200 group h-full py-0">
             <CardContent className="p-6">
@@ -415,7 +419,7 @@ export default function Dashboard() {
                     </button>
                   </div>
                   <Link href="/reporting/call-volume" aria-label="View call volume report">
-                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
+                    <ChevronRight className="size-8 rounded-full border border-border p-1.5 text-muted-foreground group-hover:border-primary/30 group-hover:text-primary transition-colors" />
                   </Link>
                 </div>
               </div>
@@ -429,7 +433,7 @@ export default function Dashboard() {
                     {callVolumeType === "bookable" ? "bookable calls" : "calls"}
                   </span>
                   {callsDiff !== null && (
-                    <span className={`text-sm flex items-center gap-1 ${callsDiff >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
+                    <span className={`text-sm flex items-center gap-1 ${callsDiff >= 0 ? "text-primary" : "text-destructive"}`}>
                       {callsDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                       {Math.abs(callsDiff).toFixed(1)}%
                     </span>
@@ -438,8 +442,8 @@ export default function Dashboard() {
 
                 {/* Total call time for the selected period */}
                 <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
-                  <div className="w-9 h-9 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                    <Clock className="w-4 h-4 text-[#6b7a4a]" />
+                  <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
+                    <Clock className="w-4 h-4 text-primary" />
                   </div>
                   <div>
                     <p className="text-xl font-semibold text-card-foreground leading-tight">
@@ -464,7 +468,7 @@ export default function Dashboard() {
                     <h3 className="text-lg font-semibold text-card-foreground">Conversion Rate</h3>
                     <p className="text-xs text-muted-foreground">Booking success metrics</p>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
+                  <ChevronRight className="size-8 rounded-full border border-border p-1.5 text-muted-foreground group-hover:border-primary/30 group-hover:text-primary transition-colors" />
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
@@ -473,7 +477,7 @@ export default function Dashboard() {
                   </span>
                   <span className="text-sm text-muted-foreground">avg rate</span>
                   {rateDiff !== null && (
-                    <span className={`text-sm flex items-center gap-1 ${rateDiff >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
+                    <span className={`text-sm flex items-center gap-1 ${rateDiff >= 0 ? "text-primary" : "text-destructive"}`}>
                       {rateDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                       {Math.abs(rateDiff).toFixed(1)}pp
                     </span>
@@ -486,7 +490,7 @@ export default function Dashboard() {
                     <span className="text-xs text-muted-foreground w-16">Booked</span>
                     <div className="flex-1 bg-muted rounded-full h-3">
                       <div
-                        className="bg-[#6b7a4a] h-3 rounded-full transition-all"
+                        className="bg-primary h-3 rounded-full transition-all"
                         style={{ width: `${avgRate ?? 0}%` }}
                       />
                     </div>
@@ -496,7 +500,7 @@ export default function Dashboard() {
                     <span className="text-xs text-muted-foreground w-16">Not Booked</span>
                     <div className="flex-1 bg-muted rounded-full h-3">
                       <div
-                        className="bg-[#8b5a3c] h-3 rounded-full transition-all"
+                        className="bg-destructive h-3 rounded-full transition-all"
                         style={{ width: `${avgRate === undefined ? 0 : 100 - avgRate}%` }}
                       />
                     </div>
@@ -516,7 +520,7 @@ export default function Dashboard() {
                     <h3 className="text-lg font-semibold text-card-foreground">Not Booked Reasons</h3>
                     <p className="text-xs text-muted-foreground">Why guests did not book</p>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
+                  <ChevronRight className="size-8 rounded-full border border-border p-1.5 text-muted-foreground group-hover:border-primary/30 group-hover:text-primary transition-colors" />
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
@@ -564,7 +568,7 @@ export default function Dashboard() {
                     <h3 className="text-lg font-semibold text-card-foreground">Projected Revenue</h3>
                     <p className="text-xs text-muted-foreground">Projected room revenue from bookings</p>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-[#6b7a4a] transition-colors" />
+                  <ChevronRight className="size-8 rounded-full border border-border p-1.5 text-muted-foreground group-hover:border-primary/30 group-hover:text-primary transition-colors" />
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
@@ -573,7 +577,7 @@ export default function Dashboard() {
                   </span>
                   <span className="text-sm text-muted-foreground">total revenue</span>
                   {revenueDiff !== null && (
-                    <span className={`text-sm flex items-center gap-1 ${revenueDiff >= 0 ? "text-[#6b7a4a]" : "text-[#8b5a3c]"}`}>
+                    <span className={`text-sm flex items-center gap-1 ${revenueDiff >= 0 ? "text-primary" : "text-destructive"}`}>
                       {revenueDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                       {Math.abs(revenueDiff).toFixed(1)}%
                     </span>
@@ -582,8 +586,8 @@ export default function Dashboard() {
 
                 {/* ADR */}
                 <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
-                  <div className="w-9 h-9 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                    <DollarSign className="w-4 h-4 text-[#6b7a4a]" />
+                  <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
+                    <DollarSign className="w-4 h-4 text-primary" />
                   </div>
                   <div>
                     <p className="text-xl font-semibold text-card-foreground leading-tight">
@@ -596,6 +600,17 @@ export default function Dashboard() {
             </Card>
           </Link>
         </div>
+        <section aria-label="Workspace shortcuts" className="mt-7 flex flex-col gap-6 rounded-2xl bg-[#0e0e10] p-6 text-[#f7f6f2] lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#f69468]">From insight to action</p>
+            <h2 className="text-lg font-bold tracking-tight">Make every conversation count.</h2>
+            <p className="mt-1 text-sm text-[#b6b4ae]">Explore the calls behind your numbers, or fine-tune what your agent knows.</p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/call-log" className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-xs font-bold text-[#0e0e10] hover:bg-[#fdeee4]"><PhoneCall className="size-3.5" /> View call log <ArrowUpRight className="size-3.5" /></Link>
+            <Link href="/knowledge-base" className="inline-flex items-center gap-2 rounded-full border border-white/25 px-4 py-2.5 text-xs font-bold hover:bg-white/10"><BookOpen className="size-3.5" /> Knowledge base</Link>
+          </div>
+        </section>
       </main>
     </div>
   )

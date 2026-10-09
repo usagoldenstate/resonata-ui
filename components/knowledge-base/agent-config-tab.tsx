@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Star, Plus, Trash2, Users, MessageSquareQuote, PhoneForwarded } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { OptionSelect } from "@/components/ui/option-select"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -780,19 +781,16 @@ export function AgentConfigTab({
           >
             Room-reservation callers are transferred to
           </label>
-          <select
+          <OptionSelect
             id="sales-transfer-target"
             value={salesTransferTarget}
-            onChange={(e) => setSalesTransferTarget(e.target.value || null)}
-            className="w-full max-w-sm text-sm rounded-md border border-input bg-card px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <option value="">No transfer: read out the reservations number</option>
-            {departments.map((d, idx) => (
-              <option key={d.id} value={d.id}>
-                {d.name.trim() || `Department ${idx + 1}`}
-              </option>
-            ))}
-          </select>
+            onValueChange={(v) => setSalesTransferTarget(v || null)}
+            className="max-w-sm"
+            options={[
+              { value: "", label: "No transfer: read out the reservations number" },
+              ...departments.map((d, idx) => ({ value: d.id, label: d.name.trim() || `Department ${idx + 1}` })),
+            ]}
+          />
         </CardContent>
       </Card>
     </>

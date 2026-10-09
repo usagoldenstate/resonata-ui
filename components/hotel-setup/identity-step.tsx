@@ -16,6 +16,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 
 import { Input } from "@/components/ui/input"
+import { OptionSelect } from "@/components/ui/option-select"
 import { Textarea } from "@/components/ui/textarea"
 import {
   createHotel,
@@ -291,21 +292,17 @@ export function IdentityCreateForm() {
           htmlFor="organizationId"
           hint="The management company this hotel belongs to. Users granted the organization see the hotel automatically."
         >
-          <select
+          <OptionSelect
             id="organizationId"
             value={organizationId}
-            onChange={(e) => setOrganizationId(e.target.value)}
+            onValueChange={setOrganizationId}
             disabled={organizations === null}
-            className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-70"
-          >
-            <option value="">Independent (no organization)</option>
-            {(organizations ?? []).map((org) => (
-              <option key={org.organization_id} value={org.organization_id}>
-                {org.display_name}
-              </option>
-            ))}
-            <option value="__new__">Create new…</option>
-          </select>
+            options={[
+              { value: "", label: "Independent (no organization)" },
+              ...(organizations ?? []).map((org) => ({ value: org.organization_id, label: org.display_name })),
+              { value: "__new__", label: "Create new…" },
+            ]}
+          />
         </Field>
         {organizationId === "__new__" ? (
           <Field
@@ -330,18 +327,12 @@ export function IdentityCreateForm() {
       <StepCard title="Locale and commercials">
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Timezone" htmlFor="timezone">
-            <select
+            <OptionSelect
               id="timezone"
               value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-            >
-              {TIMEZONES.map((tz) => (
-                <option key={tz} value={tz}>
-                  {tz}
-                </option>
-              ))}
-            </select>
+              onValueChange={setTimezone}
+              options={TIMEZONES.map((tz) => ({ value: tz, label: tz }))}
+            />
           </Field>
           <Field label="Currency" htmlFor="currency" hint="ISO 4217, e.g. USD, EUR, GBP.">
             <Input
@@ -560,36 +551,27 @@ export function IdentityStep({ ctx }: { ctx: StepContext }) {
         </Field>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Timezone" htmlFor="editTimezone">
-            <select
+            <OptionSelect
               id="editTimezone"
               value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-            >
-              {(TIMEZONES.includes(timezone) ? TIMEZONES : [timezone, ...TIMEZONES]).map(
-                (tz) => (
-                  <option key={tz} value={tz}>
-                    {tz}
-                  </option>
-                ),
-              )}
-            </select>
+              onValueChange={setTimezone}
+              options={(TIMEZONES.includes(timezone) ? TIMEZONES : [timezone, ...TIMEZONES]).map((tz) => ({
+                value: tz,
+                label: tz,
+              }))}
+            />
           </Field>
           <Field label="Organization" htmlFor="editOrganizationId">
-            <select
+            <OptionSelect
               id="editOrganizationId"
               value={organizationId}
-              onChange={(e) => setOrganizationId(e.target.value)}
+              onValueChange={setOrganizationId}
               disabled={organizations === null}
-              className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-70"
-            >
-              <option value="">Independent (no organization)</option>
-              {(organizations ?? []).map((org) => (
-                <option key={org.organization_id} value={org.organization_id}>
-                  {org.display_name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "Independent (no organization)" },
+                ...(organizations ?? []).map((org) => ({ value: org.organization_id, label: org.display_name })),
+              ]}
+            />
           </Field>
           <Field label="Guest-facing phone number" htmlFor="editInbound">
             <Input

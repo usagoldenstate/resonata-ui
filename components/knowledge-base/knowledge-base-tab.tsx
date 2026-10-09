@@ -35,6 +35,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
+import { OptionSelect } from "@/components/ui/option-select"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1231,11 +1232,11 @@ export function KnowledgeBaseTab({
   const critMissing = allFields.filter((f) => f.confidence === "missing" && f.critical)
 
   return (
-    <div className="flex h-full">
+    <div className="kb-editor flex h-full flex-col lg:flex-row">
       {/* Section nav */}
-      <div className="w-56 p-6 pr-0 shrink-0 overflow-y-auto flex flex-col">
+      <div className="w-full shrink-0 p-4 pb-0 lg:w-56 lg:p-6 lg:pr-0 lg:overflow-y-auto flex flex-col">
         <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2.5">Sections</div>
-        <div className="flex-1">
+        <div className="flex gap-2 overflow-x-auto pb-2 lg:block lg:flex-1 lg:pb-0">
           {sections.map((s) => {
             let miss = (s.fields || []).filter((f) => f.confidence === "missing").length
             if (s.meta) miss += s.meta.filter((m) => m.confidence === "missing").length
@@ -1249,7 +1250,7 @@ export function KnowledgeBaseTab({
                   if (searching) setQuery("")
                 }}
                 className={cn(
-                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-all mb-0.5",
+                  "w-auto shrink-0 lg:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-all mb-0.5",
                   activeSec === s.id ? "bg-primary/10 text-primary font-medium hover:bg-primary/15" : "text-muted-foreground hover:bg-primary/5 hover:text-foreground",
                   dimmed && "opacity-40"
                 )}
@@ -1314,7 +1315,7 @@ export function KnowledgeBaseTab({
       </div>
 
       {/* Main content */}
-      <div className="flex-1 p-6 overflow-y-auto">
+      <div className="min-w-0 flex-1 p-4 lg:p-6 lg:overflow-y-auto">
         {/* Keyword search */}
         <div className="relative mb-5">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -1602,17 +1603,18 @@ export function KnowledgeBaseTab({
                             {/* Type Dropdown */}
                             <div className="flex items-center gap-3">
                               <label className="w-44 shrink-0 text-sm font-medium text-muted-foreground">Type</label>
-                              <select
+                              <OptionSelect
                                 value={pool.hotTub && pool.poolType === "lap" ? "" : pool.poolType}
-                                onChange={(e) => updatePool(pool.id, { poolType: e.target.value as PoolCard["poolType"] })}
-                                className="flex-1 h-9 px-3 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                              >
-                                <option value="">Select type...</option>
-                                <option value="outdoor">Outdoor</option>
-                                <option value="indoor">Indoor</option>
-                                <option value="rooftop">Rooftop</option>
-                                {!pool.hotTub && <option value="lap">Lap Pool</option>}
-                              </select>
+                                onValueChange={(v) => updatePool(pool.id, { poolType: v as PoolCard["poolType"] })}
+                                placeholder="Select type..."
+                                className="flex-1"
+                                options={[
+                                  { value: "outdoor", label: "Outdoor" },
+                                  { value: "indoor", label: "Indoor" },
+                                  { value: "rooftop", label: "Rooftop" },
+                                  ...(!pool.hotTub ? [{ value: "lap", label: "Lap Pool" }] : []),
+                                ]}
+                              />
                             </div>
                             {/* Heated Toggle */}
                             <div className="flex items-center gap-3">

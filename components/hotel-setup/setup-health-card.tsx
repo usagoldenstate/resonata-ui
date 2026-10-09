@@ -56,8 +56,8 @@ export function SetupHealthCard({ hotelId }: { hotelId: string }) {
           className="flex w-full items-center gap-3 text-left"
           aria-expanded={open}
         >
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#6b7a4a]/10">
-            <Stethoscope className="h-5 w-5 text-[#6b7a4a]" />
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+            <Stethoscope className="h-5 w-5 text-primary" />
           </span>
           <span className="flex-1">
             <CardTitle className="text-base">Setup health</CardTitle>

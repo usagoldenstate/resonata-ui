@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { OptionSelect } from "@/components/ui/option-select"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet"
 import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import { CallRecordingPlayer } from "@/components/call-recording-player"
@@ -19,16 +20,20 @@ type Selection = { id: string; hotelId: string }
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { confirmDiscardUnsaved, registerUnsavedGuard } from "@/lib/unsaved-guard"
 import { ApiError, fetchSalesAssignees, fetchSalesDepartmentOptions, formatHeadcount, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
+import { EVENT_CATEGORY_LABELS, INQUIRY_KIND_LABELS } from "@/lib/sales-inquiry-labels"
 
-const statuses: Record<SalesFollowUpStatus, string> = { new: "New", call_attempted: "Call attempted", contacted: "Spoke with caller", booked: "Booked / Won", closed: "Closed / Not proceeding" }
+// The response status: what the sales team has done since the call. Not "New"
+// — that word belongs to the inquiry type (an existing inquiry nobody has
+// called back yet is "Not started").
+const statuses: Record<SalesFollowUpStatus, string> = { not_started: "Not started", call_attempted: "Call attempted", contacted: "Spoke with caller", booked: "Booked / Won", closed: "Closed / Not proceeding" }
 const statusStyle: Record<SalesFollowUpStatus, string> = {
-  new: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-200",
+  not_started: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-200",
   call_attempted: "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-200",
   contacted: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-200",
-  booked: "bg-[#6b7a4a]/10 text-[#6b7a4a] border-[#6b7a4a]/30",
+  booked: "bg-success/10 text-success border-success/30",
   closed: "bg-muted text-muted-foreground border-border",
 }
-const selectClass = "h-9 max-w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+const selectClass = "w-auto max-w-full"
 const PAGE_SIZE = 25
 
 function timestamp(value: string | null, timezone: string) {
@@ -36,6 +41,18 @@ function timestamp(value: string | null, timezone: string) {
   // SQLite fixtures return naive UTC; production returns timezone-aware dates.
   const normalized = /(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : `${value}Z`
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: timezone }).format(new Date(normalized))
+}
+const isExisting = (row: Pick<SalesInquiryItem, "inquiry_kind">) => row.inquiry_kind === "existing_inquiry"
+// The headline for a row: the caller's own words for the event, or — for an
+// existing inquiry that never named it — who they're working with.
+function requestLabel(row: SalesInquiryItem) {
+  if (row.event_type) return row.event_type
+  if (isExisting(row)) return row.existing_contact_name ? `Working with ${row.existing_contact_name}` : "Event not mentioned"
+  return row.erased ? "Erased inquiry" : "Event not specified"
+}
+function KindBadge({ row }: { row: Pick<SalesInquiryItem, "inquiry_kind"> }) {
+  const existing = isExisting(row)
+  return <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${existing ? "border-brand-insights/30 bg-brand-insights/10 text-brand-insights" : "border-border bg-muted text-muted-foreground"}`}>{INQUIRY_KIND_LABELS[row.inquiry_kind ?? "initial_inquiry"]}</span>
 }
 function dates(row: SalesInquiryItem) {
   const parts = row.event_dates_text || [row.event_start_date, row.event_end_date !== row.event_start_date ? row.event_end_date : null].filter(Boolean).join(" – ") || "Dates not provided"
@@ -76,19 +93,17 @@ function EmailBadge({ row }: { row: Pick<SalesInquiryItem, "email_status"> }) {
   </span>
 }
 function StatusSelect({ row, disabled, onChange }: { row: SalesInquiryItem; disabled: boolean; onChange: (status: SalesFollowUpStatus) => void }) {
-  return <select aria-label={`Status for ${row.caller_name || "inquiry"}`} className={`${selectClass} ${statusStyle[row.follow_up_status]}`} value={row.follow_up_status} disabled={disabled} onChange={e => onChange(e.target.value as SalesFollowUpStatus)}>
-    {Object.entries(statuses).map(([value, label]) => <option className="bg-background text-foreground" key={value} value={value}>{label}</option>)}
-  </select>
+  return <OptionSelect aria-label={`Status for ${row.caller_name || "inquiry"}`} className={`${selectClass} font-medium ${statusStyle[row.follow_up_status]}`} value={row.follow_up_status} disabled={disabled} onValueChange={v => onChange(v as SalesFollowUpStatus)} options={Object.entries(statuses).map(([value, label]) => ({ value, label }))} />
 }
 function OwnerSelect({ row, reps, disabled, onChange }: { row: SalesInquiryItem; reps: string[]; disabled: boolean; onChange: (name: string | null) => void }) {
   // Names come from the hotel's sales-team roster (Settings), not user
   // accounts. A name since removed from the roster still shows on the rows it
   // was saved against — history is never rewritten by a roster edit.
-  return <select aria-label={`Assigned salesperson for ${row.caller_name || "inquiry"}`} className={`${selectClass} w-44`} value={row.assigned_rep || ""} disabled={disabled} onChange={e => onChange(e.target.value || null)}>
-    <option value="">Unassigned</option>
-    {row.assigned_rep && !reps.includes(row.assigned_rep) && <option value={row.assigned_rep}>{row.assigned_rep} (no longer on the team)</option>}
-    {reps.map(name => <option key={name} value={name}>{name}</option>)}
-  </select>
+  return <OptionSelect aria-label={`Assigned salesperson for ${row.caller_name || "inquiry"}`} className="w-44" value={row.assigned_rep || ""} disabled={disabled} onValueChange={v => onChange(v || null)} options={[
+    { value: "", label: "Unassigned" },
+    ...(row.assigned_rep && !reps.includes(row.assigned_rep) ? [{ value: row.assigned_rep, label: `${row.assigned_rep} (no longer on the team)` }] : []),
+    ...reps.map(name => ({ value: name, label: name })),
+  ]} />
 }
 
 export default function SalesInquiriesPage() {
@@ -119,7 +134,8 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   const tzOf = (hotelId: string) => hotelById.get(hotelId)?.timezone || "UTC"
   const nameOf = (hotelId: string) => hotelById.get(hotelId)?.display_name || hotelId
   const [search, setSearch] = useState("")
-  const [eventType, setEventType] = useState("")
+  const [category, setCategory] = useState("")
+  const [kind, setKind] = useState("")
   const [status, setStatus] = useState("")
   const [owner, setOwner] = useState("")
   const [department, setDepartment] = useState("")
@@ -141,10 +157,9 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   const [busy, setBusy] = useState<string | null>(null)
   const saving = useRef(false)
   const q = useDebouncedValue(search, 300)
-  const event = useDebouncedValue(eventType, 300)
   const invalidDates = !!(dateFrom && dateTo && dateFrom > dateTo)
   const invalidEventDates = !!(eventFrom && eventTo && eventFrom > eventTo)
-  const filters = { q, event_type: event, status, assigned_rep: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", department_id: department || undefined, email_status: email ? EMAIL_VIEW_STATUSES[email as EmailView] : undefined, date_from: dateFrom, date_to: dateTo, event_from: eventFrom, event_to: eventTo, budget_value_gte: budgetMinimum, sort, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+  const filters = { q, event_category: category || undefined, inquiry_kind: kind || undefined, status, assigned_rep: owner && owner !== "unassigned" ? owner : undefined, unassigned: owner === "unassigned", department_id: department || undefined, email_status: email ? EMAIL_VIEW_STATUSES[email as EmailView] : undefined, date_from: dateFrom, date_to: dateTo, event_from: eventFrom, event_to: eventTo, budget_value_gte: budgetMinimum, sort, call_id: callId, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
   const { data, error, isLoading, isValidating, mutate } = useSWR(invalidDates || invalidEventDates ? null : ["sales-inquiries", hotelIds.join(","), filters], () => fetchSalesInquiries(hotelIds, filters), { refreshInterval: 30000 })
   const staff = useSWR<Rosters>(["sales-assignees", hotelIds.join(",")], async () => Object.fromEntries(await Promise.all(hotelIds.map(async id => [id, await fetchSalesAssignees(id)] as const))))
   const linkedRow = !dismissed && callId ? data?.items[0] : undefined
@@ -176,17 +191,17 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
       return false
     } finally { saving.current = false; setBusy(null) }
   }
-  function clearFilters() { setSearch(""); setEventType(""); setStatus(""); setOwner(""); setDepartment(""); setEmail(""); setDateFrom(""); setDateTo(""); setEventFrom(""); setEventTo(""); setBudgetMinimum(""); setSort("newest"); setCallId(null); setPage(0) }
+  function clearFilters() { setSearch(""); setCategory(""); setKind(""); setStatus(""); setOwner(""); setDepartment(""); setEmail(""); setDateFrom(""); setDateTo(""); setEventFrom(""); setEventTo(""); setBudgetMinimum(""); setSort("newest"); setCallId(null); setPage(0) }
   const counts = data?.counts
   const cards = [
-    { label: "New inquiries", value: counts?.new || 0, icon: Inbox, color: "text-blue-600" },
-    { label: "Follow-up in progress", value: (counts?.call_attempted || 0) + (counts?.contacted || 0), icon: Phone, color: "text-amber-600" },
-    { label: "Booked", value: counts?.booked || 0, icon: CheckCircle2, color: "text-[#6b7a4a]" },
+    { label: "Response not started", value: counts?.not_started || 0, icon: Inbox, color: "text-blue-600" },
+    { label: "Response in progress", value: (counts?.call_attempted || 0) + (counts?.contacted || 0), icon: Phone, color: "text-amber-600" },
+    { label: "Booked", value: counts?.booked || 0, icon: CheckCircle2, color: "text-success" },
     { label: "Closed / Not booked", value: counts?.closed || 0, icon: Users, color: "text-muted-foreground" },
   ]
   return <>
     <header className="flex items-center justify-between gap-4 border-b bg-card px-8 py-6">
-      <div><h1 className="text-2xl font-semibold tracking-tight">Sales Inquiries</h1><p className="mt-1 text-sm text-muted-foreground">Every sales call captured. Every follow-up in one place.</p></div>
+      <div><p className="app-eyebrow mb-2">Your sales pipeline</p><h1 className="text-2xl font-semibold tracking-tight">Sales inquiries</h1><p className="mt-1 text-sm text-muted-foreground">Every sales call captured. Every follow-up in one place.</p></div>
       <Button variant="outline" size="sm" disabled={isValidating} onClick={() => { void mutate(); void staff.mutate(); void detail.mutate() }}><RefreshCw className={`size-4 ${isValidating ? "animate-spin" : ""}`} />Refresh</Button>
     </header>
     <div className="space-y-6 p-6 lg:p-8">
@@ -195,12 +210,14 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
         <div className="space-y-4 border-b p-5">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">Incoming inquiries</h2><p className="mt-1 text-xs text-muted-foreground">Automatically captured by your voice agent · Received times in {portfolio ? "each hotel's local time" : tzOf(hotelIds[0])}</p></div><Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button></div>
           <div className="flex flex-wrap gap-3">
-            <label className="relative min-w-60 flex-1"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Search inquiries" placeholder="Search name, phone, email, or request…" value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-9" /></label>
-            <select aria-label="Filter by status" className={selectClass} value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}><option value="">All statuses</option>{Object.entries(statuses).map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select>
-            <select aria-label="Filter by salesperson" className={selectClass} value={owner} onChange={e => { setOwner(e.target.value); setPage(0) }}><option value="">All salespeople</option><option value="unassigned">Unassigned</option>{reps.map(name => <option key={name} value={name}>{name}</option>)}</select>
-            {(departments.data?.length ?? 0) > 1 && <select aria-label="Filter by department" className={selectClass} value={department} onChange={e => { setDepartment(e.target.value); setPage(0) }}><option value="">All departments</option>{departments.data!.map(option => <option key={`${option.hotel_id}:${option.id}`} value={option.id}>{departmentLabel(option)}</option>)}</select>}
-            <select aria-label="Filter by email send status" className={selectClass} value={email} onChange={e => { setEmail(e.target.value); setPage(0) }}><option value="">All email statuses</option><option value="emailed">Emailed</option><option value="sending">Sending</option><option value="not_sent">Email not sent</option></select>
-            <select aria-label="Sort inquiries" className={selectClass} value={sort} onChange={e => { setSort(e.target.value); setPage(0) }}><option value="newest">Newest first</option><option value="budget_desc">Highest AI-estimated budget</option><option value="event_date_asc">Soonest event</option><option value="headcount_desc">Largest party</option></select>
+            <label className="relative min-w-60 flex-1"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Search inquiries" placeholder="Search name, phone, email, request, or rep…" value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-9" /></label>
+            <OptionSelect aria-label="Filter by inquiry type" className={selectClass} value={kind} onValueChange={v => { setKind(v); setPage(0) }} options={[{ value: "", label: "All inquiry types" }, ...Object.entries(INQUIRY_KIND_LABELS).map(([value, label]) => ({ value, label }))]} />
+            <OptionSelect aria-label="Filter by event category" className={selectClass} value={category} onValueChange={v => { setCategory(v); setPage(0) }} options={[{ value: "", label: "All event categories" }, ...Object.entries(EVENT_CATEGORY_LABELS).map(([value, label]) => ({ value, label }))]} />
+            <OptionSelect aria-label="Filter by response status" className={selectClass} value={status} onValueChange={v => { setStatus(v); setPage(0) }} options={[{ value: "", label: "All response statuses" }, ...Object.entries(statuses).map(([value, label]) => ({ value, label }))]} />
+            <OptionSelect aria-label="Filter by salesperson" className={selectClass} value={owner} onValueChange={v => { setOwner(v); setPage(0) }} options={[{ value: "", label: "All salespeople" }, { value: "unassigned", label: "Unassigned" }, ...reps.map(name => ({ value: name, label: name }))]} />
+            {(departments.data?.length ?? 0) > 1 && <OptionSelect aria-label="Filter by department" className={selectClass} value={department} onValueChange={v => { setDepartment(v); setPage(0) }} options={[{ value: "", label: "All departments" }, ...departments.data!.map(option => ({ value: option.id, label: departmentLabel(option) }))]} />}
+            <OptionSelect aria-label="Filter by email send status" className={selectClass} value={email} onValueChange={v => { setEmail(v); setPage(0) }} options={[{ value: "", label: "All email statuses" }, { value: "emailed", label: "Emailed" }, { value: "sending", label: "Sending" }, { value: "not_sent", label: "Email not sent" }]} />
+            <OptionSelect aria-label="Sort inquiries" className={selectClass} value={sort} onValueChange={v => { setSort(v); setPage(0) }} options={[{ value: "newest", label: "Newest first" }, { value: "budget_desc", label: "Highest AI-estimated budget" }, { value: "event_date_asc", label: "Soonest event" }, { value: "headcount_desc", label: "Largest party" }]} />
           </div>
           <div className="flex flex-wrap items-end gap-3 text-xs text-muted-foreground">
             <label className="space-y-1">Received from<Input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0) }} /></label>
@@ -208,18 +225,17 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
             <label className="space-y-1">Event from<Input type="date" value={eventFrom} onChange={e => { setEventFrom(e.target.value); setPage(0) }} /></label>
             <label className="space-y-1">Event through<Input type="date" value={eventTo} onChange={e => { setEventTo(e.target.value); setPage(0) }} /></label>
             <label className="space-y-1">Potential budget at least<Input aria-label="Potential AI-estimated budget at least" inputMode="decimal" min="0" type="number" placeholder="e.g. 10000" value={budgetMinimum} onChange={e => { setBudgetMinimum(e.target.value); setPage(0) }} /></label>
-            <label className="space-y-1">Event type<Input placeholder="e.g. wedding" value={eventType} onChange={e => { setEventType(e.target.value); setPage(0) }} /></label>
             {callId && <span className="rounded-md bg-muted px-3 py-2">Showing inquiry from linked call</span>}
           </div>
           {staff.error && <p role="alert" className="text-sm text-destructive">Employees could not be loaded. <button className="underline" onClick={() => void staff.mutate()}>Retry</button></p>}
         </div>
-        {invalidDates || invalidEventDates ? <p role="alert" className="p-8 text-sm text-destructive">{invalidDates ? "The received-from date must be on or before the end date." : "The event-from date must be on or before the event-through date."}</p> : error ? <div role="alert" className="p-10 text-center"><AlertTriangle className="mx-auto mb-3 size-6 text-destructive" /><p>Could not load sales inquiries.</p><Button className="mt-4" variant="outline" onClick={() => void mutate()}>Try again</Button></div> : isLoading ? <div role="status" className="flex justify-center gap-2 p-16 text-muted-foreground"><Loader2 className="size-5 animate-spin" />Loading inquiries…</div> : !data?.items.length ? <div className="p-16 text-center"><Inbox className="mx-auto mb-4 size-8 text-muted-foreground" /><h3 className="font-medium">{search || status || owner || department || email || dateFrom || dateTo || eventFrom || eventTo || budgetMinimum || eventType || callId ? "No inquiries match these filters" : "Your sales inquiries will appear here"}</h3><p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">When your voice agent captures a sales request, its details and email-send status are added automatically.</p>{!!data?.total && <Button variant="outline" className="mt-4" onClick={() => setPage(0)}>Return to first page</Button>}</div> : <>
-          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/40 text-xs text-muted-foreground"><tr>{["Received", ...(portfolio ? ["Hotel"] : []), "Caller", "Request / dates", "Department", "AI-estimated budget", "Status", "Assigned to", "Email"].map(h => <th key={h} className="whitespace-nowrap px-5 py-3 font-medium">{h === "AI-estimated budget" ? <AiBudgetHelp /> : h}</th>)}</tr></thead>
+        {invalidDates || invalidEventDates ? <p role="alert" className="p-8 text-sm text-destructive">{invalidDates ? "The received-from date must be on or before the end date." : "The event-from date must be on or before the event-through date."}</p> : error ? <div role="alert" className="p-10 text-center"><AlertTriangle className="mx-auto mb-3 size-6 text-destructive" /><p>Could not load sales inquiries.</p><Button className="mt-4" variant="outline" onClick={() => void mutate()}>Try again</Button></div> : isLoading ? <div role="status" className="flex justify-center gap-2 p-16 text-muted-foreground"><Loader2 className="size-5 animate-spin" />Loading inquiries…</div> : !data?.items.length ? <div className="p-16 text-center"><Inbox className="mx-auto mb-4 size-8 text-muted-foreground" /><h3 className="font-medium">{search || status || owner || department || email || dateFrom || dateTo || eventFrom || eventTo || budgetMinimum || category || kind || callId ? "No inquiries match these filters" : "Your sales inquiries will appear here"}</h3><p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">When your voice agent captures a sales request, its details and email-send status are added automatically.</p>{!!data?.total && <Button variant="outline" className="mt-4" onClick={() => setPage(0)}>Return to first page</Button>}</div> : <>
+          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/40 text-xs text-muted-foreground"><tr>{["Received", ...(portfolio ? ["Hotel"] : []), "Caller", "Request / dates", "Department", "AI-estimated budget", "Response status", "Assigned to", "Email"].map(h => <th key={h} className="whitespace-nowrap px-5 py-3 font-medium">{h === "AI-estimated budget" ? <AiBudgetHelp /> : h}</th>)}</tr></thead>
             <tbody className="divide-y">{data.items.map(row => <tr key={row.id} className="cursor-pointer transition-colors hover:bg-muted/30" onClick={() => { setSelected({ id: row.id, hotelId: row.hotel_id }); setDismissed(false) }}>
               <td className="whitespace-nowrap px-5 py-5 text-xs text-muted-foreground">{timestamp(row.created_at, tzOf(row.hotel_id))}</td>
               {portfolio && <td className="whitespace-nowrap px-5 py-5"><span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{nameOf(row.hotel_id)}</span></td>}
               <td className="px-5 py-5"><button className="text-left font-medium hover:underline focus-visible:outline-ring" onClick={() => setSelected({ id: row.id, hotelId: row.hotel_id })}>{row.caller_name || "Name not provided"}</button><p className="mt-1 text-xs text-muted-foreground">{row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || "No contact provided"}</p></td>
-              <td className="max-w-64 px-5 py-5"><p className="font-medium">{row.event_type}{formatHeadcount(row) ? ` · ${formatHeadcount(row)} guests` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{dates(row)}</p></td>
+              <td className="max-w-64 px-5 py-5"><p className="font-medium">{requestLabel(row)}{formatHeadcount(row) ? ` · ${formatHeadcount(row)} guests` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{isExisting(row) ? (row.event_type && row.existing_contact_name ? `Working with ${row.existing_contact_name}` : "Follow-up on an open inquiry") : dates(row)}</p><div className="mt-1.5 flex flex-wrap items-center gap-1.5"><KindBadge row={row} />{row.event_category && <span className="text-[11px] text-muted-foreground">{EVENT_CATEGORY_LABELS[row.event_category]}</span>}</div></td>
               <td className="whitespace-nowrap px-5 py-5 text-sm">{row.department_name || <span className="text-muted-foreground">—</span>}</td>
               <td className="whitespace-nowrap px-5 py-5 font-medium tabular-nums">{formatAiBudget(row)}</td>
               <td className="px-5 py-5" onClick={e => e.stopPropagation()}><StatusSelect row={row} disabled={!!busy} onChange={v => void save(row, { follow_up_status: v })} /></td>
@@ -259,8 +275,18 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
     return () => { unregister(); window.removeEventListener("beforeunload", beforeUnload) }
   }, [note])
   const initials = (row.caller_name || "Guest").trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()
-  const discovery = [
-    { label: "Request", value: row.event_type, icon: Sparkles },
+  const existing = isExisting(row)
+  const category = row.event_category ? EVENT_CATEGORY_LABELS[row.event_category] : row.event_category_status === "failed" ? "Could not be categorized" : "Categorizing…"
+  // An existing inquiry skipped the event questions, so their "Not provided"
+  // rows would only be noise; anything the caller volunteered still shows.
+  const discovery = existing ? [
+    { label: "Working with", value: row.existing_contact_name || "Caller did not remember", icon: UserRound },
+    { label: "Event", value: row.event_type || "Not mentioned", icon: Sparkles },
+    { label: "Event category", value: category, icon: Sparkles },
+    ...(row.event_dates_text || row.event_start_date ? [{ label: "Dates mentioned", value: dates(row), icon: CalendarDays }] : []),
+  ] : [
+    { label: "Request", value: requestLabel(row), icon: Sparkles },
+    { label: "Event category", value: category, icon: Sparkles },
     { label: "Event dates", value: dates(row), icon: CalendarDays },
     { label: "Party size", value: formatHeadcount(row) ? `${formatHeadcount(row)} guests` : "Not provided", icon: Users },
     { label: "Budget stated by caller", value: row.budget_text ?? "Not provided", icon: Wallet },
@@ -278,7 +304,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
         </div>
         <div className="flex items-center gap-3.5">
           <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-brand-insights/20 bg-card text-lg font-semibold text-brand-insights shadow-xs">{initials}</div>
-          <div className="min-w-0"><h2 className="break-words text-2xl font-semibold tracking-tight">{row.caller_name || "Name not provided"}</h2><p className="mt-0.5 text-sm text-muted-foreground">{row.event_type}</p></div>
+          <div className="min-w-0"><h2 className="break-words text-2xl font-semibold tracking-tight">{row.caller_name || "Name not provided"}</h2><div className="mt-1 flex flex-wrap items-center gap-2"><KindBadge row={row} /><p className="text-sm text-muted-foreground">{requestLabel(row)}</p></div></div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {row.callback_phone_e164 && <a className="inline-flex items-center gap-2 rounded-lg border border-brand-insights/15 bg-card px-3 py-2 text-sm font-medium shadow-xs transition-colors hover:border-brand-insights/40 hover:bg-brand-insights/5 focus-visible:outline-2 focus-visible:outline-ring" href={`tel:${row.callback_phone_e164}`}><Phone className="size-3.5 text-brand-insights" />{row.callback_phone_e164}<ArrowUpRight className="size-3 text-muted-foreground" /></a>}
@@ -291,16 +317,16 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
     </section>
 
     <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-      <div className="flex items-center gap-2 border-b px-5 py-3.5"><Sparkles className="size-4 text-brand-insights" /><h3 className="text-sm font-semibold">Discovery details</h3></div>
+      <div className="flex items-center gap-2 border-b px-5 py-3.5"><Sparkles className="size-4 text-brand-insights" /><h3 className="text-sm font-semibold">{existing ? "Inquiry details" : "Discovery details"}</h3></div>
       <dl className="grid grid-cols-1 gap-x-6 gap-y-5 p-5 min-[400px]:grid-cols-2">
         {discovery.map(field => <div key={field.label} className="flex items-start gap-2.5">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground"><field.icon className="size-4" /></span>
           <div className="min-w-0"><dt className="text-xs font-medium text-muted-foreground">{field.label}</dt><dd className="mt-1 break-words text-sm font-medium leading-relaxed">{field.value}</dd></div>
         </div>)}
-        <div className="flex items-start gap-2.5">
+        {!existing && <div className="flex items-start gap-2.5">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground"><Wallet className="size-4" /></span>
           <div className="min-w-0"><dt className="text-xs font-medium text-muted-foreground"><AiBudgetHelp label="AI-estimated total budget" /></dt><dd className="mt-1 break-words text-sm font-medium leading-relaxed tabular-nums">{formatAiBudget(row)}</dd></div>
-        </div>
+        </div>}
         {row.custom_answers?.map((entry, index) => (
           <div key={`${entry.question_id}-${index}`} className="flex items-start gap-2.5">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground"><MessageSquareText className="size-4" /></span>
@@ -308,7 +334,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
           </div>
         ))}
       </dl>
-      {row.notes && <div className="mx-5 mb-5 rounded-r-lg border-l-2 border-brand-insights/50 bg-brand-insights/5 px-3.5 py-3"><p className="mb-1 text-[11px] font-medium text-brand-insights">From the caller</p><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{row.notes}</p></div>}
+      {row.notes && <div className="mx-5 mb-5 rounded-r-lg border-l-2 border-brand-insights/50 bg-brand-insights/5 px-3.5 py-3"><p className="mb-1 text-[11px] font-medium text-brand-insights">{existing ? "What they need" : "From the caller"}</p><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{row.notes}</p></div>}
     </section>
 
     {row.call_record_id && <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
@@ -330,10 +356,10 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
 
     {row.erased && <p role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-xs leading-relaxed text-destructive">This inquiry was erased under a privacy request. Its caller details are gone and it can no longer be updated.</p>}
     <section className="overflow-hidden rounded-2xl border border-brand-insights/25 bg-card shadow-sm">
-      <div className="flex items-center justify-between border-b border-brand-insights/15 bg-brand-insights/5 px-5 py-4"><div className="flex items-center gap-2"><Phone className="size-4 text-brand-insights" /><h3 className="text-sm font-semibold">Follow-up</h3></div><span className="text-[11px] text-muted-foreground">Keep your team in the loop</span></div>
+      <div className="flex items-center justify-between border-b border-brand-insights/15 bg-brand-insights/5 px-5 py-4"><div className="flex items-center gap-2"><Phone className="size-4 text-brand-insights" /><h3 className="text-sm font-semibold">Response</h3></div><span className="text-[11px] text-muted-foreground">Keep your team in the loop</span></div>
       <div className="space-y-5 p-5">
         <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2">
-          <div className="min-w-0"><p className="mb-2 text-xs font-medium text-muted-foreground">Status</p>
+          <div className="min-w-0"><p className="mb-2 text-xs font-medium text-muted-foreground">Response status</p>
             <Select value={row.follow_up_status} disabled={locked} onValueChange={status => void save(row, { follow_up_status: status as SalesFollowUpStatus })}>
               <SelectTrigger aria-label={`Status for ${row.caller_name || "inquiry"}`} className={`${panelControl} ${statusStyle[row.follow_up_status]}`}><SelectValue /></SelectTrigger>
               <SelectContent>{Object.entries(statuses).map(([value, label]) => <SelectItem key={value} value={value}><span className="inline-flex items-center gap-2"><span className={`size-2 rounded-full border ${statusStyle[value as SalesFollowUpStatus]}`} />{label}</span></SelectItem>)}</SelectContent>

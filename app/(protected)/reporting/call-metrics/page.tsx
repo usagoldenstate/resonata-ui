@@ -411,7 +411,7 @@ function HourlyChart({ state }: { state: LoadState<CallMetricsHourlyResponse> })
               ]}
               labelFormatter={(label) => `Hour: ${label}`}
             />
-            <Bar dataKey="avg_calls" name="Avg calls" fill="#6b7a4a" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="avg_calls" name="Avg calls" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -446,7 +446,7 @@ function DailyChart({ state }: { state: LoadState<CallMetricsDailyRow[]> }) {
             type="monotone"
             dataKey="calls"
             name="Calls"
-            stroke="#6b7a4a"
+            stroke="var(--chart-1)"
             strokeWidth={2}
             dot={false}
             activeDot={{ r: 4 }}
@@ -455,7 +455,7 @@ function DailyChart({ state }: { state: LoadState<CallMetricsDailyRow[]> }) {
             type="monotone"
             dataKey="booked"
             name="Booked"
-            stroke="#c8aa5a"
+            stroke="var(--chart-2)"
             strokeWidth={2}
             dot={false}
             activeDot={{ r: 4 }}
@@ -489,8 +489,8 @@ function MonthlyChart({ state }: { state: LoadState<CallMetricsMonthlyRow[]> }) 
           <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
           <Tooltip labelFormatter={(label) => formatMonthLabel(String(label))} />
           <Legend />
-          <Bar dataKey="calls" name="Calls" fill="#6b7a4a" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="booked" name="Booked" fill="#c8aa5a" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="calls" name="Calls" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="booked" name="Booked" fill="var(--chart-2)" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

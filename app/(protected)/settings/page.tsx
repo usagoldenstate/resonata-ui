@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { OptionSelect } from "@/components/ui/option-select"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -357,7 +358,7 @@ export default function SettingsPage() {
           <Button
             onClick={handleSaveClick}
             disabled={saving || loading || !detail}
-            className="bg-[#6b7a4a] hover:bg-[#5a6940] text-white"
+            className="bg-primary hover:bg-primary/90 text-white"
           >
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
             {saved ? "Saved!" : saving ? "Saving..." : "Save Changes"}
@@ -447,8 +448,8 @@ export default function SettingsPage() {
                 <Card className="border-border">
                   <CardHeader className="pb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                        <Building2 className="w-5 h-5 text-[#6b7a4a]" />
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <Building2 className="w-5 h-5 text-primary" />
                       </div>
                       <div>
                         <CardTitle className="text-base">Hotel Information</CardTitle>
@@ -471,20 +472,16 @@ export default function SettingsPage() {
                         <Label htmlFor="organizationId" className="text-xs text-muted-foreground">
                           Organization
                         </Label>
-                        <select
+                        <OptionSelect
                           id="organizationId"
                           value={organizationId}
-                          onChange={(e) => setOrganizationId(e.target.value)}
+                          onValueChange={setOrganizationId}
                           disabled={organizations === null}
-                          className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-70"
-                        >
-                          <option value="">Independent (no organization)</option>
-                          {(organizations ?? []).map((org) => (
-                            <option key={org.organization_id} value={org.organization_id}>
-                              {org.display_name}
-                            </option>
-                          ))}
-                        </select>
+                          options={[
+                            { value: "", label: "Independent (no organization)" },
+                            ...(organizations ?? []).map((org) => ({ value: org.organization_id, label: org.display_name })),
+                          ]}
+                        />
                         <p className="text-[11px] text-muted-foreground">
                           The management company this hotel belongs to. Users granted the organization
                           see this hotel immediately; its call history moves with it. Create
@@ -498,8 +495,8 @@ export default function SettingsPage() {
                 <Card className="border-border">
                   <CardHeader className="pb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                        <Globe className="w-5 h-5 text-[#6b7a4a]" />
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <Globe className="w-5 h-5 text-primary" />
                       </div>
                       <div>
                         <CardTitle className="text-base">Regional Settings</CardTitle>
@@ -552,8 +549,8 @@ export default function SettingsPage() {
                   <Card className="border-border">
                     <CardHeader className="pb-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                          <Layers className="w-5 h-5 text-[#6b7a4a]" />
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <Layers className="w-5 h-5 text-primary" />
                         </div>
                         <div>
                           <CardTitle className="text-base">Products</CardTitle>
@@ -567,16 +564,16 @@ export default function SettingsPage() {
                       <Label htmlFor="productLines" className="text-xs text-muted-foreground">
                         Lines
                       </Label>
-                      <select
+                      <OptionSelect
                         id="productLines"
                         value={productLines}
-                        onChange={(e) => setProductLines(e.target.value as HotelLines)}
-                        className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                      >
-                        <option value="reservations">Reservations line only</option>
-                        <option value="sales">Sales line only</option>
-                        <option value="both">Reservations and sales lines</option>
-                      </select>
+                        onValueChange={(v) => setProductLines(v as HotelLines)}
+                        options={[
+                          { value: "reservations", label: "Reservations line only" },
+                          { value: "sales", label: "Sales line only" },
+                          { value: "both", label: "Reservations and sales lines" },
+                        ]}
+                      />
                       <p className="text-[11px] text-muted-foreground">
                         A sales-only hotel sees Call Log, Sales Inquiries, Knowledge Base, Agent
                         Configuration and Settings, and its reservations webhook refuses new calls. The sales
@@ -732,8 +729,8 @@ export default function SettingsPage() {
                   <Card className="border-border lg:col-span-2">
                     <CardHeader className="pb-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                          <Inbox className="w-5 h-5 text-[#6b7a4a]" />
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <Inbox className="w-5 h-5 text-primary" />
                         </div>
                         <div>
                           <CardTitle className="text-base">Sales Departments</CardTitle>
@@ -795,8 +792,8 @@ export default function SettingsPage() {
                   <Card className="border-border">
                     <CardHeader className="pb-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                          <Users className="w-5 h-5 text-[#6b7a4a]" />
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <Users className="w-5 h-5 text-primary" />
                         </div>
                         <div>
                           <CardTitle className="text-base">Sales Team</CardTitle>
@@ -827,8 +824,8 @@ export default function SettingsPage() {
                   <Card className="border-border">
                     <CardHeader className="pb-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                          <PhoneOff className="w-5 h-5 text-[#6b7a4a]" />
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <PhoneOff className="w-5 h-5 text-primary" />
                         </div>
                         <div>
                           <CardTitle className="text-base">Hotel Phone Numbers</CardTitle>
@@ -863,8 +860,8 @@ export default function SettingsPage() {
                     <Card className="border-border">
                       <CardHeader className="pb-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-[#6b7a4a]/10 flex items-center justify-center">
-                            <Megaphone className="w-5 h-5 text-[#6b7a4a]" />
+                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                            <Megaphone className="w-5 h-5 text-primary" />
                           </div>
                           <div>
                             <CardTitle className="text-base">Sales Intake Line</CardTitle>

@@ -39,10 +39,13 @@ export default function RoomMappingPage() {
       <Sidebar />
       <div className="app-content flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="bg-card border-b border-border px-8 py-4 flex items-center gap-3 shrink-0">
-          <h1 className="text-xl font-bold text-foreground">
-            {hotel?.display_name ?? "Room Mapping"}
-          </h1>
+        <div className="app-page-header bg-card border-b border-border px-8 py-4 flex items-center gap-3 shrink-0">
+<div>
+              <p className="app-eyebrow mb-2">Agent workspace</p>
+              <h1 className="text-xl font-bold text-foreground">Room mapping</h1>
+              <p className="text-sm text-muted-foreground">Connect your room types so guests always get the right options.</p>
+              <p className="text-xs text-muted-foreground">{hotel?.display_name}</p>
+            </div>
         </div>
 
         {/* Content */}
