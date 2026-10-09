@@ -692,7 +692,7 @@ export default function SettingsPage() {
                           value={senderName}
                           onChange={(e) => setSenderName(e.target.value)}
                           disabled={!isPlatformAdmin}
-                          placeholder="Orlando International Drive"
+                          placeholder="Hotel name"
                           className="bg-card border-border disabled:opacity-70"
                         />
                         <p className="text-[11px] text-muted-foreground">
@@ -813,7 +813,7 @@ export default function SettingsPage() {
                         hint="Type a name and press Enter. The sales notification email goes to a shared mailbox, so whoever follows up picks their name from this list on the “Update inquiry” page — no sign-in needed — and the inquiry is assigned to them. Removing a name here never changes inquiries already logged against it."
                         values={salesRepNames}
                         onChange={setSalesRepNames}
-                        placeholder="Maria Santos"
+                        placeholder="e.g. Bob Jackson"
                         max={MAX_SALES_REPS}
                         noun="names"
                         validate={(value) =>
@@ -845,7 +845,7 @@ export default function SettingsPage() {
                         hint="Type a number and press Enter. Calls forwarded from your phone system sometimes show your own number as the caller ID; add any such numbers here so they are never treated as a guest's callback number."
                         values={ignoredNumbers}
                         onChange={setIgnoredNumbers}
-                        placeholder="(407) 555-0100"
+                        placeholder="(111) 222-3333"
                         max={MAX_IGNORED_NUMBERS}
                         noun="numbers"
                         inputType="tel"

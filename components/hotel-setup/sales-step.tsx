@@ -161,7 +161,7 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
                   addRep()
                 }
               }}
-              placeholder="Maria Santos"
+              placeholder="e.g. Bob Jackson"
               className="max-w-xs"
             />
             <Button type="button" variant="outline" onClick={addRep}>
