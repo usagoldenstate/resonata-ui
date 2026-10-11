@@ -1,10 +1,32 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
+import {
+  confirmDiscardUnsaved,
+  registerUnsavedGuard,
+} from "@/lib/unsaved-guard"
 import { TagInput } from "@/components/tag-input"
-import { Building2, Globe, Inbox, Layers, Megaphone, PhoneOff, Save, Loader2, Lock, TriangleAlert, Users } from "lucide-react"
+import {
+  Building2,
+  Globe,
+  Layers,
+  Megaphone,
+  PhoneOff,
+  Save,
+  Loader2,
+  Lock,
+  TriangleAlert,
+  Users,
+} from "lucide-react"
 import { toast } from "sonner"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -32,15 +54,6 @@ import { Sidebar } from "@/components/sidebar"
 import { SetupHealthCard } from "@/components/hotel-setup/setup-health-card"
 import { OperaCancellationCard } from "@/components/opera-cancellation-card"
 import { StaynTouchCancellationCard } from "@/components/stayntouch-cancellation-card"
-import {
-  SalesDepartmentsEditor,
-  defaultDepartmentDraft,
-  departmentDrafts,
-  departmentPayload,
-  departmentsChanged,
-  validateDepartments,
-  type DepartmentDraft,
-} from "@/components/sales-departments-editor"
 import { useHotel } from "@/lib/hotel-context"
 import { useCurrentUser } from "@/lib/current-user-context"
 import { lineSetOf, type HotelLines } from "@/lib/product-lines"
@@ -94,12 +107,14 @@ const MAX_IGNORED_NUMBERS = 20
 // anything it can't parse, with the offending value in the message.
 function phoneProblem(value: string): string | null {
   const digits = value.replace(/\D/g, "")
-  return /^[+\d\s().-]+$/.test(value) && digits.length >= 7 && digits.length <= 15
+  return /^[+\d\s().-]+$/.test(value) &&
+    digits.length >= 7 &&
+    digits.length <= 15
     ? null
     : `“${value}” isn't a valid phone number.`
 }
 
-type SettingsTab = "general" | "reservations" | "sales"
+type SettingsTab = "general" | "delivery" | "team" | "advanced"
 
 export default function SettingsPage() {
   const { hotelId, hotels, accessState, refresh: refreshHotels } = useHotel()
@@ -125,16 +140,15 @@ export default function SettingsPage() {
   // Organization membership (platform-admin only). "" = independent hotel.
   // The org list loads once for admins; the select is the only writer.
   const [organizationId, setOrganizationId] = useState("")
-  const [organizations, setOrganizations] = useState<Organization[] | null>(null)
+  const [organizations, setOrganizations] = useState<Organization[] | null>(
+    null,
+  )
   // Twilio SMS sender (platform-admin only). Setting it is what lets the agent
   // offer "emailed or texted?"; clearing it retires the choice.
   const [twilioFromNumber, setTwilioFromNumber] = useState("")
   // Sales intake line (platform-admin only) — see the "Sales Intake Line" card.
   const [salesLineEnabled, setSalesLineEnabled] = useState(false)
   const [salesVapiPhoneNumberId, setSalesVapiPhoneNumberId] = useState("")
-  // Where inquiries are emailed — operator-editable. A hotel with none yet
-  // starts from one catch-all "Sales Department" draft.
-  const [salesDepartments, setSalesDepartments] = useState<DepartmentDraft[]>([])
   // Which products the hotel bought (platform-admin only). Sections below
   // follow the SAVED value, so fields don't vanish mid-edit.
   const [productLines, setProductLines] = useState<HotelLines>("reservations")
@@ -162,9 +176,6 @@ export default function SettingsPage() {
     setTwilioFromNumber(d.twilio_from_number ?? "")
     setSalesLineEnabled(d.sales_line_enabled ?? false)
     setSalesVapiPhoneNumberId(d.sales_vapi_phone_number_id ?? "")
-    setSalesDepartments(
-      d.sales_departments?.length ? departmentDrafts(d.sales_departments) : [defaultDepartmentDraft()],
-    )
     setProductLines(d.lines ?? "reservations")
     setSalesRepNames(d.sales_rep_names ?? [])
     setIgnoredNumbers(d.sales_ignored_caller_numbers ?? [])
@@ -205,12 +216,60 @@ export default function SettingsPage() {
     return () => controller.abort()
   }, [hotelId, applyDetail])
 
+  const dirty =
+    detail !== null &&
+    (hotelName.trim() !== detail.display_name ||
+      timezone !== detail.timezone ||
+      JSON.stringify(salesRepNames) !==
+        JSON.stringify(detail.sales_rep_names ?? []) ||
+      JSON.stringify(ignoredNumbers) !==
+        JSON.stringify(detail.sales_ignored_caller_numbers ?? []) ||
+      (isPlatformAdmin &&
+        (senderName.trim() !== splitEmailFrom(detail.email_from).name ||
+          salesSenderName.trim() !==
+            splitEmailFrom(detail.sales_email_from).name ||
+          composeEmailFrom(senderName, email) !== (detail.email_from ?? null) ||
+          composeEmailFrom(salesSenderName, salesSenderEmail) !==
+            (detail.sales_email_from ?? null) ||
+          (inboundNumber.trim() || null) !==
+            (detail.inbound_phone_number ?? null) ||
+          (vapiPhoneNumberId.trim() || null) !==
+            (detail.vapi_phone_number_id ?? null) ||
+          (salesVapiPhoneNumberId.trim() || null) !==
+            (detail.sales_vapi_phone_number_id ?? null) ||
+          (twilioFromNumber.trim() || null) !==
+            (detail.twilio_from_number ?? null) ||
+          (organizationId || null) !== (detail.organization_id ?? null) ||
+          salesLineEnabled !== (detail.sales_line_enabled ?? false) ||
+          productLines !== (detail.lines ?? "reservations"))))
+
+  useEffect(
+    () =>
+      registerUnsavedGuard(() =>
+        dirty ? "You have unsaved Settings changes. Leave anyway?" : null,
+      ),
+    [dirty],
+  )
+  useEffect(() => {
+    if (!dirty) return
+    setSaved(false)
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ""
+    }
+    window.addEventListener("beforeunload", handler)
+    return () => window.removeEventListener("beforeunload", handler)
+  }, [dirty])
+
   const [showVapiConfirm, setShowVapiConfirm] = useState(false)
 
   const handleSaveClick = () => {
     if (!detail) return
     const nextVapiId = vapiPhoneNumberId.trim() || null
-    if (isPlatformAdmin && nextVapiId !== (detail.vapi_phone_number_id ?? null)) {
+    if (
+      isPlatformAdmin &&
+      nextVapiId !== (detail.vapi_phone_number_id ?? null)
+    ) {
       setShowVapiConfirm(true)
       return
     }
@@ -226,39 +285,44 @@ export default function SettingsPage() {
       // Operator-safe fields (PUT /admin/hotels/{id}) — send only what changed.
       const opBody: HotelOperatorUpdate = {}
       const nextName = hotelName.trim()
-      if (nextName && nextName !== detail.display_name) opBody.display_name = nextName
+      if (nextName && nextName !== detail.display_name)
+        opBody.display_name = nextName
       if (timezone !== detail.timezone) opBody.timezone = timezone
       // email_from is operator-editable on the backend (PUT), not a platform
       // field. The UI still gates the inputs behind isPlatformAdmin, so only
       // diff it when the admin can actually have changed it.
       if (isPlatformAdmin) {
-        if (salesSenderName.trim() && !salesSenderEmail.trim()) {
-          throw new Error("Enter a sales sender email address, or clear both sales sender fields to use the default.")
+        if (senderName.trim() && !email.trim()) {
+          throw new Error(
+            "Enter a reservations sender email address, or clear both sender fields to use the default.",
+          )
         }
-        const nextSalesEmailFrom = composeEmailFrom(salesSenderName, salesSenderEmail)
+        if (salesSenderName.trim() && !salesSenderEmail.trim()) {
+          throw new Error(
+            "Enter a sales sender email address, or clear both sales sender fields to use the default.",
+          )
+        }
+        const nextSalesEmailFrom = composeEmailFrom(
+          salesSenderName,
+          salesSenderEmail,
+        )
         if (nextSalesEmailFrom !== (detail.sales_email_from ?? null)) {
           opBody.sales_email_from = nextSalesEmailFrom
         }
         const nextEmailFrom = composeEmailFrom(senderName, email)
-        if (nextEmailFrom !== (detail.email_from ?? null)) opBody.email_from = nextEmailFrom
+        if (nextEmailFrom !== (detail.email_from ?? null))
+          opBody.email_from = nextEmailFrom
       }
-      if (salesRepNames.join("\n") !== (detail.sales_rep_names ?? []).join("\n")) {
+      if (
+        salesRepNames.join("\n") !== (detail.sales_rep_names ?? []).join("\n")
+      ) {
         opBody.sales_rep_names = salesRepNames
       }
-      if (ignoredNumbers.join("\n") !== (detail.sales_ignored_caller_numbers ?? []).join("\n")) {
+      if (
+        ignoredNumbers.join("\n") !==
+        (detail.sales_ignored_caller_numbers ?? []).join("\n")
+      ) {
         opBody.sales_ignored_caller_numbers = ignoredNumbers
-      }
-      // The untouched starter draft (no address yet) on a hotel with no
-      // departments isn't a change — only save departments someone edited.
-      const untouchedStarter =
-        !(detail.sales_departments?.length) &&
-        salesDepartments.length === 1 &&
-        salesDepartments[0].to.length === 0 &&
-        salesDepartments[0].cc.length === 0
-      if (!untouchedStarter && departmentsChanged(salesDepartments, detail.sales_departments)) {
-        const problem = validateDepartments(salesDepartments)
-        if (problem) throw new Error(problem)
-        opBody.sales_departments = departmentPayload(salesDepartments)
       }
       if (Object.keys(opBody).length > 0) {
         latest = await updateHotelOperatorSettings(hotelId, opBody)
@@ -284,7 +348,7 @@ export default function SettingsPage() {
           pfBody.twilio_from_number = nextTwilio
         }
         // Sales intake line. The backend validates these together (enabling
-        // requires a sales department, saved by the PUT above), so send
+        // requires a saved inquiry recipient), so send
         // whatever changed in one PATCH.
         if (salesLineEnabled !== (detail.sales_line_enabled ?? false)) {
           pfBody.sales_line_enabled = salesLineEnabled
@@ -324,18 +388,24 @@ export default function SettingsPage() {
 
   const savedLines = lineSetOf(detail?.lines)
   const activeSettingsTab =
-    (settingsTab === "reservations" && !savedLines.reservations) ||
-    (settingsTab === "sales" && !savedLines.sales)
+    (settingsTab === "team" && !savedLines.sales) ||
+    (settingsTab === "advanced" && !isPlatformAdmin)
       ? "general"
       : settingsTab
 
   useEffect(() => {
-    setSettingsTab("general")
+    const syncTab = () => {
+      const tab = window.location.hash.slice(1)
+      setSettingsTab(
+        ["delivery", "team", "advanced"].includes(tab)
+          ? (tab as SettingsTab)
+          : "general",
+      )
+    }
+    syncTab()
+    window.addEventListener("hashchange", syncTab)
+    return () => window.removeEventListener("hashchange", syncTab)
   }, [hotelId])
-
-  useEffect(() => {
-    if (activeSettingsTab !== settingsTab) setSettingsTab("general")
-  }, [activeSettingsTab, settingsTab])
 
   const selectedHotelName =
     hotels.find((h) => h.hotel_id === hotelId)?.display_name ?? hotelId ?? ""
@@ -344,24 +414,28 @@ export default function SettingsPage() {
     <div className="flex min-h-screen bg-background">
       <Sidebar />
 
-      <main className="app-content flex-1 p-8">
+      <main className="app-content min-w-0 flex-1 p-4 sm:p-8">
         {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold text-foreground">Settings</h2>
             <p className="text-sm text-muted-foreground mt-1">
               {selectedHotelName
-                ? `Manage settings for ${selectedHotelName}`
+                ? `Manage hotel details, team and connections for ${selectedHotelName}`
                 : "Manage your hotel and system preferences"}
             </p>
           </div>
           <Button
             onClick={handleSaveClick}
-            disabled={saving || loading || !detail}
+            disabled={saving || loading || !detail || !dirty}
             className="bg-primary hover:bg-primary/90 text-white"
           >
-            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-            {saved ? "Saved!" : saving ? "Saving..." : "Save Changes"}
+            {saving ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
+            {saved ? "Saved!" : saving ? "Saving..." : "Save all settings"}
           </Button>
         </div>
 
@@ -375,21 +449,28 @@ export default function SettingsPage() {
               <AlertDialogDescription asChild>
                 <div className="space-y-2 text-left">
                   <p>
-                    This UUID must exactly match the number in the Vapi dashboard. If it&apos;s
-                    wrong, every inbound and outbound call for this hotel will break until it&apos;s
-                    fixed.
+                    This UUID must exactly match the number in the Vapi
+                    dashboard. If it&apos;s wrong, every inbound and outbound
+                    call for this hotel will break until it&apos;s fixed.
                   </p>
                   <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs">
                     <div>
                       <span className="text-muted-foreground">Current: </span>
-                      <span className="font-mono">{detail?.vapi_phone_number_id || "(none)"}</span>
+                      <span className="font-mono">
+                        {detail?.vapi_phone_number_id || "(none)"}
+                      </span>
                     </div>
                     <div>
                       <span className="text-muted-foreground">New: </span>
-                      <span className="font-mono">{vapiPhoneNumberId.trim() || "(none)"}</span>
+                      <span className="font-mono">
+                        {vapiPhoneNumberId.trim() || "(none)"}
+                      </span>
                     </div>
                   </div>
-                  <p>Make a test call to this hotel&apos;s number right after saving.</p>
+                  <p>
+                    Make a test call to this hotel&apos;s number right after
+                    saving.
+                  </p>
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -422,373 +503,411 @@ export default function SettingsPage() {
         ) : loadError ? (
           <StateNotice tone="error" message={loadError} />
         ) : (
-          <Tabs
-            value={activeSettingsTab}
-            onValueChange={(value) => setSettingsTab(value as SettingsTab)}
-            className="gap-5"
-          >
-            <TabsList
-              aria-label="Settings sections"
-              className="w-full max-w-full justify-start overflow-x-auto sm:w-fit"
+          <fieldset disabled={saving} className="min-w-0 space-y-4">
+            <p className="text-xs text-muted-foreground" role="status">
+              {dirty ? "Unsaved changes · " : ""}Save all settings applies edits
+              across these tabs.
+            </p>
+            <Tabs
+              value={activeSettingsTab}
+              onValueChange={(value) => setSettingsTab(value as SettingsTab)}
+              className="gap-5"
             >
-              <TabsTrigger value="general">General</TabsTrigger>
-              {savedLines.reservations && (
-                <TabsTrigger value="reservations">Reservations</TabsTrigger>
-              )}
-              {savedLines.sales && <TabsTrigger value="sales">Sales</TabsTrigger>}
-            </TabsList>
-            <TabsContent value="general">
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                {isPlatformAdmin && hotelId && (
-                  <div className="lg:col-span-2 max-w-3xl">
-                    <SetupHealthCard hotelId={hotelId} />
-                  </div>
+              <TabsList
+                aria-label="Settings sections"
+                className="h-auto flex-wrap justify-start"
+              >
+                <TabsTrigger value="general">Hotel details</TabsTrigger>
+                <TabsTrigger value="delivery">Phone &amp; email</TabsTrigger>
+                {savedLines.sales && (
+                  <TabsTrigger value="team">Team</TabsTrigger>
                 )}
-                {/* Hotel Information */}
-                <Card className="border-border">
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <Building2 className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">Hotel Information</CardTitle>
-                        <CardDescription className="text-xs">Basic details about your property</CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="hotelName" className="text-xs text-muted-foreground">Hotel Name</Label>
-                      <Input
-                        id="hotelName"
-                        value={hotelName}
-                        onChange={(e) => setHotelName(e.target.value)}
-                        className="bg-card border-border"
-                      />
-                    </div>
-                    {isPlatformAdmin && (
-                      <div className="space-y-2">
-                        <Label htmlFor="organizationId" className="text-xs text-muted-foreground">
-                          Organization
-                        </Label>
-                        <OptionSelect
-                          id="organizationId"
-                          value={organizationId}
-                          onValueChange={setOrganizationId}
-                          disabled={organizations === null}
-                          options={[
-                            { value: "", label: "Independent (no organization)" },
-                            ...(organizations ?? []).map((org) => ({ value: org.organization_id, label: org.display_name })),
-                          ]}
-                        />
-                        <p className="text-[11px] text-muted-foreground">
-                          The management company this hotel belongs to. Users granted the organization
-                          see this hotel immediately; its call history moves with it. Create
-                          organizations under Dev Pages → Organizations.
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-                {/* Regional Settings */}
-                <Card className="border-border">
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <Globe className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">Regional Settings</CardTitle>
-                        <CardDescription className="text-xs">Timezone and currency</CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="timezone" className="text-xs text-muted-foreground">Timezone</Label>
-                      <Select value={timezone} onValueChange={setTimezone}>
-                        <SelectTrigger className="bg-card border-border">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="America/New_York">Eastern Time (ET)</SelectItem>
-                          <SelectItem value="America/Chicago">Central Time (CT)</SelectItem>
-                          <SelectItem value="America/Denver">Mountain Time (MT)</SelectItem>
-                          <SelectItem value="America/Los_Angeles">Pacific Time (PT)</SelectItem>
-                          <SelectItem value="Europe/London">London (GMT)</SelectItem>
-                          <SelectItem value="Europe/Paris">Paris (CET)</SelectItem>
-                          {/* Surface the stored zone even if it's outside the short list above. */}
-                          {timezone &&
-                            ![
-                              "America/New_York",
-                              "America/Chicago",
-                              "America/Denver",
-                              "America/Los_Angeles",
-                              "Europe/London",
-                              "Europe/Paris",
-                            ].includes(timezone) && (
-                              <SelectItem value={timezone}>{timezone}</SelectItem>
-                            )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="currency" className="text-xs text-muted-foreground">Currency</Label>
-                      <Input
-                        id="currency"
-                        value={currency}
-                        disabled
-                        className="bg-card border-border disabled:opacity-70"
-                      />
-                      <p className="text-[11px] text-muted-foreground">Set at onboarding.</p>
-                    </div>
-                  </CardContent>
-                </Card>
                 {isPlatformAdmin && (
+                  <TabsTrigger value="advanced">Advanced</TabsTrigger>
+                )}
+              </TabsList>
+              <TabsContent value="general">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <Card className="border-border">
                     <CardHeader className="pb-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <Layers className="w-5 h-5 text-primary" />
+                          <Building2 className="w-5 h-5 text-primary" />
                         </div>
                         <div>
-                          <CardTitle className="text-base">Products</CardTitle>
+                          <CardTitle className="text-base">
+                            Hotel Information
+                          </CardTitle>
                           <CardDescription className="text-xs">
-                            Which phone lines this hotel uses and whether sales intake is active.
+                            Basic details about your property
                           </CardDescription>
                         </div>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <Label htmlFor="productLines" className="text-xs text-muted-foreground">
-                        Lines
-                      </Label>
-                      <OptionSelect
-                        id="productLines"
-                        value={productLines}
-                        onValueChange={(v) => setProductLines(v as HotelLines)}
-                        options={[
-                          { value: "reservations", label: "Reservations line only" },
-                          { value: "sales", label: "Sales line only" },
-                          { value: "both", label: "Reservations and sales lines" },
-                        ]}
-                      />
-                      <p className="text-[11px] text-muted-foreground">
-                        A sales-only hotel sees Call Log, Sales Inquiries, Knowledge Base, Agent
-                        Configuration and Settings, and its reservations webhook refuses new calls. The sales
-                        line can only be switched on when this includes sales; to remove sales, switch the
-                        line off first. Existing calls keep their line either way.
-                      </p>
-                      <div className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2">
-                        <div className="space-y-0.5">
-                          <Label htmlFor="salesLineEnabled" className="text-sm">
-                            Sales line enabled
-                          </Label>
-                          <p className="text-[11px] text-muted-foreground">
-                            While off, the sales webhook path returns 404 and no inquiries are taken.
-                          </p>
-                        </div>
-                        <Switch
-                          id="salesLineEnabled"
-                          checked={salesLineEnabled}
-                          onCheckedChange={setSalesLineEnabled}
-                          disabled={
-                            !salesLineEnabled &&
-                            (!lineSetOf(productLines).sales ||
-                              !salesDepartments.some((d) => d.to.length > 0) ||
-                              !salesVapiPhoneNumberId.trim())
-                          }
-                        />
-                      </div>
-                      {!salesLineEnabled && (
-                        <p className="text-[11px] text-muted-foreground">
-                          To turn this on, include Sales in Lines, then add a sales department and the
-                          Vapi phone number on the Sales tab.
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </TabsContent>
-            {savedLines.reservations && (
-              <TabsContent value="reservations">
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  <Card className="border-border">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-base">Reservations Delivery</CardTitle>
-                      <CardDescription className="text-xs">
-                        The reservations phone numbers and the sender guests see on booking emails.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="inboundNumber" className="text-xs text-muted-foreground">
-                          Guest-Facing Phone Number
-                          {!isPlatformAdmin && <PlatformOnlyHint />}
+                        <Label
+                          htmlFor="hotelName"
+                          className="text-xs text-muted-foreground"
+                        >
+                          Hotel Name
                         </Label>
                         <Input
-                          id="inboundNumber"
-                          value={inboundNumber}
-                          onChange={(e) => setInboundNumber(e.target.value)}
-                          disabled={!isPlatformAdmin}
-                          placeholder="+15551234567"
-                          className="bg-card border-border disabled:opacity-70"
+                          id="hotelName"
+                          value={hotelName}
+                          onChange={(e) => setHotelName(e.target.value)}
+                          className="bg-card border-border"
                         />
-                        <p className="text-[11px] text-muted-foreground">
-                          Shown to guests in booking confirmation emails as the number to call back.
-                        </p>
                       </div>
                       {isPlatformAdmin && (
                         <div className="space-y-2">
-                          <Label htmlFor="vapiPhoneNumberId" className="text-xs text-muted-foreground">
-                            Vapi Phone Number ID
+                          <Label
+                            htmlFor="organizationId"
+                            className="text-xs text-muted-foreground"
+                          >
+                            Organization
                           </Label>
-                          <Input
-                            id="vapiPhoneNumberId"
-                            value={vapiPhoneNumberId}
-                            onChange={(e) => setVapiPhoneNumberId(e.target.value)}
-                            placeholder="00000000-0000-4000-8000-000000000000"
-                            className="bg-card border-border"
+                          <OptionSelect
+                            id="organizationId"
+                            value={organizationId}
+                            onValueChange={setOrganizationId}
+                            disabled={organizations === null}
+                            options={[
+                              {
+                                value: "",
+                                label: "Independent (no organization)",
+                              },
+                              ...(organizations ?? []).map((org) => ({
+                                value: org.organization_id,
+                                label: org.display_name,
+                              })),
+                            ]}
                           />
                           <p className="text-[11px] text-muted-foreground">
-                            UUID of this hotel&apos;s phone number in the Vapi dashboard (Phone Numbers →
-                            select the number → copy the ID). When set, webhooks from any other Vapi
-                            number are rejected — a wrong value blocks this hotel&apos;s calls, so make a
-                            test call after changing it. Leave blank to disable the check.
+                            The management company this hotel belongs to. Users
+                            granted the organization see this hotel immediately;
+                            its call history moves with it. Create organizations
+                            under Dev Pages → Organizations.
                           </p>
                         </div>
                       )}
-                      <div className="space-y-2">
-                        <Label htmlFor="twilioFromNumber" className="text-xs text-muted-foreground">
-                          Text Message Sender Number
-                          {!isPlatformAdmin && <PlatformOnlyHint />}
-                        </Label>
-                        <Input
-                          id="twilioFromNumber"
-                          value={twilioFromNumber}
-                          onChange={(e) => setTwilioFromNumber(e.target.value)}
-                          disabled={!isPlatformAdmin}
-                          placeholder={isPlatformAdmin ? "+13602180737" : "Not set — links are emailed only"}
-                          className="bg-card border-border disabled:opacity-70"
-                        />
-                        <p className="text-[11px] text-muted-foreground">
-                          {isPlatformAdmin
-                            ? "Twilio number booking links are texted from. When set, the agent offers guests a choice of email or text; leave blank for email only. The Twilio account credentials must also be configured on the server, or text sends will fail."
-                            : "The phone number guests receive booking-link text messages from. When it is set, the agent offers guests a choice of email or text; otherwise links are emailed only."}
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="senderName" className="text-xs text-muted-foreground">
-                          Reservations Sender Name
-                          {!isPlatformAdmin && <PlatformOnlyHint />}
-                        </Label>
-                        <Input
-                          id="senderName"
-                          value={senderName}
-                          onChange={(e) => setSenderName(e.target.value)}
-                          disabled={!isPlatformAdmin}
-                          placeholder="Hotel name"
-                          className="bg-card border-border disabled:opacity-70"
-                        />
-                        <p className="text-[11px] text-muted-foreground">
-                          Friendly name guests see on reservation-link and card-hold emails.
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="email" className="text-xs text-muted-foreground">
-                          Reservations Sender Email Address
-                          {!isPlatformAdmin && <PlatformOnlyHint />}
-                        </Label>
-                        <Input
-                          id="email"
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          disabled={!isPlatformAdmin}
-                          placeholder="reservations@example.com"
-                          className="bg-card border-border disabled:opacity-70"
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
-                  {isPlatformAdmin && detail?.pms_provider === "opera" && hotelId && (
-                    <OperaCancellationCard hotelId={hotelId} />
-                  )}
-                  {isPlatformAdmin && detail?.pms_provider === "stayntouch" && hotelId && (
-                    <StaynTouchCancellationCard hotelId={hotelId} />
-                  )}
-                </div>
-              </TabsContent>
-            )}
-            {savedLines.sales && (
-              <TabsContent value="sales">
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  {/* Hotel operators decide how their sales team splits inquiries. */}
-                  <Card className="border-border lg:col-span-2">
-                    <CardHeader className="pb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <Inbox className="w-5 h-5 text-primary" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base">Sales Departments</CardTitle>
-                          <CardDescription className="text-xs">
-                            Where each recorded inquiry is emailed (Reply-To is the caller)
-                          </CardDescription>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <SalesDepartmentsEditor departments={salesDepartments} onChange={setSalesDepartments} />
                     </CardContent>
                   </Card>
                   <Card className="border-border">
                     <CardHeader className="pb-4">
-                      <CardTitle className="text-base">Sales Email Sender</CardTitle>
-                      <CardDescription className="text-xs">
-                        The name and address shown in the From line of sales inquiry emails.
-                      </CardDescription>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <Globe className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">
+                            Regional Settings
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                            Timezone and currency
+                          </CardDescription>
+                        </div>
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="salesSenderName" className="text-xs text-muted-foreground">
-                          Sales Sender Name
-                          {!isPlatformAdmin && <PlatformOnlyHint />}
+                        <Label
+                          htmlFor="timezone"
+                          className="text-xs text-muted-foreground"
+                        >
+                          Timezone
                         </Label>
-                        <Input
-                          id="salesSenderName"
-                          value={salesSenderName}
-                          onChange={(e) => setSalesSenderName(e.target.value)}
-                          disabled={!isPlatformAdmin}
-                          placeholder="Hotel Group Sales"
-                          className="bg-card border-border disabled:opacity-70"
-                        />
+                        <Select value={timezone} onValueChange={setTimezone}>
+                          <SelectTrigger className="bg-card border-border">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="America/New_York">
+                              Eastern Time (ET)
+                            </SelectItem>
+                            <SelectItem value="America/Chicago">
+                              Central Time (CT)
+                            </SelectItem>
+                            <SelectItem value="America/Denver">
+                              Mountain Time (MT)
+                            </SelectItem>
+                            <SelectItem value="America/Los_Angeles">
+                              Pacific Time (PT)
+                            </SelectItem>
+                            <SelectItem value="Europe/London">
+                              London (GMT)
+                            </SelectItem>
+                            <SelectItem value="Europe/Paris">
+                              Paris (CET)
+                            </SelectItem>
+                            {/* Surface the stored zone even if it's outside the short list above. */}
+                            {timezone &&
+                              ![
+                                "America/New_York",
+                                "America/Chicago",
+                                "America/Denver",
+                                "America/Los_Angeles",
+                                "Europe/London",
+                                "Europe/Paris",
+                              ].includes(timezone) && (
+                                <SelectItem value={timezone}>
+                                  {timezone}
+                                </SelectItem>
+                              )}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="salesSenderEmail" className="text-xs text-muted-foreground">
-                          Sales Sender Email Address
-                          {!isPlatformAdmin && <PlatformOnlyHint />}
+                        <Label
+                          htmlFor="currency"
+                          className="text-xs text-muted-foreground"
+                        >
+                          Currency
                         </Label>
                         <Input
-                          id="salesSenderEmail"
-                          type="email"
-                          value={salesSenderEmail}
-                          onChange={(e) => setSalesSenderEmail(e.target.value)}
-                          disabled={!isPlatformAdmin}
-                          placeholder="groups@example.com"
+                          id="currency"
+                          value={currency}
+                          disabled
                           className="bg-card border-border disabled:opacity-70"
                         />
+                        <p className="text-[11px] text-muted-foreground">
+                          Set at onboarding.
+                        </p>
                       </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        Use an address on a domain verified for sending emails. Leave both fields blank to use
-                        the reservations sender, or the platform default if no reservations sender is set.
-                        Where inquiries are sent is configured under Sales Departments.
-                      </p>
                     </CardContent>
                   </Card>
-                  {/* Hotel operators manage the names offered on the emailed follow-up page. */}
+                </div>
+              </TabsContent>
+              <TabsContent value="delivery">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  {savedLines.reservations && (
+                    <Card className="border-border">
+                      <CardHeader className="pb-4">
+                        <CardTitle className="text-base">
+                          Reservations Delivery
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          The reservations phone numbers and the sender guests
+                          see on booking emails.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="inboundNumber"
+                            className="text-xs text-muted-foreground"
+                          >
+                            Guest-Facing Phone Number
+                            {!isPlatformAdmin && <PlatformOnlyHint />}
+                          </Label>
+                          <Input
+                            id="inboundNumber"
+                            value={inboundNumber}
+                            onChange={(e) => setInboundNumber(e.target.value)}
+                            disabled={!isPlatformAdmin}
+                            placeholder="+15551234567"
+                            className="bg-card border-border disabled:opacity-70"
+                          />
+                          <p className="text-[11px] text-muted-foreground">
+                            Shown to guests in booking confirmation emails as
+                            the number to call back.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="twilioFromNumber"
+                            className="text-xs text-muted-foreground"
+                          >
+                            Text Message Sender Number
+                            {!isPlatformAdmin && <PlatformOnlyHint />}
+                          </Label>
+                          <Input
+                            id="twilioFromNumber"
+                            value={twilioFromNumber}
+                            onChange={(e) =>
+                              setTwilioFromNumber(e.target.value)
+                            }
+                            disabled={!isPlatformAdmin}
+                            placeholder={
+                              isPlatformAdmin
+                                ? "+13602180737"
+                                : "Not set — links are emailed only"
+                            }
+                            className="bg-card border-border disabled:opacity-70"
+                          />
+                          <p className="text-[11px] text-muted-foreground">
+                            {isPlatformAdmin
+                              ? "Twilio number booking links are texted from. When set, the agent offers guests a choice of email or text; leave blank for email only. The Twilio account credentials must also be configured on the server, or text sends will fail."
+                              : "The phone number guests receive booking-link text messages from. When it is set, the agent offers guests a choice of email or text; otherwise links are emailed only."}
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="senderName"
+                            className="text-xs text-muted-foreground"
+                          >
+                            Reservations Sender Name
+                            {!isPlatformAdmin && <PlatformOnlyHint />}
+                          </Label>
+                          <Input
+                            id="senderName"
+                            value={senderName}
+                            onChange={(e) => setSenderName(e.target.value)}
+                            disabled={!isPlatformAdmin}
+                            placeholder="Hotel name"
+                            className="bg-card border-border disabled:opacity-70"
+                          />
+                          <p className="text-[11px] text-muted-foreground">
+                            Friendly name guests see on reservation-link and
+                            card-hold emails.
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="email"
+                            className="text-xs text-muted-foreground"
+                          >
+                            Reservations Sender Email Address
+                            {!isPlatformAdmin && <PlatformOnlyHint />}
+                          </Label>
+                          <Input
+                            id="email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            disabled={!isPlatformAdmin}
+                            placeholder="reservations@example.com"
+                            className="bg-card border-border disabled:opacity-70"
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {savedLines.sales && (
+                    <>
+                      <Card className="border-border">
+                        <CardHeader className="pb-4">
+                          <CardTitle className="text-base">
+                            Sales Email Sender
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                            The name and address shown in the From line of sales
+                            inquiry emails.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="space-y-2">
+                            <Label
+                              htmlFor="salesSenderName"
+                              className="text-xs text-muted-foreground"
+                            >
+                              Sales Sender Name
+                              {!isPlatformAdmin && <PlatformOnlyHint />}
+                            </Label>
+                            <Input
+                              id="salesSenderName"
+                              value={salesSenderName}
+                              onChange={(e) =>
+                                setSalesSenderName(e.target.value)
+                              }
+                              disabled={!isPlatformAdmin}
+                              placeholder="Hotel Group Sales"
+                              className="bg-card border-border disabled:opacity-70"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label
+                              htmlFor="salesSenderEmail"
+                              className="text-xs text-muted-foreground"
+                            >
+                              Sales Sender Email Address
+                              {!isPlatformAdmin && <PlatformOnlyHint />}
+                            </Label>
+                            <Input
+                              id="salesSenderEmail"
+                              type="email"
+                              value={salesSenderEmail}
+                              onChange={(e) =>
+                                setSalesSenderEmail(e.target.value)
+                              }
+                              disabled={!isPlatformAdmin}
+                              placeholder="groups@example.com"
+                              className="bg-card border-border disabled:opacity-70"
+                            />
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            Use an address on a domain verified for sending
+                            emails. Leave both fields blank to use the
+                            reservations sender, or the platform default if no
+                            reservations sender is set.
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {salesSenderEmail.trim()
+                              ? `Sending as ${composeEmailFrom(salesSenderName, salesSenderEmail)}`
+                              : email.trim()
+                                ? `Using reservations sender: ${composeEmailFrom(senderName, email)}`
+                                : "Using the platform default sender"}
+                          </p>
+                          <Link
+                            href="/agent-config#sales"
+                            className="text-sm text-primary underline underline-offset-4"
+                            onClick={(e) => {
+                              if (!confirmDiscardUnsaved()) e.preventDefault()
+                            }}
+                          >
+                            Manage inquiry email routing in Sales configuration
+                            ↗
+                          </Link>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-border">
+                        <CardHeader className="pb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                              <PhoneOff className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-base">
+                                Caller ID exclusions
+                              </CardTitle>
+                              <CardDescription className="text-xs">
+                                Your own numbers, never treated as a
+                                caller&apos;s number
+                              </CardDescription>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-2">
+                          <TagInput
+                            id="ignoredNumbers"
+                            label="Phone numbers"
+                            hint="Type a number and press Enter. Calls forwarded from your phone system sometimes show your own number as the caller ID; add any such numbers here so they are never treated as a guest's callback number."
+                            values={ignoredNumbers}
+                            onChange={setIgnoredNumbers}
+                            placeholder="(111) 222-3333"
+                            max={MAX_IGNORED_NUMBERS}
+                            noun="numbers"
+                            inputType="tel"
+                            validate={phoneProblem}
+                          />
+                          {!!detail?.sales_automatic_ignored_numbers
+                            ?.length && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Already ignored automatically:{" "}
+                              {detail.sales_automatic_ignored_numbers.join(
+                                ", ",
+                              )}
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </>
+                  )}
+                </div>
+              </TabsContent>
+              {savedLines.sales && (
+                <TabsContent value="team">
                   <Card className="border-border">
                     <CardHeader className="pb-4">
                       <div className="flex items-center gap-3">
@@ -796,9 +915,12 @@ export default function SettingsPage() {
                           <Users className="w-5 h-5 text-primary" />
                         </div>
                         <div>
-                          <CardTitle className="text-base">Sales Team</CardTitle>
+                          <CardTitle className="text-base">
+                            Sales follow-up team
+                          </CardTitle>
                           <CardDescription className="text-xs">
-                            Who can be credited with following up on a sales inquiry
+                            Names used to assign inquiry follow-up. Account
+                            access is managed separately.
                           </CardDescription>
                         </div>
                       </div>
@@ -821,89 +943,213 @@ export default function SettingsPage() {
                       />
                     </CardContent>
                   </Card>
+                </TabsContent>
+              )}
+              {isPlatformAdmin && (
+                <TabsContent value="advanced" className="space-y-6">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Platform admin · Connections and activation
+                  </p>
+                  {hotelId && <SetupHealthCard hotelId={hotelId} />}
                   <Card className="border-border">
                     <CardHeader className="pb-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <PhoneOff className="w-5 h-5 text-primary" />
+                          <Layers className="w-5 h-5 text-primary" />
                         </div>
                         <div>
-                          <CardTitle className="text-base">Hotel Phone Numbers</CardTitle>
+                          <CardTitle className="text-base">
+                            Phone line setup
+                          </CardTitle>
                           <CardDescription className="text-xs">
-                            Your own numbers, never treated as a caller&apos;s number
+                            Which phone lines this hotel uses and whether sales
+                            intake is active.
                           </CardDescription>
                         </div>
                       </div>
                     </CardHeader>
-                    <CardContent className="space-y-2">
-                      <TagInput
-                        id="ignoredNumbers"
-                        label="Phone numbers"
-                        hint="Type a number and press Enter. Calls forwarded from your phone system sometimes show your own number as the caller ID; add any such numbers here so they are never treated as a guest's callback number."
-                        values={ignoredNumbers}
-                        onChange={setIgnoredNumbers}
-                        placeholder="(111) 222-3333"
-                        max={MAX_IGNORED_NUMBERS}
-                        noun="numbers"
-                        inputType="tel"
-                        validate={phoneProblem}
+                    <CardContent className="space-y-4">
+                      <Label
+                        htmlFor="productLines"
+                        className="text-xs text-muted-foreground"
+                      >
+                        Lines
+                      </Label>
+                      <OptionSelect
+                        id="productLines"
+                        value={productLines}
+                        onValueChange={(v) => setProductLines(v as HotelLines)}
+                        options={[
+                          {
+                            value: "reservations",
+                            label: "Reservations line only",
+                          },
+                          { value: "sales", label: "Sales line only" },
+                          {
+                            value: "both",
+                            label: "Reservations and sales lines",
+                          },
+                        ]}
                       />
-                      {!!detail?.sales_automatic_ignored_numbers?.length && (
-                        <p className="text-[11px] text-muted-foreground">
-                          Already ignored automatically:{" "}
-                          {detail.sales_automatic_ignored_numbers.join(", ")}
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                  {isPlatformAdmin && (
-                    <Card className="border-border">
-                      <CardHeader className="pb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                            <Megaphone className="w-5 h-5 text-primary" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-base">Sales Intake Line</CardTitle>
-                            <CardDescription className="text-xs">
-                              A second Vapi number that takes sales inquiries when the sales team doesn&apos;t answer
-                            </CardDescription>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="salesVapiPhoneNumberId" className="text-xs text-muted-foreground">
-                            Sales Vapi Phone Number ID
+                      <p className="text-[11px] text-muted-foreground">
+                        Choose the lines available to this hotel. Disable sales
+                        intake before removing the sales line.
+                      </p>
+                      <div className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="salesLineEnabled" className="text-sm">
+                            Sales line enabled
                           </Label>
-                          <Input
-                            id="salesVapiPhoneNumberId"
-                            value={salesVapiPhoneNumberId}
-                            onChange={(e) => setSalesVapiPhoneNumberId(e.target.value)}
-                            placeholder="00000000-0000-4000-8000-000000000000"
-                            className="bg-card border-border"
-                          />
                           <p className="text-[11px] text-muted-foreground">
-                            UUID of the <em>sales</em> number in the Vapi dashboard. Its Server URL must be the
-                            hotel&apos;s webhook URL with <span className="font-mono">/sales</span> appended, using
-                            the same Server URL Secret. Must differ from the reservations number&apos;s ID. Leave
-                            blank to disable the tenant check for this line.
+                            When disabled, the agent cannot take new sales
+                            inquiries.
                           </p>
                         </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              </TabsContent>
-            )}
-          </Tabs>
+                        <Switch
+                          id="salesLineEnabled"
+                          checked={salesLineEnabled}
+                          onCheckedChange={setSalesLineEnabled}
+                          disabled={
+                            !salesLineEnabled &&
+                            (!lineSetOf(productLines).sales ||
+                              !detail?.sales_departments?.some(
+                                (d) => d.to.length > 0,
+                              ) ||
+                              !salesVapiPhoneNumberId.trim())
+                          }
+                        />
+                      </div>
+                      {!salesLineEnabled && (
+                        <p className="text-[11px] text-muted-foreground">
+                          To enable sales, include Sales in Lines, connect its
+                          Vapi number below, and save at least one inquiry email
+                          recipient in Agent Configuration → Sales.
+                        </p>
+                      )}
+                      <Link
+                        href="/agent-config#sales"
+                        className="text-sm text-primary underline underline-offset-4"
+                        onClick={(e) => {
+                          if (!confirmDiscardUnsaved()) e.preventDefault()
+                        }}
+                      >
+                        Configure sales inquiry recipients ↗
+                      </Link>
+                    </CardContent>
+                  </Card>
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                    {savedLines.reservations && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-base">
+                            Reservations phone connection
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {" "}
+                          <div className="space-y-2">
+                            <Label
+                              htmlFor="vapiPhoneNumberId"
+                              className="text-xs text-muted-foreground"
+                            >
+                              Vapi Phone Number ID
+                            </Label>
+                            <Input
+                              id="vapiPhoneNumberId"
+                              value={vapiPhoneNumberId}
+                              onChange={(e) =>
+                                setVapiPhoneNumberId(e.target.value)
+                              }
+                              placeholder="00000000-0000-4000-8000-000000000000"
+                              className="bg-card border-border"
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              UUID of this hotel&apos;s phone number in the Vapi
+                              dashboard (Phone Numbers → select the number →
+                              copy the ID). When set, webhooks from any other
+                              Vapi number are rejected — a wrong value blocks
+                              this hotel&apos;s calls, so make a test call after
+                              changing it. Leave blank to disable the check.
+                            </p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                    {(lineSetOf(productLines).sales || savedLines.sales) && (
+                      <Card className="border-border">
+                        <CardHeader className="pb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                              <Megaphone className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-base">
+                                Sales Intake Line
+                              </CardTitle>
+                              <CardDescription className="text-xs">
+                                A second Vapi number that takes sales inquiries
+                                when the sales team doesn&apos;t answer
+                              </CardDescription>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="space-y-2">
+                            <Label
+                              htmlFor="salesVapiPhoneNumberId"
+                              className="text-xs text-muted-foreground"
+                            >
+                              Sales Vapi Phone Number ID
+                            </Label>
+                            <Input
+                              id="salesVapiPhoneNumberId"
+                              value={salesVapiPhoneNumberId}
+                              onChange={(e) =>
+                                setSalesVapiPhoneNumberId(e.target.value)
+                              }
+                              placeholder="00000000-0000-4000-8000-000000000000"
+                              className="bg-card border-border"
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              UUID of the <em>sales</em> number in the Vapi
+                              dashboard. Its Server URL must be the hotel&apos;s
+                              webhook URL with{" "}
+                              <span className="font-mono">/sales</span>{" "}
+                              appended, using the same Server URL Secret. Must
+                              differ from the reservations number&apos;s ID.
+                              Leave blank to disable the tenant check for this
+                              line.
+                            </p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                    {savedLines.reservations &&
+                      detail?.pms_provider === "opera" &&
+                      hotelId && <OperaCancellationCard hotelId={hotelId} />}
+                    {savedLines.reservations &&
+                      detail?.pms_provider === "stayntouch" &&
+                      hotelId && (
+                        <StaynTouchCancellationCard hotelId={hotelId} />
+                      )}
+                  </div>
+                </TabsContent>
+              )}
+            </Tabs>
+          </fieldset>
         )}
       </main>
     </div>
   )
 }
 
-function StateNotice({ tone, message }: { tone: "muted" | "error"; message: string }) {
+function StateNotice({
+  tone,
+  message,
+}: {
+  tone: "muted" | "error"
+  message: string
+}) {
   return (
     <div
       className={`rounded-md border px-3 py-2 text-sm ${

@@ -147,7 +147,7 @@ const pillTone: Record<EmailView, string> = {
 // Why an inquiry has no email, shown as a banner at the top of its panel.
 function notSentReason(row: Pick<SalesInquiryItem, "email_status">): string | null {
   if (row.email_status === "not_sent") return "The call ended before the intake finished, so no email was sent. These details were pulled from the call transcript and may be incomplete — listen to the call before calling back."
-  if (row.email_status === "gave_up") return "The email to your sales team could not be delivered after repeated attempts. Check the department's email address in Settings, and follow up from here."
+  if (row.email_status === "gave_up") return "The email to your sales team could not be delivered after repeated attempts. Check the recipient email address in Agent Configuration → Sales, and follow up from here."
   return null
 }
 function EmailBadge({ row }: { row: Pick<SalesInquiryItem, "email_status"> }) {

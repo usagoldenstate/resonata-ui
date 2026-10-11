@@ -123,7 +123,7 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
             Sales departments — where each recorded inquiry is emailed (Reply-To is the caller).
-            Usually one shared sales mailbox; add more departments later under Settings → Sales.
+            Usually one shared sales mailbox; add more inquiry recipients later under Agent Configuration → Sales.
           </p>
           <SalesDepartmentsEditor departments={departments} onChange={setDepartments} />
         </div>
@@ -171,7 +171,7 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             The notification email goes to a shared mailbox, so whoever follows up picks
             their name from this list on the no-login &ldquo;Update inquiry&rdquo; page and the
-            inquiry is assigned to them. Editable later under Settings → Sales Team.
+            inquiry is assigned to them. Editable later under Settings → Team.
           </p>
         </div>
 
