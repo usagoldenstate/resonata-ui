@@ -500,7 +500,7 @@ export type SalesInquiry = {
   created_at: string
   // "intake_tool" = recorded by the agent on the call. "recovered" = a
   // partial inquiry pulled from the transcript of a call that ended before
-  // the intake finished; may be incomplete, never emailed.
+  // the intake finished; may be incomplete, regardless of email delivery.
   source?: SalesInquirySource
 }
 export type SalesInquirySource = "intake_tool" | "recovered"

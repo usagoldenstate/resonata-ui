@@ -64,7 +64,7 @@ const pillTone: Record<EmailView, string> = {
 }
 // Why an inquiry has no email, shown as a banner at the top of its panel.
 function notSentReason(row: Pick<SalesInquiryItem, "email_status">): string | null {
-  if (row.email_status === "not_sent") return "The call ended before the intake finished, so no email was sent. These details were pulled from the call transcript and may be incomplete — listen to the call before calling back."
+  if (row.email_status === "not_sent") return "No email was sent. Follow up on this inquiry from here."
   if (row.email_status === "gave_up") return "The email to your sales team could not be delivered after repeated attempts. Check the department's email address in Settings, and follow up from here."
   return null
 }
@@ -218,7 +218,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
             <tbody className="divide-y">{data.items.map(row => <tr key={row.id} className="cursor-pointer transition-colors hover:bg-muted/30" onClick={() => { setSelected({ id: row.id, hotelId: row.hotel_id }); setDismissed(false) }}>
               <td className="whitespace-nowrap px-5 py-5 text-xs text-muted-foreground">{timestamp(row.created_at, tzOf(row.hotel_id))}</td>
               {portfolio && <td className="whitespace-nowrap px-5 py-5"><span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{nameOf(row.hotel_id)}</span></td>}
-              <td className="px-5 py-5"><button className="text-left font-medium hover:underline focus-visible:outline-ring" onClick={() => setSelected({ id: row.id, hotelId: row.hotel_id })}>{row.caller_name || "Name not provided"}</button><p className="mt-1 text-xs text-muted-foreground">{row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || "No contact provided"}</p></td>
+              <td className="px-5 py-5"><button className="text-left font-medium hover:underline focus-visible:outline-ring" onClick={() => setSelected({ id: row.id, hotelId: row.hotel_id })}>{row.caller_name || "Name not provided"}</button><p className="mt-1 text-xs text-muted-foreground">{row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || "No contact provided"}</p>{row.source === "recovered" && <span className="mt-1.5 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">Recovered from transcript</span>}</td>
               <td className="max-w-64 px-5 py-5"><p className="font-medium">{row.event_type}{formatHeadcount(row) ? ` · ${formatHeadcount(row)} guests` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{dates(row)}</p></td>
               <td className="whitespace-nowrap px-5 py-5 text-sm">{row.department_name || <span className="text-muted-foreground">—</span>}</td>
               <td className="whitespace-nowrap px-5 py-5 font-medium tabular-nums">{formatAiBudget(row)}</td>
@@ -268,6 +268,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
   ]
   const panelControl = "h-11! w-full min-w-0 rounded-lg border-border bg-card text-sm shadow-xs focus-visible:ring-brand-insights/20"
   return <div className="space-y-5 p-4 sm:p-6">
+    {row.source === "recovered" && <p role="status" className="flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span><span className="font-semibold">Recovered from transcript.</span> Details may be incomplete. Listen to the call and confirm details when following up.</span></p>}
     {notSentReason(row) && <p role="status" className="flex gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-relaxed text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-100"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span><span className="font-semibold">Email not sent.</span> {notSentReason(row)}</span></p>}
     <section className="relative overflow-hidden rounded-2xl border border-brand-insights/20 bg-card shadow-sm">
       <div className="h-1 bg-brand-insights" />
