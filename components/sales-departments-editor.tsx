@@ -21,7 +21,7 @@ import type { SalesDepartment, SalesDepartmentInput } from "@/lib/api"
 // Mirrors the backend limits in api/admin.py (_normalize_sales_departments).
 const MAX_DEPARTMENTS = 10
 const MAX_NAME = 80
-const MAX_DESCRIPTION = 300
+const MAX_DESCRIPTION = 1000
 const MAX_RECIPIENTS = 20
 // Same shape the backend accepts: one local part, one "@", a dotted domain,
 // and no separators (recipient lists are stored comma-joined).
