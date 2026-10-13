@@ -433,6 +433,14 @@ export type CancellationAttempt = {
 // mailbox: "failed" means the last send attempt did not go out and the
 // reconcile job will retry; "gave_up" means it exhausted its retries — the
 // row exists, a person has to forward it.
+export type SalesAnswerField = "custom" | "event_type" | "event_dates_text" | "dates_flexible" | "headcount_text" | "needs_guest_rooms" | "caller_name" | "callback_phone" | "email" | "budget_text" | "notes"
+export type SalesGraphRoute = { id: string; target: string | null; condition: string | null; answer_from: string | null }
+export type SalesGraphNode = {
+  id: string; text: string; variable: string
+  field: SalesAnswerField; position: { x: number; y: number }; routes: SalesGraphRoute[]
+}
+export type SalesGraphFlow = { version: 2; entry_id: string | null; nodes: SalesGraphNode[] }
+
 export type SalesIntakeQuestion = { id: string; text: string }
 export type SalesIntakeQuestionInput = { id?: string; text: string }
 // One sales department inquiries can be routed to (Hotel.sales_departments).
@@ -452,9 +460,11 @@ export type SalesInquiryCustomAnswer = {
   question_id: string
   question: string | null
   answer: string
+  variable?: string | null
 }
 
 export type SalesInquiry = {
+  answer_variables?: Record<string, string>
   custom_answers?: SalesInquiryCustomAnswer[]
   id: string
   caller_name: string | null
@@ -876,6 +886,9 @@ export type HotelDetail = {
   // automatic list is the hotel's numbers already on file — read-only.
   sales_ignored_caller_numbers?: string[]
   sales_automatic_ignored_numbers?: string[]
+  sales_intake_flow?: SalesGraphFlow | null
+  sales_intake_graph?: SalesGraphFlow | null
+  sales_intake_recommended_graph?: SalesGraphFlow | null
   sales_intake_questions?: SalesIntakeQuestion[]
   // The sales line's own opener (null = the template) and the template
   // rendered for this hotel. Operator-editable via Agent Configuration.
@@ -1172,6 +1185,9 @@ export type HotelOperatorUpdate = {
   // Replaces the whole list. Normalized server-side to E.164; an invalid
   // number is refused with a 422 naming it.
   sales_ignored_caller_numbers?: string[]
+  sales_intake_flow?: SalesGraphFlow | null
+  sales_intake_graph?: SalesGraphFlow | null
+  sales_intake_recommended_graph?: SalesGraphFlow | null
   sales_intake_questions?: SalesIntakeQuestionInput[]
   // Replaces the whole list. A non-empty list needs exactly one catch_all;
   // an empty one is refused while the sales line is on.
@@ -1836,6 +1852,7 @@ export function updateSalesInquiry(hotelId: string, id: string, body: SalesInqui
 // route). Everything the page renders comes back in one response.
 export type SalesFollowUpOutcome = "call_attempted" | "contacted" | "booked" | "closed"
 export type PublicSalesInquiry = {
+  answer_variables?: Record<string, string>
   custom_answers?: SalesInquiryCustomAnswer[]
   hotel_display_name: string
   caller_name: string | null

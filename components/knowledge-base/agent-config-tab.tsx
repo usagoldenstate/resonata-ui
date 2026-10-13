@@ -25,11 +25,7 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  SalesQuestionsEditor,
-  questionPayload,
-  type QuestionDraft,
-} from "@/components/sales-questions-editor"
+
 import {
   api,
   ApiError,
@@ -413,7 +409,6 @@ export function AgentConfigTab({
   const [agentName, setAgentName] = useState("")
   const [firstMessage, setFirstMessage] = useState("")
   const [firstMessageDefault, setFirstMessageDefault] = useState("")
-  const [salesQuestions, setSalesQuestions] = useState<QuestionDraft[]>([])
   const [saving, setSaving] = useState(false)
   const [salesFirstMessage, setSalesFirstMessage] = useState("")
   const [salesFirstMessageDefault, setSalesFirstMessageDefault] = useState("")
@@ -432,7 +427,6 @@ export function AgentConfigTab({
         firstMessage,
         preferredRateCode,
         salesFirstMessage,
-        salesQuestions: questionPayload(salesQuestions),
         emailRouting: emailRoutingPayload(emailRouting),
       }),
     [
@@ -441,7 +435,6 @@ export function AgentConfigTab({
       firstMessage,
       preferredRateCode,
       salesFirstMessage,
-      salesQuestions,
       emailRouting,
     ],
   )
@@ -455,10 +448,6 @@ export function AgentConfigTab({
     const loadedAgentName = hotel.agent_name ?? ""
     const loadedFirstMessage = hotel.first_message ?? ""
     const loadedPreferredRateCode = String(hotel.preferred_rate_code ?? "")
-    const loadedSalesQuestions = (hotel.sales_intake_questions ?? []).map(
-      (q) => ({ ...q, key: q.id }),
-    )
-    setSalesQuestions(loadedSalesQuestions)
     const loadedEmailRouting = departmentDrafts(hotel.sales_departments)
     setEmailRouting(loadedEmailRouting)
     setSalesEmailSender(hotel.sales_email_from || hotel.email_from || null)
@@ -488,7 +477,6 @@ export function AgentConfigTab({
         firstMessage: loadedFirstMessage,
         preferredRateCode: loadedPreferredRateCode,
         salesFirstMessage: loadedSalesFirstMessage,
-        salesQuestions: questionPayload(loadedSalesQuestions),
         emailRouting: emailRoutingPayload(loadedEmailRouting),
       }),
     )
@@ -622,22 +610,7 @@ export function AgentConfigTab({
         onStateChange("error")
         return
       }
-      const texts = salesQuestions.map((q) =>
-        q.text.replace(/\s+/g, " ").trim(),
-      )
-      const invalid = texts.findIndex((text) => !text || [...text].length > 200)
-      if (
-        salesQuestions.length > 5 ||
-        invalid !== -1 ||
-        new Set(texts.map((t) => t.toLowerCase())).size !== texts.length
-      ) {
-        setActiveTab("sales")
-        onErrorChange(
-          "Use up to five different questions, each between 1 and 200 characters. Remove empty questions before saving.",
-        )
-        onStateChange("error")
-        return
-      }
+
     }
     if (departments.length === 0) {
       onErrorChange("At least one transfer department is required.")
@@ -733,7 +706,6 @@ export function AgentConfigTab({
       if (lines?.sales) {
         // Blank clears to the template server-side.
         hotelBody.sales_first_message = salesFirstMessage
-        hotelBody.sales_intake_questions = questionPayload(salesQuestions)
         if (
           JSON.stringify(emailRoutingPayload(emailRouting)) !==
           JSON.stringify(baseline.emailRouting)
@@ -750,10 +722,7 @@ export function AgentConfigTab({
       )
       hotelSaved = true
       // Retain minted IDs even if the subsequent department save fails.
-      const savedQuestions = (savedHotel.sales_intake_questions ?? []).map(
-        (q) => ({ ...q, key: q.id }),
-      )
-      setSalesQuestions(savedQuestions)
+      setSalesFirstMessageDefault(savedHotel.sales_first_message_default ?? "")
       const savedRouting = departmentDrafts(savedHotel.sales_departments)
       setEmailRouting(savedRouting)
 
@@ -768,7 +737,6 @@ export function AgentConfigTab({
       setSavedJson(
         JSON.stringify({
           ...JSON.parse(formSnapshot),
-          salesQuestions: questionPayload(savedQuestions),
           emailRouting: emailRoutingPayload(savedRouting),
         }),
       )
@@ -933,10 +901,13 @@ export function AgentConfigTab({
         </CardContent>
       </Card>
 
-      <SalesQuestionsEditor
-        questions={salesQuestions}
-        onChange={setSalesQuestions}
-      />
+      <Card>
+        <CardHeader><CardTitle className="text-base">Sales conversation script</CardTitle>
+          <p className="text-sm text-muted-foreground">Build question paths, describe branching conditions, and name the answers you want to capture.</p>
+        </CardHeader>
+        <CardContent><Button asChild variant="outline"><Link href="/agent-config/sales-script" onClick={event => { if (!confirmDiscardUnsaved()) event.preventDefault() }}>Open flow builder <ArrowRight className="ml-2 size-4" /></Link></Button></CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">

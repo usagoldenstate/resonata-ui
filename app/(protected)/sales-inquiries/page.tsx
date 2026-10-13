@@ -547,7 +547,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
             {row.custom_answers?.map((entry, index) => (
               <div key={`${entry.question_id}-${index}`} className="flex items-start gap-2.5">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground"><MessageSquareText className="size-4" /></span>
-                <div className="min-w-0"><dt className="text-xs font-medium text-muted-foreground whitespace-pre-wrap break-words">{entry.question || "Additional question"}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed">{entry.answer}</dd></div>
+                <div className="min-w-0"><dt className="text-xs font-medium text-muted-foreground whitespace-pre-wrap break-words">{entry.question || "Additional question"}{entry.variable && <span className="mt-1 block font-mono text-[11px] text-primary">{entry.variable}</span>}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed">{entry.answer}</dd></div>
               </div>
             ))}
           </dl>
