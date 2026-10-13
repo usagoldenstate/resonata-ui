@@ -241,11 +241,14 @@ export default function KnowledgeBasePage() {
       <Sidebar />
       <div className="app-content flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="bg-background border-b border-border px-6 py-6 flex flex-wrap gap-4 items-center justify-between shrink-0">
+        <div className="app-page-header bg-background border-b border-border px-6 py-6 flex flex-wrap gap-4 items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold text-foreground">
-              {hotel?.display_name ?? data.pName ?? "Knowledge Base"}
-            </h1>
+            <div>
+              <p className="app-eyebrow mb-2">Agent workspace</p>
+              <h1 className="text-xl font-bold text-foreground">Knowledge base</h1>
+              <p className="text-sm text-muted-foreground">Everything your agent needs to know about your property.</p>
+              <p className="text-xs text-muted-foreground">{hotel?.display_name}</p>
+            </div>
             {data.pType && (
               <Badge variant="secondary" className="text-xs bg-primary/10 text-primary border-0">
                 {data.pType}

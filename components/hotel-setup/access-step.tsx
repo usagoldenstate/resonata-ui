@@ -10,6 +10,7 @@ import { Check } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { OptionSelect } from "@/components/ui/option-select"
 import {
   fetchAdminUsers,
   grantUserHotelAccess,
@@ -152,22 +153,17 @@ export function AccessStep({ ctx }: { ctx: StepContext }) {
 
         <Field label="Grant an existing user" htmlFor="grantUser">
           <div className="flex gap-2">
-            <select
+            <OptionSelect
               id="grantUser"
               value={selected}
-              onChange={(e) => setSelected(e.target.value)}
+              onValueChange={setSelected}
               disabled={users === null}
-              className="h-9 min-w-0 flex-1 rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-70"
-            >
-              <option value="">Select a user…</option>
-              {(users ?? [])
+              placeholder="Select a user…"
+              className="flex-1"
+              options={(users ?? [])
                 .filter((u) => u.role !== "platform_admin")
-                .map((u) => (
-                  <option key={u.user_id} value={u.user_id}>
-                    {u.email}
-                  </option>
-                ))}
-            </select>
+                .map((u) => ({ value: u.user_id, label: u.email }))}
+            />
             <Button type="button" variant="outline" onClick={grant} disabled={busy}>
               Grant
             </Button>

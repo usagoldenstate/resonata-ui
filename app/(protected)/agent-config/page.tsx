@@ -9,8 +9,13 @@ import { HotelLoadError, NoHotelAccess } from "@/components/hotel-access-state"
 import { AgentConfigTab } from "@/components/knowledge-base/agent-config-tab"
 
 export default function AgentConfigPage() {
-  const { hotelId, hotels, loading: hotelLoading, accessState, refresh } =
-    useHotel()
+  const {
+    hotelId,
+    hotels,
+    loading: hotelLoading,
+    accessState,
+    refresh,
+  } = useHotel()
   const hotel = hotels.find((h) => h.hotel_id === hotelId)
 
   // Agent Config owns its own form state but delegates save-state and the
@@ -21,12 +26,9 @@ export default function AgentConfigPage() {
   const [configSaveError, setConfigSaveError] = useState<string | null>(null)
   const [configDirty, setConfigDirty] = useState(false)
   const configSaveRef = useRef<(() => Promise<void>) | null>(null)
-  const registerConfigSave = useCallback(
-    (fn: (() => Promise<void>) | null) => {
-      configSaveRef.current = fn
-    },
-    [],
-  )
+  const registerConfigSave = useCallback((fn: (() => Promise<void>) | null) => {
+    configSaveRef.current = fn
+  }, [])
 
   if (hotelLoading) {
     return (
@@ -52,7 +54,7 @@ export default function AgentConfigPage() {
     )
   }
 
-  const topSaveDisabled = configSaveState === "saving"
+  const topSaveDisabled = configSaveState === "saving" || !configDirty
   const showDirty =
     configDirty && configSaveState !== "saving" && configSaveState !== "saved"
 
@@ -61,11 +63,20 @@ export default function AgentConfigPage() {
       <Sidebar />
       <div className="app-content flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="bg-background border-b border-border px-6 py-6 flex flex-wrap gap-4 items-center justify-between shrink-0">
+        <div className="app-page-header bg-background border-b border-border px-6 py-6 flex flex-wrap gap-4 items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold text-foreground">
-              {hotel?.display_name ?? "Agent Configuration"}
-            </h1>
+            <div>
+              <p className="app-eyebrow mb-2">Agent workspace</p>
+              <h1 className="text-xl font-bold text-foreground">
+                Agent configuration
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Define the conversation, from greeting to handoff.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {hotel?.display_name}
+              </p>
+            </div>
           </div>
           <div className="flex flex-col items-end gap-1.5">
             <div className="flex items-center gap-3">
@@ -90,7 +101,9 @@ export default function AgentConfigPage() {
                 disabled={topSaveDisabled}
               >
                 <Save className="w-4 h-4 mr-2" />
-                {configSaveState === "saving" ? "Saving…" : "Save"}
+                {configSaveState === "saving"
+                  ? "Saving…"
+                  : "Save all agent changes"}
               </Button>
             </div>
             {configSaveState === "error" && configSaveError && (

@@ -10,6 +10,7 @@ import { CheckCircle2, XCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { OptionSelect } from "@/components/ui/option-select"
 import {
   apiBaseUrl,
   fetchPmsCredentials,
@@ -333,17 +334,15 @@ export function PmsStep({ ctx }: { ctx: StepContext }) {
                 htmlFor="grantType"
                 hint="client_credentials is the go-forward flow; password is only for legacy sandboxes."
               >
-                <select
+                <OptionSelect
                   id="grantType"
                   value={grantType}
-                  onChange={(e) =>
-                    setGrantType(e.target.value as "client_credentials" | "password")
-                  }
-                  className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                >
-                  <option value="client_credentials">client_credentials</option>
-                  <option value="password">password</option>
-                </select>
+                  onValueChange={(v) => setGrantType(v as "client_credentials" | "password")}
+                  options={[
+                    { value: "client_credentials", label: "client_credentials" },
+                    { value: "password", label: "password" },
+                  ]}
+                />
               </Field>
             ) : null}
 

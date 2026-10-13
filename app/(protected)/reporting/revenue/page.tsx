@@ -444,7 +444,7 @@ function RevenueTrendChart({
             formatter={(value) => [formatMoney(Number(value) * 100, currency), "Projected revenue"]}
             labelFormatter={(label) => formatLabel(String(label))}
           />
-          <Bar dataKey="revenue" name="Projected revenue" fill="#6b7a4a" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="revenue" name="Projected revenue" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -540,7 +540,7 @@ function RevenueFunnel({
           <div
             key={stage.label}
             className={`rounded-lg border p-4 ${
-              stage.payoff ? "border-[#6b7a4a]/50 bg-[#6b7a4a]/10" : "border-border bg-card"
+              stage.payoff ? "border-primary/50 bg-primary/10" : "border-border bg-card"
             }`}
           >
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -551,7 +551,7 @@ function RevenueFunnel({
             {stage.payoff ? null : (
               <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-[#6b7a4a]"
+                  className="h-full rounded-full bg-primary"
                   style={{ width: `${loading ? 0 : stage.share ?? 0}%` }}
                 />
               </div>

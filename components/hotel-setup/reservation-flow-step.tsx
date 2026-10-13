@@ -11,6 +11,7 @@ import { ExternalLink } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { OptionSelect } from "@/components/ui/option-select"
 import {
   fetchBookingEnginePmsCatalog,
   fetchBookingEngineState,
@@ -309,19 +310,13 @@ export function ReservationFlowStep({ ctx }: { ctx: StepContext }) {
           description="The deep link the agent sends is built by this provider's adapter."
         >
           <Field label="Provider" htmlFor="beProvider">
-            <select
+            <OptionSelect
               id="beProvider"
               value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-              className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-            >
-              <option value="">Select…</option>
-              {(beState?.registered_providers ?? []).map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
+              onValueChange={setProvider}
+              placeholder="Select…"
+              options={(beState?.registered_providers ?? []).map((p) => ({ value: p, label: p }))}
+            />
           </Field>
 
           {provider === "synxis" ? (
@@ -388,21 +383,17 @@ export function ReservationFlowStep({ ctx }: { ctx: StepContext }) {
                 />
               </Field>
               <Field label="Checkout URL style" htmlFor="p3Style">
-                <select
+                <OptionSelect
                   id="p3Style"
                   value={p3.checkout_url_style}
-                  onChange={(e) =>
-                    setP3({
-                      ...p3,
-                      checkout_url_style: e.target
-                        .value as P3Form["checkout_url_style"],
-                    })
+                  onValueChange={(v) =>
+                    setP3({ ...p3, checkout_url_style: v as P3Form["checkout_url_style"] })
                   }
-                  className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                >
-                  <option value="rates_rooms_inline">rates_rooms_inline</option>
-                  <option value="trailing_rate_room">trailing_rate_room</option>
-                </select>
+                  options={[
+                    { value: "rates_rooms_inline", label: "rates_rooms_inline" },
+                    { value: "trailing_rate_room", label: "trailing_rate_room" },
+                  ]}
+                />
               </Field>
               <Field label="Default child bucket" htmlFor="p3Child">
                 <Input

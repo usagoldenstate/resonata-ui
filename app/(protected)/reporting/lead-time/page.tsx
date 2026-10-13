@@ -91,7 +91,7 @@ export default function LeadTimeReportPage() {
                 Avg Lead Time
               </p>
               <p className="text-2xl font-semibold text-card-foreground">{stats.avgLeadTime} days</p>
-              <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
+              <p className="text-xs mt-1 flex items-center gap-1 text-primary">
                 <span>+</span> {stats.avgChange} days vs prior year
               </p>
             </CardContent>
@@ -102,7 +102,7 @@ export default function LeadTimeReportPage() {
                 Median Lead Time
               </p>
               <p className="text-2xl font-semibold text-card-foreground">{stats.medianLeadTime} days</p>
-              <p className="text-xs mt-1 flex items-center gap-1 text-[#6b7a4a]">
+              <p className="text-xs mt-1 flex items-center gap-1 text-primary">
                 <span>+</span> {stats.medianChange} days vs prior year
               </p>
             </CardContent>
@@ -142,12 +142,12 @@ export default function LeadTimeReportPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={leadTimeDistribution} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis 
-                    dataKey="name" 
+                  <XAxis
+                    dataKey="name"
                     tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                     axisLine={{ stroke: 'hsl(var(--border))' }}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                     axisLine={{ stroke: 'hsl(var(--border))' }}
                   />
@@ -159,11 +159,11 @@ export default function LeadTimeReportPage() {
                       fontSize: '12px'
                     }}
                   />
-                  <Legend 
+                  <Legend
                     wrapperStyle={{ fontSize: '12px' }}
                   />
-                  <Bar dataKey="booked" name="Booked" stackId="a" fill="#6b7a4a" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="notBooked" name="Not Booked" stackId="a" fill="#a3a682" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="booked" name="Booked" stackId="a" fill="var(--chart-1)" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="notBooked" name="Not Booked" stackId="a" fill="var(--chart-4)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -181,12 +181,12 @@ export default function LeadTimeReportPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={monthlyLeadTime} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis 
-                    dataKey="month" 
+                  <XAxis
+                    dataKey="month"
                     tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                     axisLine={{ stroke: 'hsl(var(--border))' }}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                     axisLine={{ stroke: 'hsl(var(--border))' }}
                     tickFormatter={(value) => `${value}d`}
@@ -200,26 +200,26 @@ export default function LeadTimeReportPage() {
                     }}
                     formatter={(value: number) => [`${value} days`, '']}
                   />
-                  <Legend 
+                  <Legend
                     wrapperStyle={{ fontSize: '12px' }}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="average" 
-                    name="Average" 
-                    stroke="#6b7a4a" 
+                  <Line
+                    type="monotone"
+                    dataKey="average"
+                    name="Average"
+                    stroke="var(--chart-1)"
                     strokeWidth={2}
-                    dot={{ fill: '#6b7a4a', strokeWidth: 2 }}
+                    dot={{ fill: 'var(--chart-1)', strokeWidth: 2 }}
                     activeDot={{ r: 6 }}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="median" 
-                    name="Median" 
-                    stroke="#a3a682" 
+                  <Line
+                    type="monotone"
+                    dataKey="median"
+                    name="Median"
+                    stroke="var(--chart-4)"
                     strokeWidth={2}
                     strokeDasharray="5 5"
-                    dot={{ fill: '#a3a682', strokeWidth: 2 }}
+                    dot={{ fill: 'var(--chart-4)', strokeWidth: 2 }}
                     activeDot={{ r: 6 }}
                   />
                 </LineChart>

@@ -24,9 +24,9 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value"
 // Presentation-only: the category names + counts come from the backend taxonomy;
 // the UI keeps just the color mapping keyed on the stable category name.
 const COLOR_BY_CATEGORY: Record<string, string> = {
-  Price: "bg-[#6b7a4a]",
-  Availability: "bg-[#c4a84b]",
-  Amenities: "bg-[#8b5a3c]",
+  Price: "bg-primary",
+  Availability: "bg-warning",
+  Amenities: "bg-destructive",
   Policy: "bg-[#64748b]",
   Other: "bg-[#9ca3af]",
 }
@@ -284,7 +284,7 @@ export default function NotBookedReportingPage() {
                   {priorDelta !== null ? (
                     <p
                       className={`text-xs mt-1 flex items-center gap-1 ${
-                        priorDelta > 0 ? "text-[#8b5a3c]" : "text-[#6b7a4a]"
+                        priorDelta > 0 ? "text-destructive" : "text-primary"
                       }`}
                     >
                       {priorDelta > 0 ? (

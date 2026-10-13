@@ -21,7 +21,6 @@ import {
   FlaskConical,
   LogOut,
   Menu,
-  AudioLines,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -31,7 +30,9 @@ import { organizationScopeLabel, useHotel } from "@/lib/hotel-context"
 import { lineRequiredFor, routeAvailable } from "@/lib/product-lines"
 import { confirmDiscardUnsaved } from "@/lib/unsaved-guard"
 
+import { BrandLogo } from "@/components/brand-logo"
 import { Button } from "@/components/ui/button"
+import { OptionSelect } from "@/components/ui/option-select"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 
 type Accent = "insights" | "agent"
@@ -98,7 +99,7 @@ export function Sidebar() {
   // reservations nav at a sales-only hotel.
   const lineVisible = (href: string) =>
     scopeLines ? routeAvailable(href, scopeLines) : lineRequiredFor(href) === null
-  // <select> value: "hotel:<id>" or "org:<id>".
+  // Scope select value: "hotel:<id>" or "org:<id>".
   const scopeValue = scope ? (scope.kind === "hotel" ? `hotel:${scope.hotelId}` : `org:${scope.organizationId}`) : ""
   const independentHotels = hotels.filter((h) => !h.organization_id)
   const { isPlatformAdmin } = useCurrentUser()
@@ -108,7 +109,7 @@ export function Sidebar() {
     ?? "Workspace"
 
   // Block in-app navigation when the current page reports unsaved edits.
-  // Used on every <Link> click and the hotel <select> change handler.
+  // Used on every <Link> click and the hotel select change handler.
   const guardedNav = (e: React.MouseEvent) => {
     if (!confirmDiscardUnsaved()) {
       e.preventDefault()
@@ -119,14 +120,16 @@ export function Sidebar() {
 
   const navigation = (hotelSelectId: string) => (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2.5 px-5 py-7">
-        <span className="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs"><AudioLines className="size-4" aria-hidden="true" /></span>
-        <span className="text-xl font-semibold tracking-tight text-sidebar-foreground">Resona<span className="text-primary">ta</span></span>
+      <div className="px-6 pb-7 pt-8">
+        <Link href={sections[0].items.find(item => item.visible && lineVisible(item.href))?.href ?? "/knowledge-base"} onClick={guardedNav} aria-label="Resonata home" className="inline-flex">
+          <BrandLogo />
+        </Link>
+        <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Your hospitality workspace</p>
       </div>
 
-      <div className="mx-3 mb-6 rounded-xl border border-sidebar-border/70 bg-muted/40 p-3">
-        <label htmlFor={hotelSelectId} className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1.5">
-          Hotel
+      <div className="mx-4 mb-7 rounded-xl border border-sidebar-border bg-card p-3 shadow-xs">
+        <label htmlFor={hotelSelectId} className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <Building2 className="size-3" aria-hidden="true" /> Property or portfolio
         </label>
         {loading ? (
           <div className="text-xs text-muted-foreground">Loading…</div>
@@ -135,60 +138,46 @@ export function Sidebar() {
         ) : accessState === "no-access" || hotels.length === 0 ? (
           <div className="text-xs text-muted-foreground">No hotels assigned</div>
         ) : (
-          <select
+          <OptionSelect
             id={hotelSelectId}
             value={scopeValue}
-            onChange={(e) => {
-              if (e.target.value === scopeValue) return
-              if (!confirmDiscardUnsaved()) {
-                // Revert the visible selection. The element is uncontrolled-ish
-                // here (re-renders from `scope` state), so resetting the
-                // value attribute syncs the DOM with our refusal to switch.
-                e.target.value = scopeValue
-                return
-              }
-              const sep = e.target.value.indexOf(":")
-              const kind = e.target.value.slice(0, sep)
-              const id = e.target.value.slice(sep + 1)
+            onValueChange={(next) => {
+              if (next === scopeValue) return
+              // Refusing leaves `scope` untouched, so the controlled value
+              // keeps showing the current selection.
+              if (!confirmDiscardUnsaved()) return
+              const sep = next.indexOf(":")
+              const kind = next.slice(0, sep)
+              const id = next.slice(sep + 1)
               setScope(kind === "org" ? { kind: "org", organizationId: id } : { kind: "hotel", hotelId: id })
             }}
-            className="w-full text-sm rounded-lg border border-sidebar-border bg-card px-2.5 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-          >
-            {organizations.map((group) => (
-              <optgroup key={group.organization_id} label={group.display_name}>
-                {/* The portfolio entry only once it spans two or more hotels
-                    the user can see; "(N hotels)" is honest for a partial grant. */}
-                {group.hotels.length >= 2 && (
-                  <option value={`org:${group.organization_id}`}>
-                    {organizationScopeLabel(group)}
-                  </option>
-                )}
-                {group.hotels.map((h) => (
-                  <option key={h.hotel_id} value={`hotel:${h.hotel_id}`}>
-                    {h.display_name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-            {independentHotels.map((h) => (
-              <option key={h.hotel_id} value={`hotel:${h.hotel_id}`}>
-                {h.display_name}
-              </option>
-            ))}
-          </select>
+            className="h-auto rounded-lg border-0 bg-muted/60 px-2.5 py-2 text-[13px] font-semibold shadow-none hover:bg-muted"
+            groups={organizations.map((group) => ({
+              label: group.display_name,
+              options: [
+                // The portfolio entry only once it spans two or more hotels
+                // the user can see; "(N hotels)" is honest for a partial grant.
+                ...(group.hotels.length >= 2
+                  ? [{ value: `org:${group.organization_id}`, label: organizationScopeLabel(group) }]
+                  : []),
+                ...group.hotels.map((h) => ({ value: `hotel:${h.hotel_id}`, label: h.display_name })),
+              ],
+            }))}
+            options={independentHotels.map((h) => ({ value: `hotel:${h.hotel_id}`, label: h.display_name }))}
+          />
         )}
       </div>
 
-      <nav aria-label="Main navigation" className="flex-1 px-3 pb-2 overflow-y-auto">
+      <nav aria-label="Main navigation" className="flex-1 px-4 pb-2 overflow-y-auto">
         {sections.map((section) => {
           const items = section.items.filter((item) => item.visible && lineVisible(item.href))
           if (items.length === 0) return null
           const accent = ACCENT[section.accent]
           return (
-            <div key={section.label} className="mb-4">
+            <div key={section.label} className="mb-6">
               <div
                 className={cn(
-                  "px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider",
+                  "px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.16em]",
                   accent.label,
                 )}
               >
@@ -204,20 +193,12 @@ export function Sidebar() {
                         aria-current={isActive ? "page" : undefined}
                         onClick={guardedNav}
                         className={cn(
-                          "app-nav-link relative w-full flex items-center gap-2.5 pl-4 pr-3 py-2.5 rounded-xl text-[13px] transition-colors",
+                          "app-nav-link relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] transition-colors",
                           isActive
-                            ? cn(accent.activeBg, accent.activeText, "font-medium")
-                            : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
+                            ? cn(accent.activeBg, accent.activeText, "font-bold")
+                            : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/70",
                         )}
                       >
-                        {isActive && (
-                          <span
-                            className={cn(
-                              "absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full",
-                              accent.rail,
-                            )}
-                          />
-                        )}
                         <span
                           className={cn(
                             "shrink-0",
@@ -246,7 +227,7 @@ export function Sidebar() {
             "w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[13px] transition-colors",
             pathname === "/settings"
               ? "bg-muted/60 text-sidebar-foreground font-medium"
-              : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
+              : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/70",
           )}
         >
           <Settings className="w-4 h-4 shrink-0" />
@@ -261,7 +242,7 @@ export function Sidebar() {
               "w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[13px] transition-colors",
               pathname === "/demo-hotels"
                 ? "bg-muted/60 text-sidebar-foreground font-medium"
-                : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
+                : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/70",
             )}
           >
             <FlaskConical className="w-4 h-4 shrink-0" />
@@ -277,7 +258,7 @@ export function Sidebar() {
               "w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[13px] transition-colors",
               pathname === "/dev-pages"
                 ? "bg-muted/60 text-sidebar-foreground font-medium"
-                : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50",
+                : "text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/70",
             )}
           >
             <Wrench className="w-4 h-4 shrink-0" />
@@ -291,7 +272,7 @@ export function Sidebar() {
             window.localStorage.removeItem("resonata.hotel_scope")
             await signOut({ redirectUrl: "/sign-in" })
           }}
-          className="w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/50 transition-colors"
+          className="w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-sidebar-foreground hover:bg-muted/70 transition-colors"
         >
           <LogOut className="w-4 h-4 shrink-0" />
           Sign out
@@ -302,7 +283,7 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-sidebar-border/80 bg-sidebar md:flex">
+      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-sidebar-border/80 bg-sidebar md:flex">
         {navigation("desktop-hotel")}
       </aside>
       <div className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b bg-sidebar px-4 md:hidden">
@@ -315,7 +296,7 @@ export function Sidebar() {
             {navigation("mobile-hotel")}
           </SheetContent>
         </Sheet>
-        <span className="text-lg font-semibold tracking-tight">Resonata</span>
+        <BrandLogo className="!w-32" />
         <span className="ml-auto truncate text-xs text-muted-foreground">{currentPageLabel}</span>
       </div>
     </>

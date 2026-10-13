@@ -5,7 +5,7 @@
 // The agent reads every department's name and description to decide where an
 // inquiry goes; anything that doesn't clearly fit lands on the one catch-all.
 // A hotel with a single department never asks the agent to choose. Shared by
-// Settings → Sales and the setup wizard's Sales step, which own saving.
+// Agent Configuration → Sales and the setup wizard's Sales step, which own saving.
 
 import * as React from "react"
 import { Inbox, Plus, Trash2 } from "lucide-react"
@@ -29,7 +29,9 @@ const EMAIL_RE = /^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$/
 
 export type DepartmentDraft = SalesDepartmentInput & { key: string }
 
-export function departmentDrafts(departments: SalesDepartment[] | undefined): DepartmentDraft[] {
+export function departmentDrafts(
+  departments: SalesDepartment[] | undefined,
+): DepartmentDraft[] {
   return (departments ?? []).map((d) => ({ ...d, key: d.id }))
 }
 
@@ -47,7 +49,9 @@ export function defaultDepartmentDraft(): DepartmentDraft {
 }
 
 // Client keys keep React state stable; only server-issued ids go back.
-export function departmentPayload(drafts: DepartmentDraft[]): SalesDepartmentInput[] {
+export function departmentPayload(
+  drafts: DepartmentDraft[],
+): SalesDepartmentInput[] {
   return drafts.map(({ id, name, description, to, cc, catch_all }) => ({
     ...(id ? { id } : {}),
     name: name.trim(),
@@ -58,8 +62,14 @@ export function departmentPayload(drafts: DepartmentDraft[]): SalesDepartmentInp
   }))
 }
 
-export function departmentsChanged(drafts: DepartmentDraft[], saved: SalesDepartment[] | undefined) {
-  return JSON.stringify(departmentPayload(drafts)) !== JSON.stringify(departmentPayload(departmentDrafts(saved)))
+export function departmentsChanged(
+  drafts: DepartmentDraft[],
+  saved: SalesDepartment[] | undefined,
+) {
+  return (
+    JSON.stringify(departmentPayload(drafts)) !==
+    JSON.stringify(departmentPayload(departmentDrafts(saved)))
+  )
 }
 
 // First problem that would make the save fail, phrased for the hotelier.
@@ -67,17 +77,20 @@ export function validateDepartments(drafts: DepartmentDraft[]): string | null {
   const names = new Set<string>()
   for (const d of drafts) {
     const name = d.name.replace(/\s+/g, " ").trim()
-    if (!name) return "Every sales department needs a name."
-    if (name.length > MAX_NAME) return `${name}: shorten the name to ${MAX_NAME} characters.`
-    if (names.has(name.toLowerCase())) return `Two sales departments are named “${name}”.`
+    if (!name) return "Every inquiry recipient group needs a name."
+    if (name.length > MAX_NAME)
+      return `${name}: shorten the name to ${MAX_NAME} characters.`
+    if (names.has(name.toLowerCase()))
+      return `Two sales departments are named “${name}”.`
     names.add(name.toLowerCase())
     if (d.description.replace(/\s+/g, " ").trim().length > MAX_DESCRIPTION) {
       return `${name}: shorten the description to ${MAX_DESCRIPTION} characters.`
     }
-    if (d.to.length === 0) return `${name}: add at least one “Send to” email address.`
+    if (d.to.length === 0)
+      return `${name}: add at least one “Send to” email address.`
   }
   if (drafts.length > 0 && drafts.filter((d) => d.catch_all).length !== 1) {
-    return "Choose one catch-all department."
+    return "Choose one default email recipient group."
   }
   return null
 }
@@ -114,32 +127,40 @@ export function SalesDepartmentsEditor({
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        The agent reads each department&apos;s name and description to decide where an inquiry goes,
-        without asking the caller. Anything that doesn&apos;t clearly fit goes to the catch-all. With a
-        single department, every inquiry goes there.
+        The agent uses these rules to choose the email recipients. Inquiries
+        that do not match a rule go to the default recipient group. With one
+        group, every inquiry goes there.
       </p>
 
       {departments.length === 0 && (
         <div className="rounded-lg border border-dashed px-4 py-6 text-center">
-          <p className="text-sm font-medium">No sales departments yet</p>
+          <p className="text-sm font-medium">No inquiry email recipients yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Add one so the sales intake has somewhere to send inquiries.
+            Add a recipient group so the agent can send captured inquiries to
+            your team.
           </p>
         </div>
       )}
 
       <ul className="space-y-3">
         {departments.map((department, index) => {
-          const descriptionLength = department.description.replace(/\s+/g, " ").trim().length
+          const descriptionLength = department.description
+            .replace(/\s+/g, " ")
+            .trim().length
           return (
-            <li key={department.key} className="space-y-3 rounded-lg border bg-muted/20 p-3">
+            <li
+              key={department.key}
+              className="space-y-3 rounded-lg border bg-muted/20 p-3"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Inbox className="size-4 text-muted-foreground" />
                   <span className="text-sm font-medium">
                     {department.name.trim() || `Department ${index + 1}`}
                   </span>
-                  {department.catch_all && <Badge variant="secondary">Catch-all</Badge>}
+                  {department.catch_all && (
+                    <Badge variant="secondary">Default recipient</Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   {!department.catch_all && (
@@ -150,85 +171,124 @@ export function SalesDepartmentsEditor({
                       disabled={disabled}
                       onClick={() => makeCatchAll(department.key)}
                     >
-                      Make catch-all
+                      Make default
                     </Button>
                   )}
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    disabled={disabled || (department.catch_all && departments.length > 1)}
+                    disabled={
+                      disabled ||
+                      (department.catch_all && departments.length > 1)
+                    }
                     title={
                       department.catch_all && departments.length > 1
-                        ? "Make another department the catch-all before removing this one"
+                        ? "Choose another default recipient group before removing this one"
                         : undefined
                     }
                     aria-label={`Remove ${department.name.trim() || `department ${index + 1}`}`}
-                    onClick={() => onChange(departments.filter((d) => d.key !== department.key))}
+                    onClick={() =>
+                      onChange(
+                        departments.filter((d) => d.key !== department.key),
+                      )
+                    }
                   >
                     <Trash2 className="size-4 text-muted-foreground" />
                   </Button>
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor={`dept-name-${department.key}`} className="text-xs text-muted-foreground">
-                  Name
-                </Label>
-                <Input
-                  id={`dept-name-${department.key}`}
-                  value={department.name}
-                  maxLength={MAX_NAME}
-                  disabled={disabled}
-                  placeholder="e.g. Corporate"
-                  onChange={(e) => update(department.key, { name: e.target.value })}
-                  className="bg-card"
-                />
-              </div>
+              <RecipientDetails
+                defaultOpen={
+                  department.to.length === 0 || !department.name.trim()
+                }
+              >
+                <summary className="cursor-pointer text-sm text-muted-foreground marker:text-primary">
+                  <span>
+                    {department.description || "Set inquiry matching rules"}
+                  </span>
+                  <span className="mt-1 block break-words pl-4 text-xs">
+                    {department.to.length
+                      ? `Email to ${department.to.join(", ")}`
+                      : "No recipients configured"}{" "}
+                    · Edit
+                  </span>
+                </summary>
+                <div className="mt-4 space-y-4">
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor={`dept-name-${department.key}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Name
+                    </Label>
+                    <Input
+                      id={`dept-name-${department.key}`}
+                      value={department.name}
+                      maxLength={MAX_NAME}
+                      disabled={disabled}
+                      placeholder="e.g. Corporate"
+                      onChange={(e) =>
+                        update(department.key, { name: e.target.value })
+                      }
+                      className="bg-card"
+                    />
+                  </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor={`dept-description-${department.key}`} className="text-xs text-muted-foreground">
-                  Description
-                </Label>
-                <Textarea
-                  id={`dept-description-${department.key}`}
-                  rows={2}
-                  value={department.description}
-                  disabled={disabled}
-                  placeholder="e.g. Company meetings, offsites, trainings, client dinners"
-                  onChange={(e) => update(department.key, { description: e.target.value })}
-                  className="bg-card"
-                />
-                <div className="flex justify-between gap-2 text-[11px]">
-                  <span className="text-muted-foreground">
-                    Which inquiries belong here. Examples help with borderline calls.
-                  </span>
-                  <span
-                    className={
-                      descriptionLength > MAX_DESCRIPTION ? "shrink-0 text-destructive" : "shrink-0 text-muted-foreground"
-                    }
-                  >
-                    {descriptionLength}/{MAX_DESCRIPTION}
-                  </span>
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor={`dept-description-${department.key}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Which inquiries should go here?
+                    </Label>
+                    <Textarea
+                      id={`dept-description-${department.key}`}
+                      rows={2}
+                      value={department.description}
+                      disabled={disabled}
+                      placeholder="e.g. Company meetings, offsites, trainings, client dinners"
+                      onChange={(e) =>
+                        update(department.key, { description: e.target.value })
+                      }
+                      className="bg-card"
+                    />
+                    <div className="flex justify-between gap-2 text-[11px]">
+                      <span className="text-muted-foreground">
+                        Which inquiries belong here. Examples help with
+                        borderline calls.
+                      </span>
+                      <span
+                        className={
+                          descriptionLength > MAX_DESCRIPTION
+                            ? "shrink-0 text-destructive"
+                            : "shrink-0 text-muted-foreground"
+                        }
+                      >
+                        {descriptionLength}/{MAX_DESCRIPTION}
+                      </span>
+                    </div>
+                  </div>
+
+                  <EmailTagInput
+                    id={`dept-to-${department.key}`}
+                    label="Send to"
+                    hint="Press Enter after each address. Every recipient sees the others."
+                    addresses={department.to}
+                    disabled={disabled}
+                    onChange={(to) => update(department.key, { to })}
+                  />
+                  <EmailTagInput
+                    id={`dept-cc-${department.key}`}
+                    label="CC"
+                    hint="Optional. Copied on every inquiry sent to this department."
+                    addresses={department.cc}
+                    disabled={disabled}
+                    onChange={(cc) => update(department.key, { cc })}
+                  />
                 </div>
-              </div>
-
-              <EmailTagInput
-                id={`dept-to-${department.key}`}
-                label="Send to"
-                hint="Press Enter after each address. Every recipient sees the others."
-                addresses={department.to}
-                disabled={disabled}
-                onChange={(to) => update(department.key, { to })}
-              />
-              <EmailTagInput
-                id={`dept-cc-${department.key}`}
-                label="CC"
-                hint="Optional. Copied on every inquiry sent to this department."
-                addresses={department.cc}
-                disabled={disabled}
-                onChange={(cc) => update(department.key, { cc })}
-              />
+              </RecipientDetails>
             </li>
           )
         })}
@@ -241,13 +301,33 @@ export function SalesDepartmentsEditor({
           disabled={disabled || departments.length >= MAX_DEPARTMENTS}
           onClick={add}
         >
-          <Plus className="mr-2 size-4" /> Add department
+          <Plus className="mr-2 size-4" /> Add recipient group
         </Button>
         <p className="text-xs text-muted-foreground">
-          {departments.length} of {MAX_DEPARTMENTS} departments
+          {departments.length} of {MAX_DEPARTMENTS} recipient groups
         </p>
       </div>
     </div>
+  )
+}
+
+// Keep an editor open while its first recipient is being entered.
+function RecipientDetails({
+  defaultOpen,
+  children,
+}: {
+  defaultOpen: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = React.useState(defaultOpen)
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="group"
+    >
+      {children}
+    </details>
   )
 }
 
@@ -281,7 +361,9 @@ function EmailTagInput({
       noun="addresses"
       separators={/[\s,;]+/}
       inputType="email"
-      validate={(value) => (EMAIL_RE.test(value) ? null : `“${value}” isn't a valid email address.`)}
+      validate={(value) =>
+        EMAIL_RE.test(value) ? null : `“${value}” isn't a valid email address.`
+      }
     />
   )
 }

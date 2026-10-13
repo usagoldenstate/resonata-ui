@@ -1,5 +1,6 @@
 "use client"
 
+import { BrandLogo } from "@/components/brand-logo"
 import { Skeleton } from "@/components/ui/skeleton"
 
 // Static placeholder for the authenticated shell, shown while Clerk's JS is
@@ -9,17 +10,15 @@ import { Skeleton } from "@/components/ui/skeleton"
 // right — instead of a blank white screen. It deliberately depends on no
 // context/hooks so it can render before any provider exists, and it mirrors the
 // real layout's outer container (`min-h-screen bg-background flex`) and sidebar
-// width (`w-60`) so the transition to the live UI doesn't shift.
+// width (`w-64`) so the transition to the live UI doesn't shift.
 export function AppShellSkeleton() {
   return (
     <div className="min-h-screen bg-background flex" aria-busy="true" aria-label="Loading">
-      <aside className="hidden md:flex h-dvh w-60 shrink-0 bg-sidebar border-r border-sidebar-border flex-col">
+      <aside className="hidden md:flex h-dvh w-64 shrink-0 bg-sidebar border-r border-sidebar-border flex-col">
         <div className="p-6">
           {/* Wordmark is cheap and stable, so show it for real rather than as a
               bar — it's the one bit of the shell that never changes. */}
-          <h1 className="text-xl font-semibold text-sidebar-foreground">
-            Resona<span className="text-[#6b7a4a]">ta</span>
-          </h1>
+          <BrandLogo />
         </div>
 
         <div className="px-4 pb-4">
