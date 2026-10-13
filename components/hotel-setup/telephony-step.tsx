@@ -204,9 +204,10 @@ export function TelephonyStep({ ctx }: { ctx: StepContext }) {
           its greeting.
         </p>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          The number also has to be on LiveKit&apos;s inbound trunk with its routing rule:
-          re-run the LiveKit telephony provisioning after saving, and after any later change to
-          these numbers. The exact steps are listed under &ldquo;Outside this app&rdquo; on the
+          A new number also has to be added to LiveKit: re-run the LiveKit telephony
+          provisioning after saving it (and after removing a number). Moving a number that is
+          already set up between lines needs no provisioning — calls follow the saved
+          assignment. The exact steps are listed under &ldquo;Outside this app&rdquo; on the
           Review step.
         </p>
       </StepCard>

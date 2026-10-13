@@ -1172,8 +1172,9 @@ function DoneStep({
           To put this demo hotel on the phone, give it a number in Settings →
           Reservations → AI Agent Phone Number. A number answers for only one
           hotel, so to reuse a shared demo number, clear it on the demo hotel
-          that has it first. Then re-run the LiveKit telephony provisioning so
-          the number routes here, and make a test call.
+          that has it first. A number already set up in LiveKit then routes here
+          on the next call; a brand-new number also needs the LiveKit telephony
+          provisioning re-run. Make a test call either way.
         </p>
         <Button
           type="button"

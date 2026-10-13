@@ -438,8 +438,10 @@ export default function SettingsPage() {
                     </div>
                   ))}
                   <p>
-                    After saving, re-run the LiveKit telephony provisioning so the change reaches
-                    LiveKit&apos;s routing, then make a test call to the number.
+                    A number that is already set up in LiveKit (for example, one moving between
+                    this hotel&apos;s reservations and sales lines) follows the change on the next
+                    call. A brand-new number, or one you remove, also needs the LiveKit telephony
+                    provisioning re-run. Either way, make a test call to the number.
                   </p>
                 </div>
               </AlertDialogDescription>
