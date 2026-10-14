@@ -20,7 +20,7 @@ import { useHotel, type HotelListItem } from "@/lib/hotel-context"
 type Selection = { id: string; hotelId: string }
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { confirmDiscardUnsaved, registerUnsavedGuard } from "@/lib/unsaved-guard"
-import { ApiError, fetchSalesAssignees, fetchSalesDepartmentOptions, formatHeadcount, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
+import { ApiError, fetchSalesAssignees, fetchSalesDepartmentOptions, formatHeadcount, guestRoomsLabel, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
 import { EVENT_CATEGORY_LABELS, INQUIRY_KIND_LABELS } from "@/lib/sales-inquiry-labels"
 
 // The response status: what the sales team has done since the call. Not "New"
@@ -325,7 +325,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{cards.map(card => <div key={card.label} className="metric-card rounded-2xl border border-border/80 bg-card p-5 shadow-xs"><div className="flex items-center justify-between text-sm text-muted-foreground">{card.label}<card.icon className={`size-4 ${card.color}`} /></div><p className="metric-value mt-3 text-3xl font-semibold tabular-nums">{!data || error || invalidDates || invalidEventDates ? "—" : card.value}</p></div>)}</div>
       <section className="overflow-hidden rounded-xl border bg-card shadow-sm" aria-label="Sales inquiries">
         <div className="space-y-4 border-b p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">Incoming inquiries</h2><p className="mt-1 text-xs text-muted-foreground">Automatically captured by your voice agent · Received times in {portfolio ? "each hotel's local time" : tzOf(hotelIds[0])}</p></div><div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">Sort by</span><OptionSelect aria-label="Sort inquiries" className={selectClass} value={sort} onValueChange={v => { setSort(v); setPage(0) }} options={[{ value: "newest", label: "Newest first" }, { value: "budget_desc", label: "Highest AI-estimated budget" }, { value: "event_date_asc", label: "Soonest event" }, { value: "headcount_desc", label: "Largest party" }]} /></div></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">Incoming inquiries</h2><p className="mt-1 text-xs text-muted-foreground">Automatically captured by your voice agent · Received times in {portfolio ? "each hotel's local time" : tzOf(hotelIds[0])}</p></div><div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">Sort by</span><OptionSelect aria-label="Sort inquiries" className={selectClass} value={sort} onValueChange={v => { setSort(v); setPage(0) }} options={[{ value: "newest", label: "Newest first" }, { value: "budget_desc", label: "Highest AI-estimated budget" }, { value: "event_date_asc", label: "Soonest event" }, { value: "headcount_desc", label: "Largest party" }, { value: "guest_rooms_desc", label: "Most guest rooms" }]} /></div></div>
           <div className="flex flex-wrap gap-3">
             <label className="relative min-w-60 flex-1"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Search inquiries" placeholder="Search name, phone, email, request, or rep…" value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-9" /></label>
             <Popover open={receivedOpen} onOpenChange={setReceivedOpen}>
@@ -389,6 +389,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
               <tbody className="divide-y">{data.items.map(row => <tr key={row.id} className={`cursor-pointer align-top transition-colors hover:bg-muted/30 ${selectedId === row.id ? "bg-muted/40" : ""}`} onClick={() => { setSelected({ id: row.id, hotelId: row.hotel_id }); setDismissed(false) }}>
                 <td className="py-3 pl-4 pr-3">
                   <button className="max-w-full truncate text-left font-medium hover:underline focus-visible:outline-ring" title={row.caller_name || "Name not provided"} onClick={() => setSelected({ id: row.id, hotelId: row.hotel_id })}>{row.caller_name || "Name not provided"}</button>
+                  {row.company && <p className="mt-0.5 truncate text-xs font-medium" title={row.company}>{row.company}</p>}
                   <p className="mt-0.5 truncate text-xs text-muted-foreground" title={row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || undefined}>{row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || "No contact provided"}</p>
                   <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{timestamp(row.created_at, tzOf(row.hotel_id))}</p>
                   {portfolio && <p className="mt-1 truncate text-xs font-medium text-muted-foreground" title={nameOf(row.hotel_id)}>{nameOf(row.hotel_id)}</p>}
@@ -477,13 +478,15 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
     { label: "Event", value: row.event_type || "Not mentioned", icon: Sparkles },
     { label: "Event category", value: category, icon: Sparkles },
     ...(row.event_dates_text || row.event_start_date ? [{ label: "Dates mentioned", value: dates(row), icon: CalendarDays }] : []),
+    ...(row.alternate_dates_text ? [{ label: "Alternate dates", value: row.alternate_dates_text, icon: CalendarDays }] : []),
   ] : [
     { label: "Request", value: requestLabel(row), icon: Sparkles },
     { label: "Event category", value: category, icon: Sparkles },
     { label: "Event dates", value: dates(row), icon: CalendarDays },
+    ...(row.alternate_dates_text ? [{ label: "Alternate dates", value: row.alternate_dates_text, icon: CalendarDays }] : []),
     { label: "Party size", value: formatHeadcount(row) ? `${formatHeadcount(row)} guests` : "Not provided", icon: Users },
     { label: "Budget stated by caller", value: row.budget_text ?? "Not provided", icon: Wallet },
-    { label: "Guest rooms", value: row.needs_guest_rooms === null ? "Not provided" : row.needs_guest_rooms ? "Rooms needed" : "Not needed", icon: BedDouble },
+    { label: "Guest rooms", value: guestRoomsLabel(row) ?? "Not provided", icon: BedDouble },
   ]
   // Delivery is stored on the inquiry rather than in the follow-up log.
   // Merge it into the same newest-first timeline without changing server data.
@@ -504,7 +507,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
         </div>
         <div className="flex items-center gap-3.5">
           <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-brand-insights/20 bg-card text-lg font-semibold text-brand-insights shadow-xs">{initials}</div>
-          <div className="min-w-0"><h2 className="break-words text-2xl font-semibold tracking-tight">{row.caller_name || "Name not provided"}</h2><div className="mt-1 flex flex-wrap items-center gap-2"><KindBadge row={row} /><p className="text-sm text-muted-foreground">{requestLabel(row)}</p></div></div>
+          <div className="min-w-0"><h2 className="break-words text-2xl font-semibold tracking-tight">{row.caller_name || "Name not provided"}</h2>{row.company && <p className="break-words text-sm font-medium text-muted-foreground">{row.company}</p>}<div className="mt-1 flex flex-wrap items-center gap-2"><KindBadge row={row} /><p className="text-sm text-muted-foreground">{requestLabel(row)}</p></div></div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {row.callback_phone_e164 && <a className="inline-flex items-center gap-2 rounded-lg border border-brand-insights/15 bg-card px-3 py-2 text-sm font-medium shadow-xs transition-colors hover:border-brand-insights/40 hover:bg-brand-insights/5 focus-visible:outline-2 focus-visible:outline-ring" href={`tel:${row.callback_phone_e164}`}><Phone className="size-3.5 text-brand-insights" />{row.callback_phone_e164}<ArrowUpRight className="size-3 text-muted-foreground" /></a>}

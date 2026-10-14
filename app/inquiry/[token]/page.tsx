@@ -43,6 +43,7 @@ import {
   type PublicSalesInquiry,
   type SalesFollowUpOutcome,
   formatHeadcount,
+  guestRoomsLabel,
 } from "@/lib/api"
 import { EVENT_CATEGORY_LABELS, INQUIRY_KIND_LABELS } from "@/lib/sales-inquiry-labels"
 
@@ -209,6 +210,7 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="truncate text-lg font-semibold">{data.caller_name || "Caller"}</h2>
+              {data.company && <p className="truncate text-sm font-medium">{data.company}</p>}
               <p className="mt-0.5 text-sm text-muted-foreground">
                 {existing ? INQUIRY_KIND_LABELS.existing_inquiry : data.event_type || "Event not specified"}
                 {existing && data.event_type ? ` · ${data.event_type}` : ""}
@@ -259,15 +261,18 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
             {(!existing || data.event_dates_text || data.event_start_date) && (
               <Detail icon={<CalendarDays className="size-4" />}>{stayDates(data)}</Detail>
             )}
+            {data.alternate_dates_text && (
+              <Detail icon={<CalendarDays className="size-4" />}>
+                <span><span className="block text-xs">Alternate dates</span>{data.alternate_dates_text}</span>
+              </Detail>
+            )}
             {formatHeadcount(data) && (
               <Detail icon={<Users className="size-4" />}>{formatHeadcount(data)} people</Detail>
             )}
             {data.budget_text && <Detail icon={<Wallet className="size-4" />}><span><span className="block text-xs">Budget stated by caller</span>{data.budget_text}</span></Detail>}
             {!existing && <Detail icon={<Wallet className="size-4" />}><span><AiBudgetHelp label="AI-estimated total budget" /><span className="block text-foreground tabular-nums">{formatAiBudget(data)}</span></span></Detail>}
-            {data.needs_guest_rooms !== null && (
-              <Detail icon={<BedDouble className="size-4" />}>
-                {data.needs_guest_rooms ? "Needs guest rooms" : "No guest rooms needed"}
-              </Detail>
+            {guestRoomsLabel(data) && (
+              <Detail icon={<BedDouble className="size-4" />}>{guestRoomsLabel(data)}</Detail>
             )}
             {data.email && <Detail icon={<MessageSquareText className="size-4" />}>{data.email}</Detail>}
             <Detail icon={<Clock3 className="size-4" />}>Called {timestamp(data.created_at)}</Detail>

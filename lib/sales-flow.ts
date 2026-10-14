@@ -1,10 +1,11 @@
 import type { SalesGraphFlow, SalesGraphNode } from "@/lib/api"
 
 export const answerFields = {
-  custom: "Custom variable only", event_type: "Event type", event_dates_text: "Event dates",
-  dates_flexible: "Flexible dates", headcount_text: "Party size", needs_guest_rooms: "Guest rooms needed",
-  caller_name: "Caller name", callback_phone: "Callback number", email: "Email address",
-  budget_text: "Budget", notes: "Notes",
+  custom: "Custom variable only", event_type: "Event type", event_dates_text: "Event dates", alternate_dates_text: "Alternate dates",
+  dates_flexible: "Flexible dates", headcount_text: "Party size", needs_guest_rooms: "Guest rooms needed (yes/no)",
+  guest_rooms_text: "Number of guest rooms", caller_full_name: "Full name", caller_first_name: "First name",
+  caller_last_name: "Last name", company: "Company / organization", callback_phone: "Callback number",
+  email: "Email address", budget_text: "Budget", notes: "Notes",
 }
 
 export function validateGraph(flow: SalesGraphFlow): string[] {
