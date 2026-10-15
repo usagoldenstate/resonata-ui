@@ -433,6 +433,17 @@ export type CancellationAttempt = {
 // mailbox: "failed" means the last send attempt did not go out and the
 // reconcile job will retry; "gave_up" means it exhausted its retries — the
 // row exists, a person has to forward it.
+// A standard field names a concept, not a column: "headcount_text" and
+// "guest_rooms_text" also fill their low/high pair, and "caller_full_name"
+// fills both name columns.
+export type SalesAnswerField = "custom" | "event_type" | "event_dates_text" | "alternate_dates_text" | "dates_flexible" | "headcount_text" | "needs_guest_rooms" | "guest_rooms_text" | "caller_full_name" | "caller_first_name" | "caller_last_name" | "company" | "callback_phone" | "email" | "budget_text" | "notes"
+export type SalesGraphRoute = { id: string; target: string | null; condition: string | null; answer_from: string | null }
+export type SalesGraphNode = {
+  id: string; text: string; variable: string
+  field: SalesAnswerField; position: { x: number; y: number }; routes: SalesGraphRoute[]
+}
+export type SalesGraphFlow = { version: 2; entry_id: string | null; nodes: SalesGraphNode[] }
+
 export type SalesIntakeQuestion = { id: string; text: string }
 export type SalesIntakeQuestionInput = { id?: string; text: string }
 // One sales department inquiries can be routed to (Hotel.sales_departments).
@@ -452,12 +463,18 @@ export type SalesInquiryCustomAnswer = {
   question_id: string
   question: string | null
   answer: string
+  variable?: string | null
 }
 
 export type SalesInquiry = {
+  answer_variables?: Record<string, string>
   custom_answers?: SalesInquiryCustomAnswer[]
   id: string
+  // First + last joined for display; the parts ride alongside.
   caller_name: string | null
+  caller_first_name?: string | null
+  caller_last_name?: string | null
+  company?: string | null
   // Strictly the number the caller asked for, or null when they gave none or
   // it couldn't be parsed. The caller id is always alongside so sales has a
   // second number to try; the two often match.
@@ -477,6 +494,9 @@ export type SalesInquiry = {
   event_category?: SalesEventCategory | null
   event_category_status?: "pending" | "complete" | "failed"
   event_dates_text: string | null
+  // Backup dates in the caller's words; its own field, never merged into
+  // event_dates_text.
+  alternate_dates_text?: string | null
   event_start_date: string | null
   event_end_date: string | null
   dates_flexible: boolean | null
@@ -486,6 +506,10 @@ export type SalesInquiry = {
   headcount_min: number | null
   headcount_max: number | null
   needs_guest_rooms: boolean | null
+  // Guest rooms (the room block): same shape as the party size.
+  guest_rooms_text?: string | null
+  guest_rooms_min?: number | null
+  guest_rooms_max?: number | null
   // The caller's own words plus the post-call AI-estimated total-event range.
   // Money crosses the wire as decimal strings.
   budget_text: string | null
@@ -881,6 +905,9 @@ export type HotelDetail = {
   // automatic list is the hotel's numbers already on file — read-only.
   sales_ignored_caller_numbers?: string[]
   sales_automatic_ignored_numbers?: string[]
+  sales_intake_flow?: SalesGraphFlow | null
+  sales_intake_graph?: SalesGraphFlow | null
+  sales_intake_recommended_graph?: SalesGraphFlow | null
   sales_intake_questions?: SalesIntakeQuestion[]
   // The sales line's own opener (null = the template) and the template
   // rendered for this hotel. Operator-editable via Agent Configuration.
@@ -1169,6 +1196,9 @@ export type HotelOperatorUpdate = {
   // Replaces the whole list. Normalized server-side to E.164; an invalid
   // number is refused with a 422 naming it.
   sales_ignored_caller_numbers?: string[]
+  sales_intake_flow?: SalesGraphFlow | null
+  sales_intake_graph?: SalesGraphFlow | null
+  sales_intake_recommended_graph?: SalesGraphFlow | null
   sales_intake_questions?: SalesIntakeQuestionInput[]
   // Replaces the whole list. A non-empty list needs exactly one catch_all;
   // an empty one is refused while the sales line is on.
@@ -1844,9 +1874,13 @@ export function updateSalesInquiry(hotelId: string, id: string, body: SalesInqui
 // route). Everything the page renders comes back in one response.
 export type SalesFollowUpOutcome = "call_attempted" | "contacted" | "booked" | "closed"
 export type PublicSalesInquiry = {
+  answer_variables?: Record<string, string>
   custom_answers?: SalesInquiryCustomAnswer[]
   hotel_display_name: string
   caller_name: string | null
+  caller_first_name?: string | null
+  caller_last_name?: string | null
+  company?: string | null
   callback_phone_e164: string | null
   caller_id_phone_e164: string | null
   email: string | null
@@ -1862,6 +1896,9 @@ export type PublicSalesInquiry = {
   // the classifier has run.
   event_category?: SalesEventCategory | null
   event_dates_text: string | null
+  // Backup dates in the caller's words; its own field, never merged into
+  // event_dates_text.
+  alternate_dates_text?: string | null
   event_start_date: string | null
   event_end_date: string | null
   dates_flexible: boolean | null
@@ -1871,6 +1908,10 @@ export type PublicSalesInquiry = {
   headcount_min: number | null
   headcount_max: number | null
   needs_guest_rooms: boolean | null
+  // Guest rooms (the room block): same shape as the party size.
+  guest_rooms_text?: string | null
+  guest_rooms_min?: number | null
+  guest_rooms_max?: number | null
   // The caller's own words plus the post-call AI-estimated total-event range.
   budget_text: string | null
   estimated_budget_min: string | null
@@ -1916,11 +1957,35 @@ export function formatHeadcount(row: {
   headcount_min: number | null
   headcount_max: number | null
 }): string | null {
-  if (row.headcount_min === null || row.headcount_max === null) return row.headcount_text
-  const figure =
-    row.headcount_min === row.headcount_max
-      ? row.headcount_min.toLocaleString()
-      : `${row.headcount_min.toLocaleString()}\u2013${row.headcount_max.toLocaleString()}`
-  if (!row.headcount_text || row.headcount_text.toLowerCase() === figure.toLowerCase()) return figure
-  return `${row.headcount_text} (${figure})`
+  return formatRange(row.headcount_text, row.headcount_min, row.headcount_max)
+}
+
+// Guest rooms, rendered exactly like the party size.
+export function formatGuestRooms(row: {
+  guest_rooms_text?: string | null
+  guest_rooms_min?: number | null
+  guest_rooms_max?: number | null
+}): string | null {
+  return formatRange(row.guest_rooms_text ?? null, row.guest_rooms_min ?? null, row.guest_rooms_max ?? null)
+}
+
+// The guest-room line both inquiry pages show: the count when there is one
+// ("30–40 rooms", or the caller's own words), else the yes/no answer.
+export function guestRoomsLabel(row: {
+  guest_rooms_text?: string | null
+  guest_rooms_min?: number | null
+  guest_rooms_max?: number | null
+  needs_guest_rooms: boolean | null
+}): string | null {
+  const rooms = formatGuestRooms(row)
+  if (rooms) return /^[\d,\u2013]+$/.test(rooms) ? `${rooms} rooms` : rooms
+  if (row.needs_guest_rooms === null) return null
+  return row.needs_guest_rooms ? "Rooms needed, number not given" : "No guest rooms needed"
+}
+
+function formatRange(text: string | null, low: number | null, high: number | null): string | null {
+  if (low === null || high === null) return text
+  const figure = low === high ? low.toLocaleString() : `${low.toLocaleString()}\u2013${high.toLocaleString()}`
+  if (!text || text.toLowerCase() === figure.toLowerCase()) return figure
+  return `${text} (${figure})`
 }

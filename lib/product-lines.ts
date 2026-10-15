@@ -48,6 +48,7 @@ const prefix = (p: string) => (pathname: string) =>
 // knowledge base, agent configuration, settings, admin pages) is shared.
 // Ask Insights lives under /reporting, so it follows the reservation reports.
 const LINE_RULES: LineRule[] = [
+  { line: "sales", matches: prefix("/agent-config/sales-script") },
   { line: "reservations", matches: (pathname) => pathname === "/" },
   { line: "reservations", matches: prefix("/reporting") },
   { line: "reservations", matches: prefix("/faqs") },

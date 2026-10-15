@@ -12,6 +12,7 @@ export function SalesCustomAnswers({ answers, className = "" }: {
         {answers.map((entry, index) => (
           <div key={`${entry.question_id}-${index}`} className="space-y-1">
             <dt className="text-sm font-medium whitespace-pre-wrap break-words">{entry.question || "Additional question"}</dt>
+            {entry.variable && <div className="font-mono text-xs text-primary">{entry.variable}</div>}
             <dd className="text-sm text-muted-foreground whitespace-pre-wrap break-words">{entry.answer}</dd>
           </div>
         ))}
