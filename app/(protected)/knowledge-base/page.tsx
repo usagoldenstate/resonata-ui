@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Sidebar } from "@/components/sidebar"
 import { api, ApiError } from "@/lib/api"
 import { useHotel } from "@/lib/hotel-context"
+import { useCurrentUser } from "@/lib/current-user-context"
+import { KnowledgeTransferButtons } from "@/components/knowledge-base/knowledge-transfer-buttons"
 import { HotelLoadError, NoHotelAccess } from "@/components/hotel-access-state"
 import { registerUnsavedGuard } from "@/lib/unsaved-guard"
 import {
@@ -32,11 +34,15 @@ import {
 export default function KnowledgeBasePage() {
   const { hotelId, hotels, loading: hotelLoading, accessState, refresh } =
     useHotel()
+  const { isPlatformAdmin } = useCurrentUser()
   const [data, setData] = useState<PropertyData>(emptyKnowledgeBase)
   const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle")
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [saveError, setSaveError] = useState<string | null>(null)
+  // Bumped after a platform-admin import so the load effect re-fetches the
+  // freshly written knowledge base.
+  const [reloadNonce, setReloadNonce] = useState(0)
 
   // Saved-baseline JSON of the KB. We compare against the current serialization
   // to detect unsaved edits. Null while loading or before first successful load
@@ -96,7 +102,7 @@ export default function KnowledgeBasePage() {
     return () => {
       cancelled = true
     }
-  }, [hotelId, hotel?.display_name])
+  }, [hotelId, hotel?.display_name, reloadNonce])
 
   // Refresh/tab-close guard. Fires the browser's native "Leave site?" prompt
   // when the KB has unsaved edits.
@@ -280,6 +286,15 @@ export default function KnowledgeBasePage() {
                 <span className="text-xs text-destructive flex items-center gap-1.5">
                   <AlertCircle className="w-3.5 h-3.5" /> Save failed
                 </span>
+              )}
+              {isPlatformAdmin && (
+                <KnowledgeTransferButtons
+                  hotelId={hotelId}
+                  hotelName={hotel?.display_name}
+                  hasUnsavedChanges={kbDirty}
+                  disabled={loadState !== "ready" || saveState === "saving"}
+                  onImported={() => setReloadNonce((n) => n + 1)}
+                />
               )}
               <Button onClick={handleSave} disabled={topSaveDisabled}>
                 <Save className="w-4 h-4 mr-2" />
