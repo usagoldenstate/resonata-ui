@@ -1,4 +1,4 @@
-import type { SalesGraphFlow, SalesGraphNode } from "@/lib/api"
+import type { SalesGraphFlow, SalesGraphNode, SalesGraphRoute } from "@/lib/api"
 
 export const answerFields = {
   custom: "Custom variable only", event_type: "Event type", event_dates_text: "Event dates", alternate_dates_text: "Alternate dates",
@@ -267,4 +267,91 @@ export function exampleGraph(): SalesGraphFlow {
     question("preferred_dates", "What dates do you have in mind?", "event_dates_text", "new_inquiry_callback"),
     question("new_inquiry_callback", "What's the best number for a call back?", "callback_phone", null),
   ]})
+}
+
+// ── Script files (platform-admin Download / Upload in the builder) ─────────
+// A downloaded script is the builder's SalesGraphFlow wrapped in a small
+// envelope, so a file from one deployment or hotel can be loaded into another.
+// The flow references nothing hotel-specific (no departments, no numbers).
+
+export const SALES_SCRIPT_FILE_FORMAT = "resonata.sales_script"
+export const SALES_SCRIPT_FILE_VERSION = 1
+
+export type SalesScriptFile = {
+  format: typeof SALES_SCRIPT_FILE_FORMAT
+  format_version: typeof SALES_SCRIPT_FILE_VERSION
+  exported_at: string
+  source: { hotel_id: string; display_name: string | null; deployment: string | null }
+  flow: SalesGraphFlow
+}
+
+export function salesScriptFile(flow: SalesGraphFlow, source: SalesScriptFile["source"]): SalesScriptFile {
+  return {
+    format: SALES_SCRIPT_FILE_FORMAT,
+    format_version: SALES_SCRIPT_FILE_VERSION,
+    exported_at: new Date().toISOString(),
+    source,
+    flow: structuredClone(flow),
+  }
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v)
+const optionalString = (v: unknown) => v === null || v === undefined || typeof v === "string"
+const finite = (v: unknown, fallback = 0) => (typeof v === "number" && Number.isFinite(v) ? v : fallback)
+
+/** Parse a downloaded script file. Checks the envelope and the flow's shape (so a
+ * foreign or hand-edited file can't crash the builder) and keeps only the keys the
+ * backend accepts. Graph rules (start question, loops, fallbacks…) are left to
+ * validateGraph and to the server on save. */
+export function readSalesScriptFile(text: string): { file: SalesScriptFile } | { error: string } {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return { error: "That file isn't valid JSON." }
+  }
+  if (!isObject(raw) || raw.format !== SALES_SCRIPT_FILE_FORMAT) {
+    return { error: "That file isn't a Resonata sales script download." }
+  }
+  if (raw.format_version !== SALES_SCRIPT_FILE_VERSION) {
+    return { error: `This file is script file version ${String(raw.format_version)}; this dashboard reads version ${SALES_SCRIPT_FILE_VERSION}.` }
+  }
+  const flow = raw.flow
+  if (!isObject(flow) || flow.version !== 2 || !Array.isArray(flow.nodes) || !optionalString(flow.entry_id)) {
+    return { error: "The script in this file is missing or in an older format." }
+  }
+  if (flow.nodes.length > 60) return { error: "The script in this file has more than 60 questions." }
+  const nodes: SalesGraphNode[] = []
+  for (const n of flow.nodes) {
+    if (!isObject(n) || typeof n.id !== "string" || typeof n.text !== "string" || typeof n.variable !== "string"
+      || typeof n.field !== "string" || !(n.field in answerFields) || !Array.isArray(n.routes)) {
+      return { error: "A question in this file is incomplete or uses a field this dashboard doesn't know." }
+    }
+    const routes: SalesGraphRoute[] = []
+    for (const r of n.routes) {
+      if (!isObject(r) || typeof r.id !== "string" || !optionalString(r.target) || !optionalString(r.condition) || !optionalString(r.answer_from)) {
+        return { error: "A route in this file is incomplete." }
+      }
+      routes.push({ id: r.id, target: (r.target as string | null | undefined) ?? null, condition: (r.condition as string | null | undefined) ?? null, answer_from: (r.answer_from as string | null | undefined) ?? null })
+    }
+    const position = isObject(n.position) ? n.position : {}
+    nodes.push({
+      id: n.id, text: n.text, variable: n.variable, field: n.field as SalesGraphNode["field"],
+      position: { x: finite(position.x), y: finite(position.y) }, routes,
+    })
+  }
+  const source = isObject(raw.source) ? raw.source : {}
+  return {
+    file: {
+      format: SALES_SCRIPT_FILE_FORMAT,
+      format_version: SALES_SCRIPT_FILE_VERSION,
+      exported_at: typeof raw.exported_at === "string" ? raw.exported_at : "",
+      source: {
+        hotel_id: typeof source.hotel_id === "string" ? source.hotel_id : "unknown",
+        display_name: typeof source.display_name === "string" ? source.display_name : null,
+        deployment: typeof source.deployment === "string" ? source.deployment : null,
+      },
+      flow: { version: 2, entry_id: (flow.entry_id as string | null | undefined) ?? null, nodes },
+    },
+  }
 }

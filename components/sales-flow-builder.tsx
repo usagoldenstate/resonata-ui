@@ -11,6 +11,8 @@ import { api, type SalesGraphFlow, type SalesGraphNode, type SalesGraphRoute } f
 import { answerFields, arrangeGraph, exampleGraph, newQuestion, validateGraph } from "@/lib/sales-flow"
 import { reconcileSalesCanvasNodes, type SalesCanvasNode as FlowNode } from "@/lib/sales-flow-canvas"
 import { confirmDiscardUnsaved, registerUnsavedGuard } from "@/lib/unsaved-guard"
+import { useCurrentUser } from "@/lib/current-user-context"
+import { SalesFlowTransferButtons } from "@/components/sales-flow-transfer-buttons"
 
 const QuestionNode = memo(function QuestionNode({ id, data, selected }: NodeProps<FlowNode>) {
   const q = data.question
@@ -79,6 +81,7 @@ export function SalesFlowBuilder({ hotelId, hotelName }: { hotelId: string; hote
   const [preview, setPreview] = useState<SalesGraphFlow | null>(null)
   const [undo, setUndo] = useState<SalesGraphFlow[]>([])
   const [redo, setRedo] = useState<SalesGraphFlow[]>([])
+  const { isPlatformAdmin } = useCurrentUser()
   const canvas = useRef<ReactFlowInstance<FlowNode> | null>(null)
   const graphRef = useRef(graph); graphRef.current = graph
   const snapshot = JSON.stringify(graph)
@@ -122,6 +125,10 @@ export function SalesFlowBuilder({ hotelId, hotelName }: { hotelId: string; hote
   }
   function replaceFlow(next: SalesGraphFlow) {
     if (!window.confirm("Replace this draft? Your live script changes only when you save.")) return
+    loadFlow(next)
+  }
+  // Undoable; the caller has already confirmed (replaceFlow above, or the Upload dialog).
+  function loadFlow(next: SalesGraphFlow) {
     edit(()=>next);setSelected(next.entry_id)
     requestAnimationFrame(()=>canvas.current?.fitView({nodes:next.nodes.filter(n=>n.id===next.entry_id || next.nodes.find(entry=>entry.id===next.entry_id)?.routes.some(r=>r.target===n.id)),padding:0.2,minZoom:0.55,maxZoom:0.85,duration:250}))
   }
@@ -168,7 +175,7 @@ export function SalesFlowBuilder({ hotelId, hotelName }: { hotelId: string; hote
   return <div className="flex h-dvh min-h-[600px] flex-col bg-background">
     <header className="z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b bg-card px-5 py-4">
       <div className="flex items-center gap-4"><Link href="/agent-config" aria-label="Back to agent configuration" className="rounded-lg border p-2 hover:bg-muted" onClick={e=>{if(!confirmDiscardUnsaved())e.preventDefault()}}><ArrowLeft className="size-4" /></Link><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Sales agent · {hotelName}</p><h1 className="mt-1 text-lg font-semibold">Conversation builder</h1></div></div>
-      <div className="flex items-center gap-3"><span className="text-xs text-muted-foreground">{saving?"Saving…":dirty?"Unsaved changes":saved?"Saved":"All changes saved"}</span><Button variant="outline" disabled={baseline===null||errors.length>0} onClick={()=>setPreview(structuredClone(graph))}><Play className="mr-2 size-4" /> Preview path</Button><Button disabled={!dirty||saving||errors.length>0} onClick={save}><Save className="mr-2 size-4" /> Save script</Button></div>
+      <div className="flex items-center gap-3"><span className="text-xs text-muted-foreground">{saving?"Saving…":dirty?"Unsaved changes":saved?"Saved":"All changes saved"}</span>{isPlatformAdmin&&baseline!==null&&<SalesFlowTransferButtons hotelId={hotelId} hotelName={hotelName} flow={graph} hasUnsavedChanges={dirty} disabled={saving} onLoad={loadFlow}/>}<Button variant="outline" disabled={baseline===null||errors.length>0} onClick={()=>setPreview(structuredClone(graph))}><Play className="mr-2 size-4" /> Preview path</Button><Button disabled={!dirty||saving||errors.length>0} onClick={save}><Save className="mr-2 size-4" /> Save script</Button></div>
     </header>
     {saveError && <div role="alert" className="border-b bg-destructive/10 px-5 py-3 text-sm text-destructive">{saveError}</div>}
     {loadError ? <div className="m-auto max-w-md space-y-4 text-center"><p role="alert">{loadError}</p><Button variant="outline" onClick={()=>setRetry(r=>r+1)}>Retry loading script</Button></div> : baseline===null ? <div className="m-auto text-sm text-muted-foreground">Loading your conversation…</div> : <>
