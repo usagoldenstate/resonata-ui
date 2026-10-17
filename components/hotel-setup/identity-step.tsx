@@ -402,7 +402,7 @@ export function IdentityCreateForm() {
         ) : (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">Property management system</p>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2">
               {PMS_CHOICES.map((choice) => (
                 <RadioCard
                   key={choice.value}

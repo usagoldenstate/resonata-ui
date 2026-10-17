@@ -354,6 +354,7 @@ export function StatusPill({ status }: { status: SetupStepStatus }) {
 export const PMS_CHOICES = [
   { value: "stayntouch", label: "StayNTouch", blurb: "Live availability, quoting, card-hold pay links." },
   { value: "opera", label: "OPERA (OHIP)", blurb: "Live availability and quoting via the OHIP APIs." },
+  { value: "cloudbeds", label: "Cloudbeds", blurb: "Live availability and quoting. No booking or revenue attribution yet." },
   { value: "mock", label: "Mock / demo", blurb: "Fixture data — demos and pilots without a real PMS." },
 ]
 

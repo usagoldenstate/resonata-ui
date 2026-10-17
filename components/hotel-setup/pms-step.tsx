@@ -70,6 +70,37 @@ const STAYNTOUCH_FIELDS: CredentialField[] = [
   },
 ]
 
+// Property-level API key (Settings → API Credentials in Cloudbeds). The
+// client id/secret pair is OAuth-only and not used by the adapter.
+const CLOUDBEDS_FIELDS: CredentialField[] = [
+  {
+    key: "api_key",
+    label: "API key",
+    secret: true,
+    placeholder: "cbat_…",
+    hint: "Needs read access to hotel, room, rate and tax data.",
+  },
+  {
+    key: "property_id",
+    label: "Cloudbeds property ID",
+    placeholder: "114547743064192",
+    hint: "The numeric property id in Cloudbeds — not the Resonata hotel ID. The test checks the key is bound to it.",
+  },
+  {
+    key: "base_url",
+    label: "API base URL",
+    optional: true,
+    placeholder: "https://api.cloudbeds.com/api/v1.2",
+    hint: "Leave blank for the default production host.",
+  },
+]
+
+const PROVIDER_LABELS: Record<string, string> = {
+  stayntouch: "StayNTouch",
+  opera: "OPERA",
+  cloudbeds: "Cloudbeds",
+}
+
 const OPERA_BASE_FIELDS: CredentialField[] = [
   { key: "client_id", label: "Client ID" },
   { key: "client_secret", label: "Client secret", secret: true },
@@ -152,7 +183,7 @@ export function PmsStep({ ctx }: { ctx: StepContext }) {
       title="Property management system"
       description="Changeable while the hotel is inactive. Switching discards any credentials and cached rooms saved for the current one."
     >
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2">
         {PMS_CHOICES.map((choice) => (
           <RadioCard
             key={choice.value}
@@ -196,7 +227,9 @@ export function PmsStep({ ctx }: { ctx: StepContext }) {
               ? OPERA_PASSWORD_FIELDS
               : OPERA_CLIENT_CREDENTIALS_FIELDS),
           ]
-        : []
+        : provider === "cloudbeds"
+          ? CLOUDBEDS_FIELDS
+          : []
 
   const setValue = (key: string, value: string) =>
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -307,7 +340,7 @@ export function PmsStep({ ctx }: { ctx: StepContext }) {
     <div className="space-y-6">
       {providerPicker}
       <StepCard
-        title={`${provider === "stayntouch" ? "StayNTouch" : "OPERA"} credentials`}
+        title={`${PROVIDER_LABELS[provider] ?? provider} credentials`}
         description="Stored encrypted at rest and never returned to this page again. Nothing here is saved in your browser."
       >
         {loadError ? <Notice tone="error">{loadError}</Notice> : null}
