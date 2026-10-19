@@ -9,7 +9,10 @@
 // Retention is the backend's call: recordings live in our own storage, and a
 // recording that is gone (expired, deleted, or never uploaded) comes back as a
 // 404 whose detail ("Recording not available") is shown as-is. There is no
-// client-side age cutoff.
+// client-side age cutoff. Right after a call the file may still be uploading:
+// the backend then answers 404 with reason "processing", and the player checks
+// again every few seconds until the audio arrives or the backend gives a final
+// answer (it stops saying "processing" once the upload window has passed).
 
 import { useEffect, useState } from "react"
 import useSWR from "swr"
@@ -26,8 +29,17 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-// A 4xx (no recording, no access) won't change on retry; only transient
-// failures (5xx, network) are worth SWR's backoff retries.
+const PROCESSING_POLL_MS = 10_000
+const TRANSIENT_RETRY_BASE_MS = 5_000
+
+// The backend's "still uploading" answer: the only 4xx worth checking again.
+function isProcessing(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 404) return false
+  return (error.body as { reason?: unknown } | undefined)?.reason === "processing"
+}
+
+// Any other 4xx (no recording, no access) won't change on retry; only
+// transient failures (5xx, network) are worth backoff retries.
 function isPermanentError(error: unknown): boolean {
   return error instanceof ApiError && error.status >= 400 && error.status < 500
 }
@@ -40,7 +52,19 @@ export function CallRecordingPlayer({ callId }: { callId: string }) {
   } = useSWR(
     ["call-recording", callId] as const,
     ([, id]) => fetchCallRecording(id),
-    { shouldRetryOnError: (err) => !isPermanentError(err) },
+    {
+      shouldRetryOnError: (err) => isProcessing(err) || !isPermanentError(err),
+      onErrorRetry: (err, _key, _config, revalidate, opts) => {
+        if (isProcessing(err)) {
+          // Steady polling while the upload finishes; the backend ends it.
+          setTimeout(() => revalidate(opts), PROCESSING_POLL_MS)
+          return
+        }
+        // Exponential backoff for transient failures, as SWR's default.
+        const step = Math.min(opts.retryCount, 8)
+        setTimeout(() => revalidate(opts), TRANSIENT_RETRY_BASE_MS * 2 ** step)
+      },
+    },
   )
   const [url, setUrl] = useState<string | null>(null)
 
@@ -54,6 +78,11 @@ export function CallRecordingPlayer({ callId }: { callId: string }) {
     return () => URL.revokeObjectURL(objectUrl)
   }, [blob])
 
+  // Checked before isLoading: each re-check has no audio yet, so SWR reports
+  // it as loading, and the spinner would flash in and out between checks.
+  if (isProcessing(error)) {
+    return <p className="text-sm text-muted-foreground">{describeError(error)}</p>
+  }
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
