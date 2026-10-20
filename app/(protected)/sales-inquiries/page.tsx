@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
-import { AlertTriangle, ArrowUpRight, CheckCircle2, Headphones, ChevronLeft, ChevronRight, Inbox, Link2, Loader2, Mail, Phone, RefreshCw, Search, Users, CalendarDays, BedDouble, MessageSquareText, Clock3, UserRound, Sparkles, Send, History, Wallet, X, Plus, Check, ChevronDown, ArrowLeft } from "lucide-react"
+import { AlertTriangle, ArrowUpRight, CheckCircle2, Headphones, ChevronLeft, ChevronRight, Inbox, Link2, Loader2, Mail, Phone, RefreshCw, Search, Users, CalendarDays, BedDouble, MessageSquareText, Clock3, UserRound, Sparkles, Send, History, Wallet, X, Plus, Check, ChevronDown, ArrowLeft, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
@@ -14,13 +14,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { OptionSelect } from "@/components/ui/option-select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import { CallRecordingPlayer } from "@/components/call-recording-player"
 import { useHotel, type HotelListItem } from "@/lib/hotel-context"
+import { useCurrentUser } from "@/lib/current-user-context"
 type Selection = { id: string; hotelId: string }
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { confirmDiscardUnsaved, registerUnsavedGuard } from "@/lib/unsaved-guard"
-import { ApiError, fetchSalesAssignees, fetchSalesDepartmentOptions, formatHeadcount, guestRoomsLabel, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
+import { ApiError, deleteSalesInquiry, fetchSalesAssignees, fetchSalesDepartmentOptions, formatHeadcount, guestRoomsLabel, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
 import { EVENT_CATEGORY_LABELS, INQUIRY_KIND_LABELS } from "@/lib/sales-inquiry-labels"
 
 // The response status: what the sales team has done since the call. Not "New"
@@ -228,6 +230,11 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   const [dismissed, setDismissed] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const saving = useRef(false)
+  const { isPlatformAdmin } = useCurrentUser()
+  // Platform-admin only. The header's trash button only opens the
+  // confirmation; the DELETE fires from its confirm action.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const q = useDebouncedValue(search, 300)
   const invalidDates = !!(dateFrom && dateTo && dateFrom > dateTo)
   const invalidEventDates = !!(eventFrom && eventTo && eventFrom > eventTo)
@@ -262,6 +269,22 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
       } else toast.error("Could not save changes. Please try again.")
       return false
     } finally { saving.current = false; setBusy(null) }
+  }
+  async function confirmDelete() {
+    const target = current
+    setConfirmingDelete(false)
+    if (!target) return
+    setDeleting(true)
+    try {
+      await deleteSalesInquiry(target.hotelId, target.id)
+      // Close without the unsaved-notes prompt: the notes went with the inquiry.
+      setSelected(null)
+      setDismissed(true)
+      toast.success("Inquiry deleted")
+      void mutate()
+    } catch (e) {
+      toast.error(e instanceof ApiError && e.status === 404 ? "This inquiry no longer exists." : "Could not delete the inquiry. Please try again.")
+    } finally { setDeleting(false) }
   }
   function clearFilters() { setSearch(""); setCategory(""); setKind(""); setStatus(""); setOwner(""); setDepartment(""); setEmail(""); setDateFrom(""); setDateTo(""); setEventFrom(""); setEventTo(""); setBudgetMinimum(""); setCallId(null); setEditingTag(null); setPage(0) }
   // Received presets count back from today in the hotel's own calendar; a
@@ -410,10 +433,11 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
     </div>
     <Dialog open={!!selectedId} onOpenChange={open => { if (!open && confirmDiscardUnsaved()) { setSelected(null); setDismissed(true) } }}>
       <DialogContent showCloseButton={false} className="[--brand-insights:#e8622d] [--primary:#e8622d] [--primary-foreground:#29140c] dark:[--brand-insights:#ff975c] dark:[--primary:#ff975c] flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-background p-0 shadow-2xl sm:max-w-6xl">
-        <DialogHeader className="relative shrink-0 border-b bg-card px-4 py-4 pr-14 text-left sm:px-6 sm:pr-14">
+        <DialogHeader className={`relative shrink-0 border-b bg-card px-4 py-4 text-left sm:px-6 ${isPlatformAdmin ? "pr-24 sm:pr-24" : "pr-14 sm:pr-14"}`}>
           <div className="flex items-center gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-insights/10 text-brand-insights"><Inbox className="size-4" /></span>
             <div><DialogTitle className="text-base tracking-tight">Sales inquiry</DialogTitle><DialogDescription className="mt-0.5 text-xs">Guest details &amp; follow-up</DialogDescription></div>
+            {isPlatformAdmin && <button type="button" aria-label="Delete inquiry" title="Delete inquiry" disabled={deleting || !detail.data} onClick={() => setConfirmingDelete(true)} className="absolute right-14 top-5 flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50">{deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}</button>}
             <DialogClose asChild><button aria-label="Close inquiry" className="absolute right-4 top-5 flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><X className="size-4" /></button></DialogClose>
           </div>
         </DialogHeader>
@@ -422,6 +446,20 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
         </div>
       </DialogContent>
     </Dialog>
+    <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this inquiry?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes the sales inquiry{detail.data?.caller_name ? <> from <span className="font-medium text-foreground">{detail.data.caller_name}</span></> : null}, including its follow-up history and notes. The call recording and transcript stay in the call log. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={() => void confirmDelete()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete inquiry</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </>
 }
 

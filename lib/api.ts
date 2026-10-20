@@ -1866,6 +1866,10 @@ export function fetchSalesInquiry(hotelId: string, id: string) {
 export function updateSalesInquiry(hotelId: string, id: string, body: SalesInquiryPatch) {
   return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }), { method: "PATCH", body })
 }
+// Platform-admin only; anyone else gets a 404.
+export function deleteSalesInquiry(hotelId: string, id: string) {
+  return api<void>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }), { method: "DELETE", parseJson: false })
+}
 
 // ── The emailed follow-up page ──────────────────────────────────────────────
 // Reached from the sales notification email with no Clerk session; the signed
