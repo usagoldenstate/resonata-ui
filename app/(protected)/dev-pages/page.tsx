@@ -22,6 +22,7 @@ import { toast } from "sonner"
 
 import { BookingEnginePanel } from "@/components/booking-engine-panel"
 import { HotelSetupPanel } from "@/components/hotel-setup/hotel-setup-panel"
+import { PhoneNumbersPanel } from "@/components/telephony/phone-numbers-panel"
 import { OrganizationsPanel } from "@/components/organizations-panel"
 import { UserAccessPanel } from "@/components/user-access-panel"
 import { Sidebar } from "@/components/sidebar"
@@ -63,8 +64,10 @@ type DevTab =
   | "user-access"
   | "organizations"
   | "hotel-setup"
+  | "phone-numbers"
 
 const DEV_TABS: Array<{ id: DevTab; label: string; icon: React.ReactNode }> = [
+  { id: "phone-numbers", label: "Phone Numbers", icon: <Link2 className="w-4 h-4" /> },
   { id: "persona", label: "Persona Override", icon: <FileText className="w-4 h-4" /> },
   { id: "booking-engine", label: "Booking Engine", icon: <Link2 className="w-4 h-4" /> },
   { id: "user-access", label: "User Access", icon: <Users className="w-4 h-4" /> },
@@ -161,6 +164,7 @@ function DevPagesTabs() {
             {/* Mounted only while selected: the wizard reads `?hotel=`/`?step=`
                 and fires loads on mount, which a hidden tab shouldn't do. */}
             {activeTab === "hotel-setup" ? <HotelSetupPanel /> : null}
+            {activeTab === "phone-numbers" ? <PhoneNumbersPanel /> : null}
           </>
         ) : (
           <StateNotice tone="error" message="This page is only available to platform admins." />
