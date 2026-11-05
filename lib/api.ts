@@ -863,6 +863,9 @@ export function fetchAdminHotels(opts: Pick<Options, "signal"> = {}) {
 // schema (only the fields the UI touches are typed here).
 export type HotelDetail = {
   hotel_id: string
+  // Where this hotel's sales leads are forwarded. Holds no secret; null =
+  // nowhere. Platform admins edit it (PATCH platform-settings).
+  lead_delivery?: LeadDeliveryConfig | null
   display_name: string
   timezone: string
   // Organization membership. Platform-admin only; null = independent hotel.
@@ -1235,6 +1238,9 @@ export type HotelPlatformUpdate = {
   reservation_flow?: ReservationFlow
   is_active?: boolean
   commission_rate_basis_points?: number
+  // Full replace; null removes it. Editing the destination pauses waiting
+  // deliveries for review.
+  lead_delivery?: LeadDeliveryConfig | null
 }
 
 // Base URL of the FastAPI backend, used to render the exact webhook URL an
@@ -1268,6 +1274,83 @@ export function updateHotelPlatformSettings(
     method: "PATCH",
     body,
   })
+}
+
+// Per-hotel sales lead delivery (Salesforce Web-to-Lead).
+export type LeadDeliveryExtraField = { name: string; value: string }
+export type LeadDeliveryConfig = {
+  provider: "salesforce_web_to_lead"
+  enabled: boolean
+  org_id: string
+  lead_source: string
+  // Salesforce custom field IDs only, e.g. Property / Company.
+  extra_fields: LeadDeliveryExtraField[]
+}
+export type LeadDeliveryStatus = "pending" | "sending" | "submitted" | "failed" | "gave_up" | "needs_review" | "skipped"
+// What authorized hotel users see. "submitted" means Salesforce received the
+// request, never that a lead was created: Web-to-Lead cannot confirm that.
+export type LeadDeliveryState = {
+  provider: string
+  // From the delivery itself, so history keeps its label if the hotel moves on.
+  provider_label: string
+  status: LeadDeliveryStatus
+  reason: string | null
+  submitted_at: string | null
+  next_attempt_at: string | null
+  updated_at: string | null
+  // Platform-admin diagnostics and retry. Null on a superseded submission.
+  delivery_id: string | null
+}
+export type LeadDeliveryAttempt = {
+  id: string
+  attempt_number: number
+  started_at: string
+  finished_at: string | null
+  outcome: "submitted" | "definitely_not_sent" | "failed" | "unknown"
+  error_class: string | null
+  destination_ref: string
+}
+export type LeadDeliveryDiagnostics = LeadDeliveryState & {
+  id: string
+  provider_call_id: string
+  sales_inquiry_id: string | null
+  destination: Record<string, unknown>
+  send_attempts: number
+  processing_failures: number
+  processing_error_class: string | null
+  has_late_submission: boolean
+  attempts: LeadDeliveryAttempt[]
+}
+export type LeadDeliveryTestPreview = {
+  test_id: string
+  destination_fingerprint: string
+  provider: string
+  fields: Record<string, string>
+}
+export type LeadDeliveryTestResult = { status: "submitted" | "failed"; reason: string | null }
+
+export function fetchLeadDeliveryTestPreview(hotelId: string) {
+  return api<LeadDeliveryTestPreview>(`/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/lead-delivery/test-preview`)
+}
+export function sendLeadDeliveryTest(
+  hotelId: string,
+  body: Pick<LeadDeliveryTestPreview, "test_id" | "destination_fingerprint">,
+) {
+  return api<LeadDeliveryTestResult>(`/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/lead-delivery/test`, {
+    method: "POST",
+    body,
+  })
+}
+export function fetchLeadDeliveryDiagnostics(hotelId: string, deliveryId: string) {
+  return api<LeadDeliveryDiagnostics>(
+    `/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/sales-lead-deliveries/${encodeURIComponent(deliveryId)}`,
+  )
+}
+export function retryLeadDelivery(hotelId: string, deliveryId: string) {
+  return api<LeadDeliveryDiagnostics>(
+    `/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/sales-lead-deliveries/${encodeURIComponent(deliveryId)}/retry`,
+    { method: "POST" },
+  )
 }
 
 export type OperaCancellationCatalogItem = {
@@ -1818,6 +1901,9 @@ export type SalesInquiryItem = SalesInquiry & {
   // True once a privacy erasure has pseudonymized the row. It stays listed for
   // its event lineage but is read-only: the PATCH refuses (409).
   erased: boolean
+  // Present only when this inquiry has a delivery; a hotel with no lead
+  // delivery has none, so its rows show no empty column.
+  lead_delivery?: LeadDeliveryState | null
 }
 // One save is one entry: the outcome line in `text`, the typed note beneath.
 export type SalesActivity = {

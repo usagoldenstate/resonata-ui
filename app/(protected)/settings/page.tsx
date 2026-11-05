@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/select"
 import { Sidebar } from "@/components/sidebar"
 import { SetupHealthCard } from "@/components/hotel-setup/setup-health-card"
+import { LeadDeliveryCard } from "@/components/lead-delivery-card"
 import { OperaCancellationCard } from "@/components/opera-cancellation-card"
 import { StaynTouchCancellationCard } from "@/components/stayntouch-cancellation-card"
 import { useHotel } from "@/lib/hotel-context"
@@ -1167,6 +1168,13 @@ export default function SettingsPage() {
                           </div>
                         </CardContent>
                       </Card>
+                    )}
+                    {savedLines.sales && hotelId && detail && (
+                      <LeadDeliveryCard
+                        hotelId={hotelId}
+                        saved={detail.lead_delivery ?? null}
+                        onSaved={setDetail}
+                      />
                     )}
                     {savedLines.reservations &&
                       detail?.pms_provider === "opera" &&

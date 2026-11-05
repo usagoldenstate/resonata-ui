@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import { CallRecordingPlayer } from "@/components/call-recording-player"
+import { LeadDeliveryBadge, LeadDeliveryPanel } from "@/components/lead-delivery-status"
 import { useHotel, type HotelListItem } from "@/lib/hotel-context"
 import { useCurrentUser } from "@/lib/current-user-context"
 type Selection = { id: string; hotelId: string }
@@ -422,7 +423,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
                 <td className={`px-3 py-3 text-xs leading-5 tabular-nums ${row.estimated_budget_min !== null || row.estimated_budget_max !== null ? "font-medium" : "text-muted-foreground"}`}>{formatAiBudget(row)}</td>
                 <td className="px-3 py-3" onClick={e => e.stopPropagation()}><StatusSelect row={row} disabled={!!busy || row.erased} onChange={v => void save(row, { follow_up_status: v })} /></td>
                 <td className="px-3 py-3" onClick={e => e.stopPropagation()}><OwnerSelect row={row} reps={staff.data?.[row.hotel_id] ?? []} disabled={!!busy || !staff.data || row.erased} onChange={name => void save(row, { assigned_rep: name })} /></td>
-                <td className="py-3 pl-3 pr-4"><p className="mb-1.5 truncate text-xs leading-5" title={row.department_name || undefined}>{row.department_name || "No department"}</p><EmailBadge row={row} /></td>
+                <td className="py-3 pl-3 pr-4"><p className="mb-1.5 truncate text-xs leading-5" title={row.department_name || undefined}>{row.department_name || "No department"}</p><EmailBadge row={row} />{row.lead_delivery && <div className="mt-1.5 min-w-0"><LeadDeliveryBadge state={row.lead_delivery} /></div>}</td>
               </tr>)}</tbody>
             </table>
           </div>
@@ -442,7 +443,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
           </div>
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto overscroll-contain">
-          {detail.error && !detail.data ? <div role="alert" className="p-6">Could not load this inquiry. <button className="underline" onClick={() => void detail.mutate()}>Retry</button></div> : !detail.data ? <div className="p-6" role="status">Loading inquiry…</div> : <InquiryPanel key={detail.data.id} row={detail.data} timezone={tzOf(detail.data.hotel_id)} hotelName={portfolio ? nameOf(detail.data.hotel_id) : null} reps={staff.data?.[detail.data.hotel_id] ?? []} staffReady={!!staff.data} busy={!!busy} save={save} setHotelId={setHotelId} />}
+          {detail.error && !detail.data ? <div role="alert" className="p-6">Could not load this inquiry. <button className="underline" onClick={() => void detail.mutate()}>Retry</button></div> : !detail.data ? <div className="p-6" role="status">Loading inquiry…</div> : <InquiryPanel onLeadDeliveryChanged={() => { void detail.mutate(); void mutate() }} key={detail.data.id} row={detail.data} timezone={tzOf(detail.data.hotel_id)} hotelName={portfolio ? nameOf(detail.data.hotel_id) : null} reps={staff.data?.[detail.data.hotel_id] ?? []} staffReady={!!staff.data} busy={!!busy} save={save} setHotelId={setHotelId} />}
         </div>
       </DialogContent>
     </Dialog>
@@ -495,7 +496,8 @@ function BudgetEditor({ value: initial, applyLabel = "Apply", onApply, onCancel 
   </form>
 }
 
-function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, setHotelId }: { row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelName: string | null; reps: string[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean>; setHotelId: (id: string) => void }) {
+function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, setHotelId, onLeadDeliveryChanged }: { onLeadDeliveryChanged: () => void; row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelName: string | null; reps: string[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean>; setHotelId: (id: string) => void }) {
+  const { isPlatformAdmin } = useCurrentUser()
   const [note, setNote] = useState("")
   // An erased inquiry is read-only: the server refuses every PATCH (409), so
   // the controls are disabled rather than letting a save bounce.
@@ -636,6 +638,8 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
         </section>
       </div>
     </div>
+
+    {row.lead_delivery && <section className="px-1 pt-1"><LeadDeliveryPanel hotelId={row.hotel_id} state={row.lead_delivery} isPlatformAdmin={isPlatformAdmin} format={value => timestamp(value, timezone)} onChanged={onLeadDeliveryChanged} /></section>}
 
     <section className="px-1 pt-1">
       <div className="mb-4 flex items-center gap-2"><History className="size-4 text-muted-foreground" /><h3 className="text-sm font-semibold">Activity</h3><span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{activity.length}</span></div>
