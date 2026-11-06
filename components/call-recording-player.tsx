@@ -12,7 +12,8 @@
 // client-side age cutoff. Right after a call the file may still be uploading:
 // the backend then answers 404 with reason "processing", and the player checks
 // again every few seconds until the audio arrives or the backend gives a final
-// answer (it stops saying "processing" once the upload window has passed).
+// answer (it stops saying "processing" once the upload window has passed). A
+// shared mailbox can open one link on many screens, so a 429 only means wait.
 
 import { useEffect, useState } from "react"
 import useSWR from "swr"
@@ -31,6 +32,7 @@ function describeError(error: unknown): string {
 
 const PROCESSING_POLL_MS = 10_000
 const TRANSIENT_RETRY_BASE_MS = 5_000
+const RATE_LIMIT_RETRY_MAX_MS = 60_000
 
 // The backend's "still uploading" answer: the only 4xx worth checking again.
 function isProcessing(error: unknown): boolean {
@@ -38,10 +40,28 @@ function isProcessing(error: unknown): boolean {
   return (error.body as { reason?: unknown } | undefined)?.reason === "processing"
 }
 
+function isRateLimited(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 429
+}
+
 // Any other 4xx (no recording, no access) won't change on retry; only
 // transient failures (5xx, network) are worth backoff retries.
 function isPermanentError(error: unknown): boolean {
-  return error instanceof ApiError && error.status >= 400 && error.status < 500
+  return (
+    error instanceof ApiError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    !isRateLimited(error)
+  )
+}
+
+// The jitter keeps pages opened together from retrying together.
+export function rateLimitRetryDelay(retryCount: number): number {
+  const ceiling = Math.min(
+    TRANSIENT_RETRY_BASE_MS * 2 ** Math.min(retryCount, 8),
+    RATE_LIMIT_RETRY_MAX_MS,
+  )
+  return ceiling / 2 + Math.random() * (ceiling / 2)
 }
 
 export function CallRecordingPlayer({ callId }: { callId: string }) {
@@ -77,6 +97,10 @@ export function RecordingPlayer({
           setTimeout(() => revalidate(opts), PROCESSING_POLL_MS)
           return
         }
+        if (isRateLimited(err)) {
+          setTimeout(() => revalidate(opts), rateLimitRetryDelay(opts.retryCount))
+          return
+        }
         // Exponential backoff for transient failures, as SWR's default.
         const step = Math.min(opts.retryCount, 8)
         setTimeout(() => revalidate(opts), TRANSIENT_RETRY_BASE_MS * 2 ** step)
@@ -99,6 +123,9 @@ export function RecordingPlayer({
   // it as loading, and the spinner would flash in and out between checks.
   if (isProcessing(error)) {
     return <p className="text-sm text-muted-foreground">{describeError(error)}</p>
+  }
+  if (isRateLimited(error)) {
+    return <p className="text-sm text-muted-foreground">Waiting to retry loading the recording…</p>
   }
   if (isLoading) {
     return (
