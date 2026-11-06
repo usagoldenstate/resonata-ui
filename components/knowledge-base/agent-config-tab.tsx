@@ -20,6 +20,7 @@ import {
   MessageSquareQuote,
   PhoneForwarded,
 } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { Button } from "@/components/ui/button"
@@ -29,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   api,
   ApiError,
+  type SalesAfterHours,
   type SalesIntakeQuestion,
   type SalesDepartment,
 } from "@/lib/api"
@@ -37,6 +39,31 @@ import {
   confirmDiscardUnsaved,
   registerUnsavedGuard,
 } from "@/lib/unsaved-guard"
+
+const DEFAULT_SALES_AFTER_HOURS: SalesAfterHours = {
+  enabled: false,
+  message: "",
+  business_start: "08:00",
+  business_end: "17:00",
+  business_days: [0, 1, 2, 3, 4],
+}
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+function validateSalesAfterHours(value: SalesAfterHours): string | null {
+  if (!value.business_start || !value.business_end) {
+    return "After-hours message: set when business hours start and end."
+  }
+  if (value.business_start >= value.business_end) {
+    return "After-hours message: business hours must start before they end."
+  }
+  if (!value.enabled) return null
+  if (!value.message.trim()) return "Enter the after-hours message."
+  if (value.business_days.length === 0) {
+    return "After-hours message: choose at least one business day."
+  }
+  return null
+}
 
 // ─── Agent Config Tab ───
 // Transfers dial the stored number over SIP as a `tel:<E.164>` URI (a SIP
@@ -128,6 +155,7 @@ type HotelDetail = {
   // rendered for this hotel, shown as the placeholder.
   sales_first_message?: string | null
   sales_first_message_default?: string
+  sales_after_hours?: SalesAfterHours | null
   sales_intake_questions?: SalesIntakeQuestion[]
   sales_departments?: SalesDepartment[]
   sales_email_from?: string | null
@@ -414,6 +442,10 @@ export function AgentConfigTab({
   const [saving, setSaving] = useState(false)
   const [salesFirstMessage, setSalesFirstMessage] = useState("")
   const [salesFirstMessageDefault, setSalesFirstMessageDefault] = useState("")
+  const [salesAfterHours, setSalesAfterHours] = useState(
+    DEFAULT_SALES_AFTER_HOURS,
+  )
+  const [hotelTimezone, setHotelTimezone] = useState("")
   // Which per-line sections this hotel gets. Null until the hotel loads.
   const [lines, setLines] = useState<LineSet | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -429,6 +461,7 @@ export function AgentConfigTab({
         firstMessage,
         preferredRateCode,
         salesFirstMessage,
+        salesAfterHours,
         emailRouting: emailRoutingPayload(emailRouting),
       }),
     [
@@ -437,10 +470,22 @@ export function AgentConfigTab({
       firstMessage,
       preferredRateCode,
       salesFirstMessage,
+      salesAfterHours,
       emailRouting,
     ],
   )
   const dirty = savedJson !== null && formSnapshot !== savedJson
+
+  const updateSalesAfterHours = (changes: Partial<SalesAfterHours>) =>
+    setSalesAfterHours((current) => ({ ...current, ...changes }))
+
+  const toggleBusinessDay = (day: number, selected: boolean) =>
+    setSalesAfterHours((current) => ({
+      ...current,
+      business_days: selected
+        ? [...current.business_days, day].sort((a, b) => a - b)
+        : current.business_days.filter((d) => d !== day),
+    }))
 
   // Single source of truth for "apply server-side hotel state to the form."
   // Used by initial load and by the partial-save recovery path below — both
@@ -454,6 +499,8 @@ export function AgentConfigTab({
     setEmailRouting(loadedEmailRouting)
     setSalesEmailSender(hotel.sales_email_from || hotel.email_from || null)
     const loadedSalesFirstMessage = hotel.sales_first_message ?? ""
+    const loadedSalesAfterHours =
+      hotel.sales_after_hours ?? DEFAULT_SALES_AFTER_HOURS
     const loadedDepartments = (hotel.transfer_departments ?? []).map(
       rowToDepartment,
     )
@@ -466,6 +513,8 @@ export function AgentConfigTab({
     setFirstMessage(loadedFirstMessage)
     setPreferredRateCode(loadedPreferredRateCode)
     setSalesFirstMessage(loadedSalesFirstMessage)
+    setSalesAfterHours(loadedSalesAfterHours)
+    setHotelTimezone(hotel.timezone)
     setFirstMessageDefault(hotel.first_message_default ?? "")
     setSalesFirstMessageDefault(hotel.sales_first_message_default ?? "")
     setLines(lineSetOf(hotel.lines))
@@ -479,6 +528,7 @@ export function AgentConfigTab({
         firstMessage: loadedFirstMessage,
         preferredRateCode: loadedPreferredRateCode,
         salesFirstMessage: loadedSalesFirstMessage,
+        salesAfterHours: loadedSalesAfterHours,
         emailRouting: emailRoutingPayload(loadedEmailRouting),
       }),
     )
@@ -598,6 +648,7 @@ export function AgentConfigTab({
     // empty form over the hotel's real settings.
     if (savedJson === null || lines === null || saving) return
     const baseline = JSON.parse(savedJson) as {
+      salesAfterHours: SalesAfterHours
       departments: unknown
       emailRouting: unknown
     }
@@ -612,7 +663,13 @@ export function AgentConfigTab({
         onStateChange("error")
         return
       }
-
+      const afterHoursProblem = validateSalesAfterHours(salesAfterHours)
+      if (afterHoursProblem) {
+        setActiveTab("sales")
+        onErrorChange(afterHoursProblem)
+        onStateChange("error")
+        return
+      }
     }
     if (departments.length === 0) {
       onErrorChange("At least one transfer department is required.")
@@ -708,6 +765,13 @@ export function AgentConfigTab({
       if (lines?.sales) {
         // Blank clears to the template server-side.
         hotelBody.sales_first_message = salesFirstMessage
+        // Only when changed: a hotel that never opened this stays NULL.
+        if (
+          JSON.stringify(salesAfterHours) !==
+          JSON.stringify(baseline.salesAfterHours)
+        ) {
+          hotelBody.sales_after_hours = salesAfterHours
+        }
         if (
           JSON.stringify(emailRoutingPayload(emailRouting)) !==
           JSON.stringify(baseline.emailRouting)
@@ -727,6 +791,9 @@ export function AgentConfigTab({
       setSalesFirstMessageDefault(savedHotel.sales_first_message_default ?? "")
       const savedRouting = departmentDrafts(savedHotel.sales_departments)
       setEmailRouting(savedRouting)
+      const savedAfterHours =
+        savedHotel.sales_after_hours ?? DEFAULT_SALES_AFTER_HOURS
+      setSalesAfterHours(savedAfterHours)
 
       if (transfersChanged) {
         await api(`/api/v1/admin/hotels/${hotelId}/transfer-departments`, {
@@ -739,6 +806,7 @@ export function AgentConfigTab({
       setSavedJson(
         JSON.stringify({
           ...JSON.parse(formSnapshot),
+          salesAfterHours: savedAfterHours,
           emailRouting: emailRoutingPayload(savedRouting),
         }),
       )
@@ -900,6 +968,103 @@ export function AgentConfigTab({
               Reset to default
             </Button>
           )}
+          <div className="border-t border-border pt-3 mt-3 space-y-3">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <Checkbox
+                checked={salesAfterHours.enabled}
+                onCheckedChange={(checked) =>
+                  updateSalesAfterHours({ enabled: checked === true })
+                }
+              />
+              Add an after-hours message
+            </label>
+            {salesAfterHours.enabled && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Callers outside the business hours below hear this message
+                  instead of the one above.
+                </p>
+                <div>
+                  <label
+                    htmlFor="sales-after-hours-message"
+                    className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1"
+                  >
+                    After-Hours Message
+                  </label>
+                  <textarea
+                    id="sales-after-hours-message"
+                    className="w-full min-h-[100px] px-3 py-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+                    value={salesAfterHours.message}
+                    onChange={(e) =>
+                      updateSalesAfterHours({ message: e.target.value })
+                    }
+                    maxLength={1000}
+                    placeholder="Thanks for calling the sales team. Our office is closed right now, so I'll take a few details and they'll reach out when they're back. What are you looking to book?"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <div>
+                    <label
+                      htmlFor="sales-business-start"
+                      className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1"
+                    >
+                      Business Hours Start
+                    </label>
+                    <Input
+                      id="sales-business-start"
+                      type="time"
+                      className="w-36"
+                      value={salesAfterHours.business_start}
+                      onChange={(e) =>
+                        updateSalesAfterHours({ business_start: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="sales-business-end"
+                      className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1"
+                    >
+                      Business Hours End
+                    </label>
+                    <Input
+                      id="sales-business-end"
+                      type="time"
+                      className="w-36"
+                      value={salesAfterHours.business_end}
+                      onChange={(e) =>
+                        updateSalesAfterHours({ business_end: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                    Business Days
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    {WEEKDAYS.map((label, day) => (
+                      <label
+                        key={label}
+                        className="flex items-center gap-1.5 text-sm"
+                      >
+                        <Checkbox
+                          checked={salesAfterHours.business_days.includes(day)}
+                          onCheckedChange={(checked) =>
+                            toggleBusinessDay(day, checked === true)
+                          }
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Hours use the hotel&apos;s time zone ({hotelTimezone}).
+                </p>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 

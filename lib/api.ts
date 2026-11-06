@@ -918,6 +918,8 @@ export type HotelDetail = {
   // rendered for this hotel. Operator-editable via Agent Configuration.
   sales_first_message: string | null
   sales_first_message_default?: string
+  // The optional after-hours opener; null = never configured.
+  sales_after_hours?: SalesAfterHours | null
   // Which products the hotel bought. Platform-admin only.
   lines?: HotelLines
   pms_webhook_last_received_at: string | null
@@ -1085,6 +1087,17 @@ export type SetupExternalTask = {
   url_hint: string | null
 }
 
+// The sales line's second opener, for calls outside the hotel's business
+// hours. Times are "HH:MM" on the hotel's local clock (the end is outside
+// business hours); days are 0 = Monday to 6 = Sunday.
+export type SalesAfterHours = {
+  enabled: boolean
+  message: string
+  business_start: string
+  business_end: string
+  business_days: number[]
+}
+
 // The TEMPLATE opening each line speaks while its own column is empty,
 // rendered server-side from the hotel's current display_name + agent_name.
 // `reservations` backs `Hotel.first_message`, `sales` backs
@@ -1210,6 +1223,7 @@ export type HotelOperatorUpdate = {
   sales_departments?: SalesDepartmentInput[]
   // Blank clears back to the shared template.
   sales_first_message?: string | null
+  sales_after_hours?: SalesAfterHours | null
 }
 
 // Platform-admin-only partial update (PATCH /admin/hotels/{id}/platform-settings).
