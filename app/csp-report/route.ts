@@ -6,10 +6,14 @@ import { join } from "path"
 // Browsers POST here on their own — no auth, no Clerk session — so the route
 // is listed as public in proxy.ts. Reports go to the server log (Vercel logs
 // in prod) and, best-effort, to a local file for easy inspection in dev.
+// A report quotes the page's URL, and the update and recording pages' URLs are
+// their authorization, so those tokens never reach the log.
+const LINK_TOKEN = /\/(inquiry|recording)\/[^/?#"\s]+/g
+
 export async function POST(req: Request) {
   let body = ""
   try {
-    body = (await req.text()).slice(0, 8_192)
+    body = (await req.text()).slice(0, 8_192).replace(LINK_TOKEN, "/$1/_")
   } catch {
     return new Response(null, { status: 204 })
   }

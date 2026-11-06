@@ -1,7 +1,7 @@
 "use client"
 
-// Plays a call's recording. Shared by the call log and the sales inquiry
-// panel. The audio is fetched as a blob through the authed proxy (the browser
+// Plays a call's recording. Shared by the call log, the sales inquiry panel and
+// the emailed recording page. The audio is fetched as a blob (the browser
 // can't send the Clerk bearer on an <audio src>), cached by SWR so reopening
 // plays instantly, and played with the native controls. The object URL is
 // created whenever the cached blob changes and revoked on cleanup.
@@ -45,13 +45,30 @@ function isPermanentError(error: unknown): boolean {
 }
 
 export function CallRecordingPlayer({ callId }: { callId: string }) {
+  return (
+    <RecordingPlayer
+      cacheKey={["call-recording", callId]}
+      load={() => fetchCallRecording(callId)}
+    />
+  )
+}
+
+export function RecordingPlayer({
+  cacheKey,
+  load,
+  allowDownload = true,
+}: {
+  cacheKey: string[]
+  load: () => Promise<Blob>
+  allowDownload?: boolean
+}) {
   const {
     data: blob,
     isLoading,
     error,
   } = useSWR(
-    ["call-recording", callId] as const,
-    ([, id]) => fetchCallRecording(id),
+    cacheKey,
+    load,
     {
       shouldRetryOnError: (err) => isProcessing(err) || !isPermanentError(err),
       onErrorRetry: (err, _key, _config, revalidate, opts) => {
@@ -101,5 +118,12 @@ export function CallRecordingPlayer({ callId }: { callId: string }) {
     )
   }
   if (!url) return null
-  return <audio controls src={url} className="w-full" />
+  return (
+    <audio
+      controls
+      controlsList={allowDownload ? undefined : "nodownload"}
+      src={url}
+      className="w-full"
+    />
+  )
 }

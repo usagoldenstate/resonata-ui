@@ -898,6 +898,8 @@ export type HotelDetail = {
   // sales_agent_phone_number, which must differ from agent_phone_number (422).
   sales_line_enabled: boolean
   sales_agent_phone_number: string | null
+  // Whether the sales email links to the call's recording. Platform-admin only.
+  sales_recording_link_enabled: boolean
   // Where inquiries are emailed, per department. Operator-editable.
   sales_departments: SalesDepartment[]
   // The hotel's sales team as plain name tags — who follow-up activity is
@@ -1222,6 +1224,7 @@ export type HotelPlatformUpdate = {
   // Enabling requires sales_agent_phone_number (already saved, or in this
   // same PATCH).
   sales_line_enabled?: boolean
+  sales_recording_link_enabled?: boolean
   sales_agent_phone_number?: string | null
   // Validated with the sales-line fields: the line can only be on for
   // "sales" | "both", so the two travel in one PATCH on launch day.
@@ -1628,11 +1631,23 @@ export function deleteCall(callId: string) {
 // Blob for <audio> playback (the browser can't send the Clerk bearer on an
 // <audio src>). Error bodies are still parsed, so a 404's `detail` (e.g.
 // "Recording not available") reaches the player.
-export async function fetchCallRecording(
+export function fetchCallRecording(
   callId: string,
   opts: Pick<Options, "signal"> = {},
 ): Promise<Blob> {
-  const path = `/api/v1/calls/${callId}/recording`
+  return fetchRecordingAudio(`/api/v1/calls/${callId}/recording`, opts)
+}
+
+// The emailed recording link. No Clerk session: the signed token is the whole
+// authorization, and api-side it plays this one recording and nothing else.
+export function fetchPublicSalesRecording(token: string): Promise<Blob> {
+  return fetchRecordingAudio(`/api/v1/public/sales-recordings/${encodeURIComponent(token)}`)
+}
+
+async function fetchRecordingAudio(
+  path: string,
+  opts: Pick<Options, "signal"> = {},
+): Promise<Blob> {
   if (!env.apiUrl) {
     throw new ApiError(0, path, "NEXT_PUBLIC_API_URL is not set — UI cannot reach the backend.")
   }
@@ -1925,7 +1940,12 @@ export type SalesInquiryDetail = SalesInquiryItem & {
   call_record_id?: string | null
   call_created_at?: string | null
   has_recording?: boolean
+  // The emailed recording link. Null when the email carried none or the hotel
+  // has switched the feature off.
+  recording_link_status?: SalesRecordingLinkStatus | null
+  recording_link_expires_at?: string | null
 }
+export type SalesRecordingLinkStatus = "active" | "disabled" | "expired"
 export type SalesInquiryPage = { items: SalesInquiryItem[]; total: number; counts: Partial<Record<SalesFollowUpStatus, number>> }
 export type SalesInquiryPatch = {
   version: number
@@ -1952,6 +1972,9 @@ export function fetchSalesInquiry(hotelId: string, id: string) {
 export function updateSalesInquiry(hotelId: string, id: string, body: SalesInquiryPatch) {
   return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }), { method: "PATCH", body })
 }
+export function setSalesRecordingLinkDisabled(hotelId: string, id: string, disabled: boolean) {
+  return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}/recording-link`, { hotel_id: hotelId }), { method: "PUT", body: { disabled } })
+}
 // Platform-admin only; anyone else gets a 404.
 export function deleteSalesInquiry(hotelId: string, id: string) {
   return api<void>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }), { method: "DELETE", parseJson: false })
@@ -1964,60 +1987,15 @@ export function deleteSalesInquiry(hotelId: string, id: string) {
 // route). Everything the page renders comes back in one response.
 export type SalesFollowUpOutcome = "call_attempted" | "contacted" | "booked" | "closed"
 export type PublicSalesInquiry = {
-  answer_variables?: Record<string, string>
-  custom_answers?: SalesInquiryCustomAnswer[]
   hotel_display_name: string
-  caller_name: string | null
-  caller_first_name?: string | null
-  caller_last_name?: string | null
-  company?: string | null
-  callback_phone_e164: string | null
-  caller_id_phone_e164: string | null
-  email: string | null
-  // Which intake the call took: a new event, or a caller following up with a
-  // rep they already work with (event questions skipped; the rep's name as
-  // the caller said it in `existing_contact_name`).
-  inquiry_kind?: SalesInquiryKind
-  existing_contact_name?: string | null
-  // The caller's own words. Null when an existing-inquiry caller never named
-  // the event, and after erasure.
-  event_type: string | null
-  // A fixed category assigned after the call from the transcript; null until
-  // the classifier has run.
-  event_category?: SalesEventCategory | null
-  event_dates_text: string | null
-  // Backup dates in the caller's words; its own field, never merged into
-  // event_dates_text.
-  alternate_dates_text?: string | null
-  event_start_date: string | null
-  event_end_date: string | null
-  dates_flexible: boolean | null
-  // Party size: the caller's words plus the parsed low/high pair. A single
-  // figure is stored in both bounds, so a range is simply min !== max.
-  headcount_text: string | null
-  headcount_min: number | null
-  headcount_max: number | null
-  needs_guest_rooms: boolean | null
-  // Guest rooms (the room block): same shape as the party size.
-  guest_rooms_text?: string | null
-  guest_rooms_min?: number | null
-  guest_rooms_max?: number | null
-  // The caller's own words plus the post-call AI-estimated total-event range.
-  budget_text: string | null
-  estimated_budget_min: string | null
-  estimated_budget_max: string | null
-  budget_estimation_status: "pending" | "complete" | "failed"
-  budget_estimated_at: string | null
-  budget_estimation_model: string | null
-  budget_estimation_prompt_version: string | null
-  notes: string | null
-  created_at: string
-  source?: SalesInquirySource
+  // Matches the page to its email. Emails sent before it existed show only
+  // the received time.
+  reference: string
+  received_at_human: string
   follow_up_status: SalesFollowUpStatus
   follow_up_status_label: string
   assigned_rep: string | null
   version: number
-  activity: SalesActivity[]
   sales_reps: string[]
   outcomes: Array<{ value: SalesFollowUpOutcome; label: string }>
 }

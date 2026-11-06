@@ -158,6 +158,7 @@ export default function SettingsPage() {
   const [twilioFromNumber, setTwilioFromNumber] = useState("")
   // Sales intake line (platform-admin only) — see the "Sales Intake Line" card.
   const [salesLineEnabled, setSalesLineEnabled] = useState(false)
+  const [salesRecordingLinkEnabled, setSalesRecordingLinkEnabled] = useState(false)
   const [salesAgentPhoneNumber, setSalesAgentPhoneNumber] = useState("")
   // Which products the hotel bought (platform-admin only). Sections below
   // follow the SAVED value, so fields don't vanish mid-edit.
@@ -185,6 +186,7 @@ export default function SettingsPage() {
     setOrganizationId(d.organization_id ?? "")
     setTwilioFromNumber(d.twilio_from_number ?? "")
     setSalesLineEnabled(d.sales_line_enabled ?? false)
+    setSalesRecordingLinkEnabled(d.sales_recording_link_enabled ?? false)
     setSalesAgentPhoneNumber(d.sales_agent_phone_number ?? "")
     setProductLines(d.lines ?? "reservations")
     setSalesRepNames(d.sales_rep_names ?? [])
@@ -251,6 +253,7 @@ export default function SettingsPage() {
             (detail.twilio_from_number ?? null) ||
           (organizationId || null) !== (detail.organization_id ?? null) ||
           salesLineEnabled !== (detail.sales_line_enabled ?? false) ||
+          salesRecordingLinkEnabled !== (detail.sales_recording_link_enabled ?? false) ||
           productLines !== (detail.lines ?? "reservations"))))
 
   useEffect(
@@ -391,6 +394,9 @@ export default function SettingsPage() {
         // whatever changed in one PATCH.
         if (salesLineEnabled !== (detail.sales_line_enabled ?? false)) {
           pfBody.sales_line_enabled = salesLineEnabled
+        }
+        if (salesRecordingLinkEnabled !== (detail.sales_recording_link_enabled ?? false)) {
+          pfBody.sales_recording_link_enabled = salesRecordingLinkEnabled
         }
         const nextSalesAgent = salesAgentPhoneNumber.trim() || null
         if (nextSalesAgent !== (detail.sales_agent_phone_number ?? null)) {
@@ -974,7 +980,7 @@ export default function SettingsPage() {
                       <TagInput
                         id="salesRepNames"
                         label="Salesperson names"
-                        hint="Type a name and press Enter. The sales notification email goes to a shared mailbox, so whoever follows up picks their name from this list on the “Update inquiry” page — no sign-in needed — and the inquiry is assigned to them. Removing a name here never changes inquiries already logged against it."
+                        hint="Type a name and press Enter. The sales notification email goes to a shared mailbox, so whoever follows up picks their name from this list on the “Log follow-up outcome” page — no sign-in needed — and the inquiry is assigned to them. Removing a name here never changes inquiries already logged against it."
                         values={salesRepNames}
                         onChange={setSalesRepNames}
                         placeholder="e.g. Bob Jackson"
@@ -1062,6 +1068,23 @@ export default function SettingsPage() {
                               ) ||
                               !salesAgentPhoneNumber.trim())
                           }
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="salesRecordingLinkEnabled" className="text-sm">
+                            Link recordings in sales emails
+                          </Label>
+                          <p className="text-[11px] text-muted-foreground">
+                            Anyone with the email can play the call for 30 days
+                            without signing in. Turning this off stops links
+                            already sent.
+                          </p>
+                        </div>
+                        <Switch
+                          id="salesRecordingLinkEnabled"
+                          checked={salesRecordingLinkEnabled}
+                          onCheckedChange={setSalesRecordingLinkEnabled}
                         />
                       </div>
                       {!salesLineEnabled && (

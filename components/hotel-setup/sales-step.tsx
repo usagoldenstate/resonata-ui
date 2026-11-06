@@ -170,7 +170,7 @@ export function SalesStep({ ctx }: { ctx: StepContext }) {
           </div>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             The notification email goes to a shared mailbox, so whoever follows up picks
-            their name from this list on the no-login &ldquo;Update inquiry&rdquo; page and the
+            their name from this list on the no-login &ldquo;Log follow-up outcome&rdquo; page and the
             inquiry is assigned to them. Editable later under Settings → Team.
           </p>
         </div>
