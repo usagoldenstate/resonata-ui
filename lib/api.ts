@@ -1959,7 +1959,7 @@ export type SalesInquiryDetail = SalesInquiryItem & {
   recording_link_status?: SalesRecordingLinkStatus | null
   recording_link_expires_at?: string | null
 }
-export type SalesRecordingLinkStatus = "active" | "disabled" | "expired"
+export type SalesRecordingLinkStatus = "active" | "expired"
 export type SalesInquiryPage = { items: SalesInquiryItem[]; total: number; counts: Partial<Record<SalesFollowUpStatus, number>> }
 export type SalesInquiryPatch = {
   version: number
@@ -1985,9 +1985,6 @@ export function fetchSalesInquiry(hotelId: string, id: string) {
 }
 export function updateSalesInquiry(hotelId: string, id: string, body: SalesInquiryPatch) {
   return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }), { method: "PATCH", body })
-}
-export function setSalesRecordingLinkDisabled(hotelId: string, id: string, disabled: boolean) {
-  return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}/recording-link`, { hotel_id: hotelId }), { method: "PUT", body: { disabled } })
 }
 // Platform-admin only; anyone else gets a 404.
 export function deleteSalesInquiry(hotelId: string, id: string) {

@@ -18,13 +18,13 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import { CallRecordingPlayer } from "@/components/call-recording-player"
 import { LeadDeliveryBadge, LeadDeliveryPanel } from "@/components/lead-delivery-status"
-import { RecordingLinkControl } from "@/components/recording-link-control"
+import { RecordingLinkStatus } from "@/components/recording-link-status"
 import { useHotel, type HotelListItem } from "@/lib/hotel-context"
 import { useCurrentUser } from "@/lib/current-user-context"
 type Selection = { id: string; hotelId: string }
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { confirmDiscardUnsaved, registerUnsavedGuard } from "@/lib/unsaved-guard"
-import { ApiError, deleteSalesInquiry, fetchSalesAssignees, fetchSalesDepartmentOptions, formatHeadcount, guestRoomsLabel, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryDetail, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
+import { ApiError, deleteSalesInquiry, fetchSalesAssignees, fetchSalesDepartmentOptions, formatHeadcount, guestRoomsLabel, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
 import { EVENT_CATEGORY_LABELS, INQUIRY_KIND_LABELS } from "@/lib/sales-inquiry-labels"
 
 // The response status: what the sales team has done since the call. Not "New"
@@ -444,7 +444,7 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
           </div>
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto overscroll-contain">
-          {detail.error && !detail.data ? <div role="alert" className="p-6">Could not load this inquiry. <button className="underline" onClick={() => void detail.mutate()}>Retry</button></div> : !detail.data ? <div className="p-6" role="status">Loading inquiry…</div> : <InquiryPanel onLeadDeliveryChanged={() => { void detail.mutate(); void mutate() }} onRecordingLinkChanged={updated => { void detail.mutate(updated, { revalidate: false }) }} key={detail.data.id} row={detail.data} timezone={tzOf(detail.data.hotel_id)} hotelName={portfolio ? nameOf(detail.data.hotel_id) : null} reps={staff.data?.[detail.data.hotel_id] ?? []} staffReady={!!staff.data} busy={!!busy} save={save} setHotelId={setHotelId} />}
+          {detail.error && !detail.data ? <div role="alert" className="p-6">Could not load this inquiry. <button className="underline" onClick={() => void detail.mutate()}>Retry</button></div> : !detail.data ? <div className="p-6" role="status">Loading inquiry…</div> : <InquiryPanel onLeadDeliveryChanged={() => { void detail.mutate(); void mutate() }} key={detail.data.id} row={detail.data} timezone={tzOf(detail.data.hotel_id)} hotelName={portfolio ? nameOf(detail.data.hotel_id) : null} reps={staff.data?.[detail.data.hotel_id] ?? []} staffReady={!!staff.data} busy={!!busy} save={save} setHotelId={setHotelId} />}
         </div>
       </DialogContent>
     </Dialog>
@@ -497,7 +497,7 @@ function BudgetEditor({ value: initial, applyLabel = "Apply", onApply, onCancel 
   </form>
 }
 
-function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, setHotelId, onLeadDeliveryChanged, onRecordingLinkChanged }: { onLeadDeliveryChanged: () => void; onRecordingLinkChanged: (updated: SalesInquiryDetail) => void; row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelName: string | null; reps: string[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean>; setHotelId: (id: string) => void }) {
+function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, setHotelId, onLeadDeliveryChanged }: { onLeadDeliveryChanged: () => void; row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelName: string | null; reps: string[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean>; setHotelId: (id: string) => void }) {
   const { isPlatformAdmin } = useCurrentUser()
   const [note, setNote] = useState("")
   // An erased inquiry is read-only: the server refuses every PATCH (409), so
@@ -607,7 +607,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
               ? <CallRecordingPlayer callId={row.call_record_id} />
               : <p className="text-sm text-muted-foreground">No recording is available for this call.</p>}
           </div>}
-          <RecordingLinkControl row={row} timezone={timezone} onChanged={onRecordingLinkChanged} />
+          <RecordingLinkStatus row={row} timezone={timezone} />
         </section>}
       </div>
       <div className="min-w-0 space-y-5">
