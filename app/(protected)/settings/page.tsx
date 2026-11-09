@@ -158,7 +158,7 @@ export default function SettingsPage() {
   const [twilioFromNumber, setTwilioFromNumber] = useState("")
   // Sales intake line (platform-admin only) — see the "Sales Intake Line" card.
   const [salesLineEnabled, setSalesLineEnabled] = useState(false)
-  const [salesRecordingLinkEnabled, setSalesRecordingLinkEnabled] = useState(false)
+  const [salesRecordingLinkEnabled, setSalesRecordingLinkEnabled] = useState(true)
   const [salesAgentPhoneNumber, setSalesAgentPhoneNumber] = useState("")
   // Which products the hotel bought (platform-admin only). Sections below
   // follow the SAVED value, so fields don't vanish mid-edit.
@@ -186,7 +186,7 @@ export default function SettingsPage() {
     setOrganizationId(d.organization_id ?? "")
     setTwilioFromNumber(d.twilio_from_number ?? "")
     setSalesLineEnabled(d.sales_line_enabled ?? false)
-    setSalesRecordingLinkEnabled(d.sales_recording_link_enabled ?? false)
+    setSalesRecordingLinkEnabled(d.sales_recording_link_enabled ?? true)
     setSalesAgentPhoneNumber(d.sales_agent_phone_number ?? "")
     setProductLines(d.lines ?? "reservations")
     setSalesRepNames(d.sales_rep_names ?? [])
@@ -253,7 +253,7 @@ export default function SettingsPage() {
             (detail.twilio_from_number ?? null) ||
           (organizationId || null) !== (detail.organization_id ?? null) ||
           salesLineEnabled !== (detail.sales_line_enabled ?? false) ||
-          salesRecordingLinkEnabled !== (detail.sales_recording_link_enabled ?? false) ||
+          salesRecordingLinkEnabled !== (detail.sales_recording_link_enabled ?? true) ||
           productLines !== (detail.lines ?? "reservations"))))
 
   useEffect(
@@ -395,7 +395,7 @@ export default function SettingsPage() {
         if (salesLineEnabled !== (detail.sales_line_enabled ?? false)) {
           pfBody.sales_line_enabled = salesLineEnabled
         }
-        if (salesRecordingLinkEnabled !== (detail.sales_recording_link_enabled ?? false)) {
+        if (salesRecordingLinkEnabled !== (detail.sales_recording_link_enabled ?? true)) {
           pfBody.sales_recording_link_enabled = salesRecordingLinkEnabled
         }
         const nextSalesAgent = salesAgentPhoneNumber.trim() || null
