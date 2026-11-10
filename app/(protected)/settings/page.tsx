@@ -1108,9 +1108,7 @@ export default function SettingsPage() {
                               }
                             />
                             <p className="text-[11px] text-muted-foreground">
-                              Counted from when the inquiry arrived, weekends
-                              included. 48 hours is 2 days; the most is 336
-                              (14 days).
+                              Counted from when the inquiry arrived.
                             </p>
                           </div>
                           <div className="space-y-1.5">
