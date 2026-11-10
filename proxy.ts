@@ -7,6 +7,7 @@ const SHOW = {
   dashboard: process.env.NEXT_PUBLIC_SHOW_DASHBOARD === "true",
   reporting: process.env.NEXT_PUBLIC_SHOW_REPORTING === "true",
   reportingChat: process.env.NEXT_PUBLIC_SHOW_REPORTING_CHAT === "true",
+  chatConversations: process.env.NEXT_PUBLIC_SHOW_CHAT_CONVERSATIONS === "true",
 }
 
 const FALLBACK = "/knowledge-base"
@@ -30,6 +31,7 @@ function isHidden(pathname: string): boolean {
   if (pathname === "/") return !SHOW.dashboard
   if (pathname.startsWith("/reporting/chat")) return !SHOW.reporting || !SHOW.reportingChat
   if (pathname.startsWith("/reporting")) return !SHOW.reporting
+  if (pathname.startsWith("/chat-conversations")) return !SHOW.chatConversations
   return false
 }
 

@@ -16,6 +16,7 @@ export const featureFlags = {
   showDashboard: flag(process.env.NEXT_PUBLIC_SHOW_DASHBOARD),
   showReporting: flag(process.env.NEXT_PUBLIC_SHOW_REPORTING),
   showReportingChat: flag(process.env.NEXT_PUBLIC_SHOW_REPORTING_CHAT),
+  showChatConversations: flag(process.env.NEXT_PUBLIC_SHOW_CHAT_CONVERSATIONS),
   showCallLog: true,
   showFaqs: true,
 } as const
@@ -25,6 +26,7 @@ export const featureFlags = {
 export const pageFlagByPrefix: Array<{ prefix: string; visible: boolean }> = [
   { prefix: "/reporting/chat", visible: featureFlags.showReporting && featureFlags.showReportingChat },
   { prefix: "/reporting", visible: featureFlags.showReporting },
+  { prefix: "/chat-conversations", visible: featureFlags.showChatConversations },
 ]
 
 // Special-case: the dashboard lives at "/" — matching by prefix would match

@@ -866,6 +866,10 @@ export type HotelDetail = {
   // Where this hotel's sales leads are forwarded. Holds no secret; null =
   // nowhere. Platform admins edit it (PATCH platform-settings).
   lead_delivery?: LeadDeliveryConfig | null
+  // Guest chat: the website widget and the Facebook / Instagram channels.
+  // Platform admins edit both (PATCH platform-settings).
+  chat_enabled?: boolean
+  chat_widget_config?: ChatWidgetConfig | null
   display_name: string
   timezone: string
   // Organization membership. Platform-admin only; null = independent hotel.
@@ -1258,6 +1262,9 @@ export type HotelPlatformUpdate = {
   // Full replace; null removes it. Editing the destination pauses waiting
   // deliveries for review.
   lead_delivery?: LeadDeliveryConfig | null
+  // 422 when the widget config is invalid; the backend rejects unknown keys.
+  chat_enabled?: boolean
+  chat_widget_config?: ChatWidgetConfig | null
 }
 
 // Base URL of the FastAPI backend, used to render the exact webhook URL an
@@ -1368,6 +1375,132 @@ export function retryLeadDelivery(hotelId: string, deliveryId: string) {
     `/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/sales-lead-deliveries/${encodeURIComponent(deliveryId)}/retry`,
     { method: "POST" },
   )
+}
+
+// ── Guest chat (website widget, Messenger, Instagram) ───────────────────────
+export type ChatChannel = "web" | "messenger" | "instagram" | "facebook_comment" | "instagram_comment"
+export type ChatWidgetConfig = {
+  // 1–20 http(s) origins with no path: the only sites allowed to embed the widget.
+  allowed_origins: string[]
+  // "#RRGGBB"
+  primary_color: string
+  accent_color: string
+  font_family: string
+  // https URLs; a null avatar means the bundled portrait.
+  logo_url: string | null
+  // The persona's name on every chat channel.
+  agent_name: string
+  agent_avatar_url: string | null
+  // Shown when the widget opens, before the agent "joins" (500 chars max).
+  intro_message: string | null
+  // The agent's first line (1000 chars max).
+  greeting: string | null
+  launcher_position: "bottom-right" | "bottom-left"
+}
+export type ChatSocialConnection = {
+  facebook_page_id: string
+  facebook_page_name: string | null
+  instagram_account_id: string | null
+  // The token itself is never returned.
+  has_page_access_token: boolean
+  messenger_enabled: boolean
+  instagram_dm_enabled: boolean
+  facebook_comments_enabled: boolean
+  instagram_comments_enabled: boolean
+  updated_at: string
+}
+export type ChatSetupStatus = {
+  chat_enabled: boolean
+  // The one <script> line the hotel pastes into its site.
+  embed_snippet: string
+  // Only works against a development backend.
+  preview_url: string
+  // Whether the server has its Meta app secret and verify token.
+  meta_configured: boolean
+  meta_webhook_url: string
+  social_connection: ChatSocialConnection | null
+}
+// Full replace. The backend verifies the token with Meta and subscribes the
+// Page before saving; a failure is a 422 / 409 / 502 with a readable `detail`.
+export type ChatSocialConnectionUpdate = {
+  facebook_page_id: string
+  // Required to turn on either Instagram switch.
+  instagram_account_id?: string | null
+  // Write-only. Omit or null keeps the stored token; required on first save.
+  page_access_token?: string | null
+  messenger_enabled: boolean
+  instagram_dm_enabled: boolean
+  facebook_comments_enabled: boolean
+  instagram_comments_enabled: boolean
+}
+
+export function fetchChatSetup(hotelId: string) {
+  return api<ChatSetupStatus>(`/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/chat`)
+}
+// Platform admin only.
+export function saveChatSocialConnection(hotelId: string, body: ChatSocialConnectionUpdate) {
+  return api<ChatSocialConnection>(`/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/chat/social-connection`, {
+    method: "PUT",
+    body,
+  })
+}
+// Platform admin only.
+export function deleteChatSocialConnection(hotelId: string) {
+  return api<void>(`/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/chat/social-connection`, {
+    method: "DELETE",
+    parseJson: false,
+  })
+}
+
+export type ChatConversationListItem = {
+  id: string
+  hotel_id: string
+  channel: ChatChannel
+  // Only known on the comment channels.
+  guest_name: string | null
+  // The guest's first message, trimmed.
+  preview: string | null
+  guest_message_count: number
+  // Booking links the agent sent in this conversation.
+  links_sent: number
+  created_at: string
+  last_message_at: string
+}
+export type ChatConversationListPage = {
+  items: ChatConversationListItem[]
+  total: number
+  limit: number
+  offset: number
+}
+// On an assistant message, "failed" means it never reached the guest. On a
+// user message, "skipped" means the agent chose not to reply (staff took over,
+// or a public comment it did not answer) and "failed" means it could not answer.
+export type ChatMessageStatus = "received" | "answered" | "skipped" | "failed" | "sent"
+export type ChatMessage = {
+  id: string
+  role: "user" | "assistant"
+  // Null after a privacy erasure.
+  text: string | null
+  status: ChatMessageStatus
+  created_at: string
+}
+export type ChatConversationDetail = ChatConversationListItem & { messages: ChatMessage[] }
+
+export function fetchChatConversations(
+  params: {
+    hotel_id: string | string[]
+    limit?: number
+    offset?: number
+    channel?: ChatChannel
+    date_from?: string
+    date_to?: string
+  },
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<ChatConversationListPage>(withQuery("/api/v1/chat-conversations", params), opts)
+}
+export function fetchChatConversation(id: string, opts: Pick<Options, "signal"> = {}) {
+  return api<ChatConversationDetail>(`/api/v1/chat-conversations/${encodeURIComponent(id)}`, opts)
 }
 
 export type OperaCancellationCatalogItem = {

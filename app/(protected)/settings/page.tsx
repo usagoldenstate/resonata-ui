@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/select"
 import { Sidebar } from "@/components/sidebar"
 import { SetupHealthCard } from "@/components/hotel-setup/setup-health-card"
+import { ChatSettingsCard } from "@/components/chat-settings-card"
 import { LeadDeliveryCard } from "@/components/lead-delivery-card"
 import { OperaCancellationCard } from "@/components/opera-cancellation-card"
 import { StaynTouchCancellationCard } from "@/components/stayntouch-cancellation-card"
@@ -1196,6 +1197,15 @@ export default function SettingsPage() {
                       <LeadDeliveryCard
                         hotelId={hotelId}
                         saved={detail.lead_delivery ?? null}
+                        onSaved={setDetail}
+                      />
+                    )}
+                    {hotelId && detail && (
+                      <ChatSettingsCard
+                        hotelId={hotelId}
+                        hotelName={detail.display_name}
+                        savedEnabled={detail.chat_enabled ?? false}
+                        savedConfig={detail.chat_widget_config ?? null}
                         onSaved={setDetail}
                       />
                     )}

@@ -7,6 +7,7 @@ import { useClerk } from "@clerk/nextjs"
 import {
   LayoutDashboard,
   MessageSquareText,
+  MessagesSquare,
   PhoneCall,
   Inbox,
   BarChart3,
@@ -53,6 +54,7 @@ const sections: NavSection[] = [
       { label: "Ask Insights", href: "/reporting/chat", icon: <MessageSquareText className="w-4 h-4" />, visible: featureFlags.showReporting && featureFlags.showReportingChat },
       { label: "Call Log", href: "/call-log", icon: <PhoneCall className="w-4 h-4" />, visible: true },
       { label: "Sales Inquiries", href: "/sales-inquiries", icon: <Inbox className="w-4 h-4" />, visible: true },
+      { label: "Chat Conversations", href: "/chat-conversations", icon: <MessagesSquare className="w-4 h-4" />, visible: featureFlags.showChatConversations },
       { label: "Call Metrics", href: "/reporting/call-metrics", icon: <BarChart3 className="w-4 h-4" />, visible: featureFlags.showReporting },
       { label: "Not Booked Reasons", href: "/reporting/not-booked", icon: <CircleSlash className="w-4 h-4" />, visible: featureFlags.showReporting },
       { label: "Revenue", href: "/reporting/revenue", icon: <DollarSign className="w-4 h-4" />, visible: featureFlags.showReporting },
