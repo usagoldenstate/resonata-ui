@@ -1069,7 +1069,7 @@ export function AgentConfigTab({
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Sales conversation script</CardTitle>
+        <CardHeader><CardTitle className="text-base">Sales Conversation Script</CardTitle>
           <p className="text-sm text-muted-foreground">Build question paths, describe branching conditions, and name the answers you want to capture.</p>
         </CardHeader>
         <CardContent><Button asChild variant="outline"><Link href="/agent-config/sales-script" onClick={event => { if (!confirmDiscardUnsaved()) event.preventDefault() }}>Open flow builder <ArrowRight className="ml-2 size-4" /></Link></Button></CardContent>
@@ -1078,7 +1078,7 @@ export function AgentConfigTab({
       <Card>
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-            <Mail className="size-4 text-primary" /> Inquiry email routing
+            <Mail className="size-4 text-primary" /> Inquiry Email Routing
             <Badge variant="secondary">After intake</Badge>
           </CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -1110,7 +1110,7 @@ export function AgentConfigTab({
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">
             <PhoneForwarded className="w-4 h-4 text-primary" />
-            Room reservation requests
+            Room Reservation Requests
             <Badge variant="secondary">During call</Badge>
           </CardTitle>
           <p className="text-sm text-muted-foreground">
