@@ -12,6 +12,7 @@ import {
   Globe,
   Layers,
   Megaphone,
+  BellRing,
   PhoneOff,
   Save,
   Loader2,
@@ -64,6 +65,7 @@ import {
   type HotelOperatorUpdate,
   type HotelPlatformUpdate,
   type Organization,
+  type SalesFollowUpReminder,
   fetchOrganizations,
   fetchHotelDetail,
   updateHotelOperatorSettings,
@@ -103,6 +105,27 @@ function describeError(error: unknown): string {
 const MAX_SALES_REPS = 50
 const MAX_SALES_REP_NAME = 80
 const MAX_IGNORED_NUMBERS = 20
+// Mirrors schemas/hotel.py::SalesFollowUpReminder.
+const DEFAULT_FOLLOW_UP_REMINDER: SalesFollowUpReminder = {
+  enabled: true,
+  first_after_hours: 48,
+  repeat: "once",
+  repeat_every_hours: 48,
+}
+const FIRST_REMINDER_HOURS = { min: 4, max: 336 }
+const REPEAT_REMINDER_HOURS = { min: 24, max: 720 }
+
+function followUpReminderProblem(value: SalesFollowUpReminder): string | null {
+  const inRange = (n: number, range: { min: number; max: number }) =>
+    Number.isInteger(n) && n >= range.min && n <= range.max
+  if (!inRange(value.first_after_hours, FIRST_REMINDER_HOURS)) {
+    return `The first reminder must be between ${FIRST_REMINDER_HOURS.min} and ${FIRST_REMINDER_HOURS.max} hours (14 days).`
+  }
+  if (!inRange(value.repeat_every_hours, REPEAT_REMINDER_HOURS)) {
+    return `Repeat reminders must be between ${REPEAT_REMINDER_HOURS.min} and ${REPEAT_REMINDER_HOURS.max} hours apart.`
+  }
+  return null
+}
 
 // A loose client-side check; the backend normalizes to E.164 and refuses
 // anything it can't parse, with the offending value in the message.
@@ -169,6 +192,9 @@ export default function SettingsPage() {
   // The hotel's own numbers (a phone-system trunk) never treated as a guest's
   // caller ID. Edited as tags; the backend stores them E.164.
   const [ignoredNumbers, setIgnoredNumbers] = useState<string[]>([])
+  // Reminder emails for inquiries nobody has followed up. Operator-editable.
+  const [followUpReminder, setFollowUpReminder] =
+    useState<SalesFollowUpReminder>(DEFAULT_FOLLOW_UP_REMINDER)
   const [timezone, setTimezone] = useState("America/New_York")
   const currency = detail?.currency ?? ""
 
@@ -191,6 +217,7 @@ export default function SettingsPage() {
     setProductLines(d.lines ?? "reservations")
     setSalesRepNames(d.sales_rep_names ?? [])
     setIgnoredNumbers(d.sales_ignored_caller_numbers ?? [])
+    setFollowUpReminder(d.sales_follow_up_reminder ?? DEFAULT_FOLLOW_UP_REMINDER)
     setTimezone(d.timezone)
   }, [])
 
@@ -236,6 +263,10 @@ export default function SettingsPage() {
         JSON.stringify(detail.sales_rep_names ?? []) ||
       JSON.stringify(ignoredNumbers) !==
         JSON.stringify(detail.sales_ignored_caller_numbers ?? []) ||
+      JSON.stringify(followUpReminder) !==
+        JSON.stringify(
+          detail.sales_follow_up_reminder ?? DEFAULT_FOLLOW_UP_REMINDER,
+        ) ||
       (isPlatformAdmin &&
         (senderName.trim() !== splitEmailFrom(detail.email_from).name ||
           salesSenderName.trim() !==
@@ -365,6 +396,16 @@ export default function SettingsPage() {
         (detail.sales_ignored_caller_numbers ?? []).join("\n")
       ) {
         opBody.sales_ignored_caller_numbers = ignoredNumbers
+      }
+      if (
+        JSON.stringify(followUpReminder) !==
+        JSON.stringify(
+          detail.sales_follow_up_reminder ?? DEFAULT_FOLLOW_UP_REMINDER,
+        )
+      ) {
+        const problem = followUpReminderProblem(followUpReminder)
+        if (problem) throw new Error(problem)
+        opBody.sales_follow_up_reminder = followUpReminder
       }
       if (Object.keys(opBody).length > 0) {
         latest = await updateHotelOperatorSettings(hotelId, opBody)
@@ -958,7 +999,7 @@ export default function SettingsPage() {
                 </div>
               </TabsContent>
               {savedLines.sales && (
-                <TabsContent value="team">
+                <TabsContent value="team" className="space-y-6">
                   <Card className="border-border">
                     <CardHeader className="pb-4">
                       <div className="flex items-center gap-3">
@@ -992,6 +1033,141 @@ export default function SettingsPage() {
                             : null
                         }
                       />
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <BellRing className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">
+                            Follow-up reminders
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                            Email the inquiry&apos;s sales department when
+                            nobody has logged a follow-up outcome.
+                          </CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {detail?.sales_follow_up_reminder_invalid && (
+                        <StateNotice
+                          tone="warning"
+                          message="The saved reminder setting could not be read, so no reminders are going out. Review the values below and save to turn them back on."
+                        />
+                      )}
+                      <div className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="followUpReminderEnabled" className="text-sm">
+                            Send follow-up reminders
+                          </Label>
+                          <p className="text-[11px] text-muted-foreground">
+                            Reminders stop as soon as any outcome is logged on
+                            the inquiry.
+                          </p>
+                        </div>
+                        <Switch
+                          id="followUpReminderEnabled"
+                          checked={followUpReminder.enabled}
+                          onCheckedChange={(enabled) =>
+                            setFollowUpReminder((current) => ({ ...current, enabled }))
+                          }
+                        />
+                      </div>
+                      {followUpReminder.enabled && (
+                        <>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor="followUpReminderFirst"
+                              className="text-xs text-muted-foreground"
+                            >
+                              Hours before the first reminder
+                            </Label>
+                            <Input
+                              id="followUpReminderFirst"
+                              type="number"
+                              inputMode="numeric"
+                              className="w-32"
+                              min={FIRST_REMINDER_HOURS.min}
+                              max={FIRST_REMINDER_HOURS.max}
+                              value={followUpReminder.first_after_hours || ""}
+                              onChange={(e) =>
+                                setFollowUpReminder((current) => ({
+                                  ...current,
+                                  first_after_hours: Number(e.target.value),
+                                }))
+                              }
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Counted from when the inquiry arrived, weekends
+                              included. 48 hours is 2 days; the most is 336
+                              (14 days).
+                            </p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor="followUpReminderRepeat"
+                              className="text-xs text-muted-foreground"
+                            >
+                              After the first reminder
+                            </Label>
+                            <OptionSelect
+                              id="followUpReminderRepeat"
+                              value={followUpReminder.repeat}
+                              onValueChange={(repeat) =>
+                                setFollowUpReminder((current) => ({
+                                  ...current,
+                                  repeat: repeat as SalesFollowUpReminder["repeat"],
+                                }))
+                              }
+                              options={[
+                                { value: "once", label: "Send no more reminders" },
+                                {
+                                  value: "until_outcome_logged",
+                                  label: "Keep reminding until an outcome is logged",
+                                },
+                              ]}
+                            />
+                          </div>
+                          {followUpReminder.repeat === "until_outcome_logged" && (
+                            <div className="space-y-1.5">
+                              <Label
+                                htmlFor="followUpReminderEvery"
+                                className="text-xs text-muted-foreground"
+                              >
+                                Hours between reminders
+                              </Label>
+                              <Input
+                                id="followUpReminderEvery"
+                                type="number"
+                                inputMode="numeric"
+                                className="w-32"
+                                min={REPEAT_REMINDER_HOURS.min}
+                                max={REPEAT_REMINDER_HOURS.max}
+                                value={followUpReminder.repeat_every_hours || ""}
+                                onChange={(e) =>
+                                  setFollowUpReminder((current) => ({
+                                    ...current,
+                                    repeat_every_hours: Number(e.target.value),
+                                  }))
+                                }
+                              />
+                              <p className="text-[11px] text-muted-foreground">
+                                At least 24 hours apart.
+                              </p>
+                            </div>
+                          )}
+                          {salesRepNames.length === 0 && (
+                            <StateNotice
+                              tone="warning"
+                              message="No salesperson names are set above, so nobody can log an outcome from the emailed link. Until names are added, reminders link to the inquiry in the dashboard, which needs a sign-in."
+                            />
+                          )}
+                        </>
+                      )}
                     </CardContent>
                   </Card>
                 </TabsContent>
@@ -1222,7 +1398,7 @@ function StateNotice({
   tone,
   message,
 }: {
-  tone: "muted" | "error"
+  tone: "muted" | "error" | "warning"
   message: string
 }) {
   return (
@@ -1230,7 +1406,9 @@ function StateNotice({
       className={`rounded-md border px-3 py-2 text-sm ${
         tone === "error"
           ? "border-destructive/30 text-destructive"
-          : "border-border text-muted-foreground"
+          : tone === "warning"
+            ? "border-amber-300 bg-amber-50 text-amber-900"
+            : "border-border text-muted-foreground"
       }`}
     >
       {message}

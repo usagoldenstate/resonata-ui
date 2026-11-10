@@ -920,6 +920,11 @@ export type HotelDetail = {
   sales_first_message_default?: string
   // The optional after-hours opener; null = never configured.
   sales_after_hours?: SalesAfterHours | null
+  // The follow-up reminder setting in effect (the defaults when the hotel
+  // never saved one). Null with `sales_follow_up_reminder_invalid` = the
+  // stored value cannot be read, so no reminders go out until it is saved.
+  sales_follow_up_reminder?: SalesFollowUpReminder | null
+  sales_follow_up_reminder_invalid?: boolean
   // Which products the hotel bought. Platform-admin only.
   lines?: HotelLines
   pms_webhook_last_received_at: string | null
@@ -1098,6 +1103,16 @@ export type SalesAfterHours = {
   business_days: number[]
 }
 
+// When the sales team is emailed a reminder about an inquiry still at
+// "Not started". Hours are calendar hours. `repeat` is "once" or a reminder
+// every `repeat_every_hours` until someone logs an outcome.
+export type SalesFollowUpReminder = {
+  enabled: boolean
+  first_after_hours: number
+  repeat: "once" | "until_outcome_logged"
+  repeat_every_hours: number
+}
+
 // The TEMPLATE opening each line speaks while its own column is empty,
 // rendered server-side from the hotel's current display_name + agent_name.
 // `reservations` backs `Hotel.first_message`, `sales` backs
@@ -1224,6 +1239,8 @@ export type HotelOperatorUpdate = {
   // Blank clears back to the shared template.
   sales_first_message?: string | null
   sales_after_hours?: SalesAfterHours | null
+  // Full replace. Null goes back to the default (on, 48 hours, once).
+  sales_follow_up_reminder?: SalesFollowUpReminder | null
 }
 
 // Platform-admin-only partial update (PATCH /admin/hotels/{id}/platform-settings).
@@ -1933,6 +1950,10 @@ export type SalesInquiryItem = SalesInquiry & {
   // Present only when this inquiry has a delivery; a hotel with no lead
   // delivery has none, so its rows show no empty column.
   lead_delivery?: LeadDeliveryState | null
+  // Follow-up reminder emails sent for this inquiry, and when the last went.
+  reminder_count?: number
+  last_reminder_at?: string | null
+  reminder_status?: string | null
 }
 // One save is one entry: the outcome line in `text`, the typed note beneath.
 export type SalesActivity = {
