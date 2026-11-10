@@ -127,6 +127,19 @@ function followUpReminderProblem(value: SalesFollowUpReminder): string | null {
   return null
 }
 
+// An unreadable saved setting always counts as changed: the form shows the
+// defaults in its place, and saving them is what turns reminders back on.
+function followUpReminderChanged(
+  value: SalesFollowUpReminder,
+  detail: HotelDetail,
+): boolean {
+  return (
+    Boolean(detail.sales_follow_up_reminder_invalid) ||
+    JSON.stringify(value) !==
+      JSON.stringify(detail.sales_follow_up_reminder ?? DEFAULT_FOLLOW_UP_REMINDER)
+  )
+}
+
 // A loose client-side check; the backend normalizes to E.164 and refuses
 // anything it can't parse, with the offending value in the message.
 function phoneProblem(value: string): string | null {
@@ -263,10 +276,7 @@ export default function SettingsPage() {
         JSON.stringify(detail.sales_rep_names ?? []) ||
       JSON.stringify(ignoredNumbers) !==
         JSON.stringify(detail.sales_ignored_caller_numbers ?? []) ||
-      JSON.stringify(followUpReminder) !==
-        JSON.stringify(
-          detail.sales_follow_up_reminder ?? DEFAULT_FOLLOW_UP_REMINDER,
-        ) ||
+      followUpReminderChanged(followUpReminder, detail) ||
       (isPlatformAdmin &&
         (senderName.trim() !== splitEmailFrom(detail.email_from).name ||
           salesSenderName.trim() !==
@@ -397,12 +407,7 @@ export default function SettingsPage() {
       ) {
         opBody.sales_ignored_caller_numbers = ignoredNumbers
       }
-      if (
-        JSON.stringify(followUpReminder) !==
-        JSON.stringify(
-          detail.sales_follow_up_reminder ?? DEFAULT_FOLLOW_UP_REMINDER,
-        )
-      ) {
+      if (followUpReminderChanged(followUpReminder, detail)) {
         const problem = followUpReminderProblem(followUpReminder)
         if (problem) throw new Error(problem)
         opBody.sales_follow_up_reminder = followUpReminder
