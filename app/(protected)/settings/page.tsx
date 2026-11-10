@@ -105,9 +105,10 @@ function describeError(error: unknown): string {
 const MAX_SALES_REPS = 50
 const MAX_SALES_REP_NAME = 80
 const MAX_IGNORED_NUMBERS = 20
-// Mirrors schemas/hotel.py::SalesFollowUpReminder.
+// What the backend reports for a hotel that never saved a setting: off, with
+// the values the editor starts from (schemas/hotel.py::parse_sales_follow_up_reminder).
 const DEFAULT_FOLLOW_UP_REMINDER: SalesFollowUpReminder = {
-  enabled: true,
+  enabled: false,
   first_after_hours: 48,
   max_reminders: 1,
   repeat_every_hours: 48,

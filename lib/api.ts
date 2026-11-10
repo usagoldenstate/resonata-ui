@@ -920,8 +920,8 @@ export type HotelDetail = {
   sales_first_message_default?: string
   // The optional after-hours opener; null = never configured.
   sales_after_hours?: SalesAfterHours | null
-  // The follow-up reminder setting in effect (the defaults when the hotel
-  // never saved one). Null with `sales_follow_up_reminder_invalid` = the
+  // The follow-up reminder setting in effect (off when the hotel never
+  // saved one). Null with `sales_follow_up_reminder_invalid` = the
   // stored value cannot be read, so no reminders go out until it is saved.
   sales_follow_up_reminder?: SalesFollowUpReminder | null
   sales_follow_up_reminder_invalid?: boolean
