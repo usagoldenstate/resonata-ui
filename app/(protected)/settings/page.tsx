@@ -55,6 +55,7 @@ import { Sidebar } from "@/components/sidebar"
 import { SetupHealthCard } from "@/components/hotel-setup/setup-health-card"
 import { LeadDeliveryCard } from "@/components/lead-delivery-card"
 import { OperaCancellationCard } from "@/components/opera-cancellation-card"
+import { OperaReservationChangeCard } from "@/components/opera-reservation-change-card"
 import { StaynTouchCancellationCard } from "@/components/stayntouch-cancellation-card"
 import { useHotel } from "@/lib/hotel-context"
 import { useCurrentUser } from "@/lib/current-user-context"
@@ -1387,6 +1388,9 @@ export default function SettingsPage() {
                     {savedLines.reservations &&
                       detail?.pms_provider === "opera" &&
                       hotelId && <OperaCancellationCard hotelId={hotelId} />}
+                    {savedLines.reservations &&
+                      detail?.pms_provider === "opera" &&
+                      hotelId && <OperaReservationChangeCard hotelId={hotelId} />}
                     {savedLines.reservations &&
                       detail?.pms_provider === "stayntouch" &&
                       hotelId && (

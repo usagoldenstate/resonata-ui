@@ -32,7 +32,7 @@ import {
   type OperaCancellationSetup,
 } from "@/lib/api"
 
-function errorText(error: unknown): string {
+export function errorText(error: unknown): string {
   if (error instanceof ApiError && error.body && typeof error.body === "object") {
     const detail = (error.body as { detail?: unknown }).detail
     if (Array.isArray(detail)) return detail.map(String).join("; ")
@@ -263,14 +263,14 @@ export function OperaCancellationCard({ hotelId }: { hotelId: string }) {
   )
 }
 
-type CatalogRow = {
+export type CatalogRow = {
   item: { code: string }
   checked: boolean
   values: string[]
   onToggle: () => void
 }
 
-function CatalogTable({ title, columns, rows }: { title: string; columns: string[]; rows: CatalogRow[] }) {
+export function CatalogTable({ title, columns, rows }: { title: string; columns: string[]; rows: CatalogRow[] }) {
   return (
     <div className="space-y-2">
       <Label>{title}</Label>

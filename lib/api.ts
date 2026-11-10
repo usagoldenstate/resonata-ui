@@ -1446,6 +1446,57 @@ export function disableOperaCancellation(hotelId: string) {
   )
 }
 
+// Self-service reservation changes (dates and guest count today; room type later).
+// Same live OPERA catalogs as cancellation — the reason list is unused here.
+export type ReservationChangeKind = "dates" | "guests" | "room_type"
+
+export type OperaReservationChangeConfig = {
+  allowed_changes: ReservationChangeKind[]
+  allowed_source_codes: Record<string, string>
+  allowed_guarantee_codes: string[]
+  catalog_verified_at: string
+}
+
+export type OperaReservationChangeSetup = {
+  saved: OperaReservationChangeConfig | null
+  ready: boolean
+  validation_errors: string[]
+  catalogs: OperaCancellationSetup["catalogs"]
+}
+
+export type OperaReservationChangeSetupUpdate = {
+  allowed_changes: ReservationChangeKind[]
+  allowed_source_codes: string[]
+  allowed_guarantee_codes: string[]
+}
+
+export function fetchOperaReservationChangeSetup(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<OperaReservationChangeSetup>(
+    `/api/v1/admin/hotels/${hotelId}/opera-reservation-changes/setup`,
+    opts,
+  )
+}
+
+export function saveOperaReservationChangeSetup(
+  hotelId: string,
+  body: OperaReservationChangeSetupUpdate,
+) {
+  return api<OperaReservationChangeSetup>(
+    `/api/v1/admin/hotels/${hotelId}/opera-reservation-changes/setup`,
+    { method: "PUT", body },
+  )
+}
+
+export function disableOperaReservationChanges(hotelId: string) {
+  return api<{ status: "disabled"; hotel_id: string }>(
+    `/api/v1/admin/hotels/${hotelId}/opera-reservation-changes/setup`,
+    { method: "DELETE" },
+  )
+}
+
 export type StaynTouchCancellationCatalogItem = {
   id: number
   label: string
