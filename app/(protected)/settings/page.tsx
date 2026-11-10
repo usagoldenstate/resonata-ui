@@ -109,7 +109,7 @@ const MAX_IGNORED_NUMBERS = 20
 const DEFAULT_FOLLOW_UP_REMINDER: SalesFollowUpReminder = {
   enabled: true,
   first_after_hours: 48,
-  repeat: "once",
+  max_reminders: 1,
   repeat_every_hours: 48,
 }
 const FIRST_REMINDER_HOURS = { min: 4, max: 336 }
@@ -122,7 +122,7 @@ function followUpReminderProblem(value: SalesFollowUpReminder): string | null {
     return `The first reminder must be between ${FIRST_REMINDER_HOURS.min} and ${FIRST_REMINDER_HOURS.max} hours (14 days).`
   }
   if (!inRange(value.repeat_every_hours, REPEAT_REMINDER_HOURS)) {
-    return `Repeat reminders must be between ${REPEAT_REMINDER_HOURS.min} and ${REPEAT_REMINDER_HOURS.max} hours apart.`
+    return `Reminders must be between ${REPEAT_REMINDER_HOURS.min} and ${REPEAT_REMINDER_HOURS.max} hours apart.`
   }
   return null
 }
@@ -1112,27 +1112,32 @@ export default function SettingsPage() {
                               htmlFor="followUpReminderRepeat"
                               className="text-xs text-muted-foreground"
                             >
-                              After the first reminder
+                              How many reminders to send
                             </Label>
                             <OptionSelect
                               id="followUpReminderRepeat"
-                              value={followUpReminder.repeat}
-                              onValueChange={(repeat) =>
+                              value={String(followUpReminder.max_reminders ?? "until")}
+                              onValueChange={(count) =>
                                 setFollowUpReminder((current) => ({
                                   ...current,
-                                  repeat: repeat as SalesFollowUpReminder["repeat"],
+                                  max_reminders:
+                                    count === "until"
+                                      ? null
+                                      : (Number(count) as 1 | 2 | 3),
                                 }))
                               }
                               options={[
-                                { value: "once", label: "Send no more reminders" },
+                                { value: "1", label: "1 reminder" },
+                                { value: "2", label: "2 reminders" },
+                                { value: "3", label: "3 reminders" },
                                 {
-                                  value: "until_outcome_logged",
-                                  label: "Keep reminding until an outcome is logged",
+                                  value: "until",
+                                  label: "Keep reminding until the lead is updated",
                                 },
                               ]}
                             />
                           </div>
-                          {followUpReminder.repeat === "until_outcome_logged" && (
+                          {followUpReminder.max_reminders !== 1 && (
                             <div className="space-y-1.5">
                               <Label
                                 htmlFor="followUpReminderEvery"

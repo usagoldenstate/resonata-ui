@@ -1104,12 +1104,13 @@ export type SalesAfterHours = {
 }
 
 // When the sales team is emailed a reminder about an inquiry still at
-// "Not started". Hours are calendar hours. `repeat` is "once" or a reminder
-// every `repeat_every_hours` until someone logs an outcome.
+// "Not started". Hours are calendar hours. `max_reminders` is how many one
+// inquiry can get (1 to 3); null means one every `repeat_every_hours` until
+// someone logs an outcome.
 export type SalesFollowUpReminder = {
   enabled: boolean
   first_after_hours: number
-  repeat: "once" | "until_outcome_logged"
+  max_reminders: 1 | 2 | 3 | null
   repeat_every_hours: number
 }
 
