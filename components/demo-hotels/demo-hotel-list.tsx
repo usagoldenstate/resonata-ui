@@ -212,7 +212,7 @@ export function DemoHotelList({ refreshKey }: { refreshKey: number }) {
             <AlertDialogDescription>
               {pendingToggle?.is_active
                 ? "This hotel will stop accepting calls and won't be selectable in the hotel picker until reactivated."
-                : "This hotel becomes selectable again and can accept calls, assuming its Vapi phone routing is still configured."}
+                : "This hotel becomes selectable again and can accept calls, assuming its agent phone number is still set and routed to it."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

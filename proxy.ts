@@ -21,6 +21,9 @@ const isPublic = createRouteMatcher([
   // notification email. Its readers are hotel sales staff with no Resonata
   // account; the signed token in the URL authorizes the one inquiry it names.
   "/inquiry/(.*)",
+  // The "Listen to recording" link in the same email. Its signed token
+  // authorizes playing that one call's recording.
+  "/recording/(.*)",
 ])
 
 function isHidden(pathname: string): boolean {

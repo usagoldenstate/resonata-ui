@@ -10,7 +10,14 @@ import { ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { SetupStatus, SetupStepKey } from "@/lib/api"
 
-import { STEP_LABELS, StatusPill } from "./shared"
+import { CopyBox, STEP_LABELS, StatusPill } from "./shared"
+
+// A task's `url_hint` is a value the operator needs, not always a web page: a
+// `sip:` address (the trunk's origination URI) opens a softphone if linked, so
+// only http(s) hints are links and everything else is a value to copy.
+function isWebUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value)
+}
 
 export function SetupStatusPanel({
   status,
@@ -77,7 +84,7 @@ export function SetupStatusPanel({
                 <span className="block text-[11px] leading-relaxed text-muted-foreground">
                   {task.detail}
                 </span>
-                {task.url_hint ? (
+                {task.url_hint && isWebUrl(task.url_hint) ? (
                   <a
                     href={task.url_hint}
                     target="_blank"
@@ -87,6 +94,10 @@ export function SetupStatusPanel({
                     <ExternalLink className="h-3 w-3 shrink-0" />
                     {task.url_hint}
                   </a>
+                ) : task.url_hint ? (
+                  <div className="mt-1">
+                    <CopyBox value={task.url_hint} />
+                  </div>
                 ) : null}
               </li>
             ))}

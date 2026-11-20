@@ -535,7 +535,7 @@ export type SalesInquiry = {
   created_at: string
   // "intake_tool" = recorded by the agent on the call. "recovered" = a
   // partial inquiry pulled from the transcript of a call that ended before
-  // the intake finished; may be incomplete, never emailed.
+  // the intake finished; may be incomplete, regardless of email delivery.
   source?: SalesInquirySource
 }
 export type SalesInquirySource = "intake_tool" | "recovered"
@@ -592,8 +592,9 @@ export type CallDetail = {
   duration_seconds: number | null
   // Plaintext caller ID (E.164); null for blocked/withheld callers or erased rows.
   caller_phone_e164: string | null
-  // Server-derived: a playable Twilio recording is attached. The raw sid is never
-  // exposed; audio is fetched by call_id through the authed proxy below.
+  // Server-derived: a playable recording is stored for this call. Its storage
+  // key is never exposed; audio is fetched by call_id through the authed proxy
+  // below.
   has_recording: boolean
   // Sales-line calls only; null on reservations calls and on sales calls that
   // ended before the inquiry was submitted.
@@ -862,6 +863,9 @@ export function fetchAdminHotels(opts: Pick<Options, "signal"> = {}) {
 // schema (only the fields the UI touches are typed here).
 export type HotelDetail = {
   hotel_id: string
+  // Where this hotel's sales leads are forwarded. Holds no secret; null =
+  // nowhere. Platform admins edit it (PATCH platform-settings).
+  lead_delivery?: LeadDeliveryConfig | null
   display_name: string
   timezone: string
   // Organization membership. Platform-admin only; null = independent hotel.
@@ -878,18 +882,24 @@ export type HotelDetail = {
   max_call_minutes: number | null
   // E.164 inbound DID callers dial to reach this hotel. Platform-admin only.
   inbound_phone_number: string | null
-  // Vapi phoneNumberId (UUID) this hotel's calls arrive on. When set, the
-  // backend rejects Vapi webhooks whose payload carries a different id
-  // (tenant-binding guard). Platform-admin only; null disables the check.
-  vapi_phone_number_id: string | null
+  // E.164 number the AI agent answers on for the reservations line. Calls
+  // arrive over the LiveKit SIP trunk and are matched to a hotel + line by the
+  // number dialed, so one number belongs to one line of one hotel (the backend
+  // 409s a number another hotel holds). Can differ from inbound_phone_number
+  // when the hotel forwards its own line to us. Platform-admin only; null =
+  // no calls reach this hotel's reservations agent.
+  agent_phone_number: string | null
   // Twilio sender (E.164) for outbound guest SMS. Its presence is what turns
   // on the text-or-email choice for booking-link delivery; null = email only.
   // Platform-admin only.
   twilio_from_number: string | null
-  // Sales intake line — the hotel's second Vapi number (the sales department's
-  // no-answer forward). Platform-admin only. Enabling requires a department.
+  // Sales intake line — the hotel's second agent number (the sales department's
+  // no-answer forward). Platform-admin only. Enabling requires a department and
+  // sales_agent_phone_number, which must differ from agent_phone_number (422).
   sales_line_enabled: boolean
-  sales_vapi_phone_number_id: string | null
+  sales_agent_phone_number: string | null
+  // Whether the sales email links to the call's recording. Platform-admin only.
+  sales_recording_link_enabled: boolean
   // Where inquiries are emailed, per department. Operator-editable.
   sales_departments: SalesDepartment[]
   // The hotel's sales team as plain name tags — who follow-up activity is
@@ -908,6 +918,13 @@ export type HotelDetail = {
   // rendered for this hotel. Operator-editable via Agent Configuration.
   sales_first_message: string | null
   sales_first_message_default?: string
+  // The optional after-hours opener; null = never configured.
+  sales_after_hours?: SalesAfterHours | null
+  // The follow-up reminder setting in effect (off when the hotel never
+  // saved one). Null with `sales_follow_up_reminder_invalid` = the
+  // stored value cannot be read, so no reminders go out until it is saved.
+  sales_follow_up_reminder?: SalesFollowUpReminder | null
+  sales_follow_up_reminder_invalid?: boolean
   // Which products the hotel bought. Platform-admin only.
   lines?: HotelLines
   pms_webhook_last_received_at: string | null
@@ -1065,12 +1082,36 @@ export type SetupStep = {
   detail: string | null
 }
 
-// Work that happens outside this app (Vapi dashboard, StayNTouch portal, …).
+// Work that happens outside this app (Twilio console, LiveKit, StayNTouch
+// portal, …). Rendered verbatim: `key` is backend-defined and only a React key,
+// and `url_hint` is either a link or a value to copy (e.g. a `sip:` address).
 export type SetupExternalTask = {
   key: string
   title: string
   detail: string
   url_hint: string | null
+}
+
+// The sales line's second opener, for calls outside the hotel's business
+// hours. Times are "HH:MM" on the hotel's local clock (the end is outside
+// business hours); days are 0 = Monday to 6 = Sunday.
+export type SalesAfterHours = {
+  enabled: boolean
+  message: string
+  business_start: string
+  business_end: string
+  business_days: number[]
+}
+
+// When the sales team is emailed a reminder about an inquiry still at
+// "Not started". Hours are calendar hours. `max_reminders` is how many one
+// inquiry can get (1 to 3); null means one every `repeat_every_hours` until
+// someone logs an outcome.
+export type SalesFollowUpReminder = {
+  enabled: boolean
+  first_after_hours: number
+  max_reminders: 1 | 2 | 3 | null
+  repeat_every_hours: number
 }
 
 // The TEMPLATE opening each line speaks while its own column is empty,
@@ -1170,16 +1211,6 @@ export function fetchHotelRoomTypes(
   return api<HotelRoomTypeList>(`/api/v1/admin/hotels/${hotelId}/room-types`, opts)
 }
 
-// ── Vapi webhook secret (wizard's telephony step) ───────────────────────────
-// Plaintext comes back exactly once; only its SHA-256 hash is stored. Calls
-// 401 between the rotate and pasting it into the Vapi dashboard.
-export function rotateVapiWebhookSecret(hotelId: string) {
-  return api<{ vapi_webhook_secret: string }>(
-    `/api/v1/admin/hotels/${hotelId}/vapi-webhook-secret/rotate`,
-    { method: "POST" },
-  )
-}
-
 // Operator-safe partial update (PUT /admin/hotels/{id}). Only send changed keys.
 export type HotelOperatorUpdate = {
   display_name?: string
@@ -1208,6 +1239,9 @@ export type HotelOperatorUpdate = {
   sales_departments?: SalesDepartmentInput[]
   // Blank clears back to the shared template.
   sales_first_message?: string | null
+  sales_after_hours?: SalesAfterHours | null
+  // Full replace. Null goes back to the default (on, 48 hours, once).
+  sales_follow_up_reminder?: SalesFollowUpReminder | null
 }
 
 // Platform-admin-only partial update (PATCH /admin/hotels/{id}/platform-settings).
@@ -1215,10 +1249,15 @@ export type HotelPlatformUpdate = {
   // An existing organization id, or null/"" to make the hotel independent.
   organization_id?: string | null
   inbound_phone_number?: string | null
-  vapi_phone_number_id?: string | null
+  // E.164; normalized server-side. 409 when another hotel holds the number,
+  // 422 when both lines are given the same one.
+  agent_phone_number?: string | null
   twilio_from_number?: string | null
+  // Enabling requires sales_agent_phone_number (already saved, or in this
+  // same PATCH).
   sales_line_enabled?: boolean
-  sales_vapi_phone_number_id?: string | null
+  sales_recording_link_enabled?: boolean
+  sales_agent_phone_number?: string | null
   // Validated with the sales-line fields: the line can only be on for
   // "sales" | "both", so the two travel in one PATCH on launch day.
   lines?: HotelLines
@@ -1234,10 +1273,13 @@ export type HotelPlatformUpdate = {
   reservation_flow?: ReservationFlow
   is_active?: boolean
   commission_rate_basis_points?: number
+  // Full replace; null removes it. Editing the destination pauses waiting
+  // deliveries for review.
+  lead_delivery?: LeadDeliveryConfig | null
 }
 
-// Base URL of the FastAPI backend, used to render the exact webhook URLs an
-// operator pastes into Vapi / StayNTouch. Empty when unconfigured.
+// Base URL of the FastAPI backend, used to render the exact webhook URL an
+// operator pastes into StayNTouch. Empty when unconfigured.
 export function apiBaseUrl(): string {
   return env.apiUrl.replace(/\/$/, "")
 }
@@ -1267,6 +1309,83 @@ export function updateHotelPlatformSettings(
     method: "PATCH",
     body,
   })
+}
+
+// Per-hotel sales lead delivery (Salesforce Web-to-Lead).
+export type LeadDeliveryExtraField = { name: string; value: string }
+export type LeadDeliveryConfig = {
+  provider: "salesforce_web_to_lead"
+  enabled: boolean
+  org_id: string
+  lead_source: string
+  // Salesforce custom field IDs only, e.g. Property / Company.
+  extra_fields: LeadDeliveryExtraField[]
+}
+export type LeadDeliveryStatus = "pending" | "sending" | "submitted" | "failed" | "gave_up" | "needs_review" | "skipped"
+// What authorized hotel users see. "submitted" means Salesforce received the
+// request, never that a lead was created: Web-to-Lead cannot confirm that.
+export type LeadDeliveryState = {
+  provider: string
+  // From the delivery itself, so history keeps its label if the hotel moves on.
+  provider_label: string
+  status: LeadDeliveryStatus
+  reason: string | null
+  submitted_at: string | null
+  next_attempt_at: string | null
+  updated_at: string | null
+  // Platform-admin diagnostics and retry. Null on a superseded submission.
+  delivery_id: string | null
+}
+export type LeadDeliveryAttempt = {
+  id: string
+  attempt_number: number
+  started_at: string
+  finished_at: string | null
+  outcome: "submitted" | "definitely_not_sent" | "failed" | "unknown"
+  error_class: string | null
+  destination_ref: string
+}
+export type LeadDeliveryDiagnostics = LeadDeliveryState & {
+  id: string
+  provider_call_id: string
+  sales_inquiry_id: string | null
+  destination: Record<string, unknown>
+  send_attempts: number
+  processing_failures: number
+  processing_error_class: string | null
+  has_late_submission: boolean
+  attempts: LeadDeliveryAttempt[]
+}
+export type LeadDeliveryTestPreview = {
+  test_id: string
+  destination_fingerprint: string
+  provider: string
+  fields: Record<string, string>
+}
+export type LeadDeliveryTestResult = { status: "submitted" | "failed"; reason: string | null }
+
+export function fetchLeadDeliveryTestPreview(hotelId: string) {
+  return api<LeadDeliveryTestPreview>(`/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/lead-delivery/test-preview`)
+}
+export function sendLeadDeliveryTest(
+  hotelId: string,
+  body: Pick<LeadDeliveryTestPreview, "test_id" | "destination_fingerprint">,
+) {
+  return api<LeadDeliveryTestResult>(`/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/lead-delivery/test`, {
+    method: "POST",
+    body,
+  })
+}
+export function fetchLeadDeliveryDiagnostics(hotelId: string, deliveryId: string) {
+  return api<LeadDeliveryDiagnostics>(
+    `/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/sales-lead-deliveries/${encodeURIComponent(deliveryId)}`,
+  )
+}
+export function retryLeadDelivery(hotelId: string, deliveryId: string) {
+  return api<LeadDeliveryDiagnostics>(
+    `/api/v1/admin/hotels/${encodeURIComponent(hotelId)}/sales-lead-deliveries/${encodeURIComponent(deliveryId)}/retry`,
+    { method: "POST" },
+  )
 }
 
 export type OperaCancellationCatalogItem = {
@@ -1323,6 +1442,57 @@ export function saveOperaCancellationSetup(
 export function disableOperaCancellation(hotelId: string) {
   return api<{ status: "disabled"; hotel_id: string }>(
     `/api/v1/admin/hotels/${hotelId}/opera-cancellation/setup`,
+    { method: "DELETE" },
+  )
+}
+
+// Self-service reservation changes (dates and guest count today; room type later).
+// Same live OPERA catalogs as cancellation — the reason list is unused here.
+export type ReservationChangeKind = "dates" | "guests" | "room_type"
+
+export type OperaReservationChangeConfig = {
+  allowed_changes: ReservationChangeKind[]
+  allowed_source_codes: Record<string, string>
+  allowed_guarantee_codes: string[]
+  catalog_verified_at: string
+}
+
+export type OperaReservationChangeSetup = {
+  saved: OperaReservationChangeConfig | null
+  ready: boolean
+  validation_errors: string[]
+  catalogs: OperaCancellationSetup["catalogs"]
+}
+
+export type OperaReservationChangeSetupUpdate = {
+  allowed_changes: ReservationChangeKind[]
+  allowed_source_codes: string[]
+  allowed_guarantee_codes: string[]
+}
+
+export function fetchOperaReservationChangeSetup(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<OperaReservationChangeSetup>(
+    `/api/v1/admin/hotels/${hotelId}/opera-reservation-changes/setup`,
+    opts,
+  )
+}
+
+export function saveOperaReservationChangeSetup(
+  hotelId: string,
+  body: OperaReservationChangeSetupUpdate,
+) {
+  return api<OperaReservationChangeSetup>(
+    `/api/v1/admin/hotels/${hotelId}/opera-reservation-changes/setup`,
+    { method: "PUT", body },
+  )
+}
+
+export function disableOperaReservationChanges(hotelId: string) {
+  return api<{ status: "disabled"; hotel_id: string }>(
+    `/api/v1/admin/hotels/${hotelId}/opera-reservation-changes/setup`,
     { method: "DELETE" },
   )
 }
@@ -1531,7 +1701,7 @@ export function fetchCallDetail(callId: string, opts: Pick<Options, "signal"> = 
 }
 
 // Platform-admin only: hard-deletes the call and everything hanging off it
-// (analytics, FAQ occurrences, identifiers, surveys, Vapi recording).
+// (analytics, FAQ occurrences, identifiers, surveys, stored recording).
 export function deleteCall(callId: string) {
   return api<void>(`/api/v1/calls/${callId}`, {
     method: "DELETE",
@@ -1540,13 +1710,27 @@ export function deleteCall(callId: string) {
 }
 
 // The generic api() helper always parses JSON, so recording audio needs its own
-// path: same auth headers, but it returns the raw audio/mpeg body as a Blob for
-// <audio> playback (the browser can't send the Clerk bearer on an <audio src>).
-export async function fetchCallRecording(
+// path: same auth headers, but it returns the raw audio body (audio/mpeg) as a
+// Blob for <audio> playback (the browser can't send the Clerk bearer on an
+// <audio src>). Error bodies are still parsed, so a 404's `detail` (e.g.
+// "Recording not available") reaches the player.
+export function fetchCallRecording(
   callId: string,
   opts: Pick<Options, "signal"> = {},
 ): Promise<Blob> {
-  const path = `/api/v1/calls/${callId}/recording`
+  return fetchRecordingAudio(`/api/v1/calls/${callId}/recording`, opts)
+}
+
+// The emailed recording link. No Clerk session: the signed token is the whole
+// authorization, and api-side it plays this one recording and nothing else.
+export function fetchPublicSalesRecording(token: string): Promise<Blob> {
+  return fetchRecordingAudio(`/api/v1/public/sales-recordings/${encodeURIComponent(token)}`)
+}
+
+async function fetchRecordingAudio(
+  path: string,
+  opts: Pick<Options, "signal"> = {},
+): Promise<Blob> {
   if (!env.apiUrl) {
     throw new ApiError(0, path, "NEXT_PUBLIC_API_URL is not set — UI cannot reach the backend.")
   }
@@ -1561,7 +1745,13 @@ export async function fetchCallRecording(
     if (res.status === 401 && unauthorizedHandler) {
       await unauthorizedHandler()
     }
-    throw new ApiError(res.status, url, `API ${res.status} for ${path}`)
+    let body: unknown = undefined
+    try {
+      body = await res.json()
+    } catch {
+      // non-JSON error body — keep going
+    }
+    throw new ApiError(res.status, url, `API ${res.status} for ${path}`, body)
   }
   return res.blob()
 }
@@ -1738,7 +1928,6 @@ export type DemoHotelResult = {
   knowledge_entries_written: number
   departments_written: number
   room_mapping_refreshed: boolean
-  webhook_url: string
 }
 
 export type DemoSpecTemplate = {
@@ -1810,6 +1999,13 @@ export type SalesInquiryItem = SalesInquiry & {
   // True once a privacy erasure has pseudonymized the row. It stays listed for
   // its event lineage but is read-only: the PATCH refuses (409).
   erased: boolean
+  // Present only when this inquiry has a delivery; a hotel with no lead
+  // delivery has none, so its rows show no empty column.
+  lead_delivery?: LeadDeliveryState | null
+  // Follow-up reminder emails sent for this inquiry, and when the last went.
+  reminder_count?: number
+  last_reminder_at?: string | null
+  reminder_status?: string | null
 }
 // One save is one entry: the outcome line in `text`, the typed note beneath.
 export type SalesActivity = {
@@ -1827,11 +2023,16 @@ export type SalesInquiryDetail = SalesInquiryItem & {
   // handed out again. Null once the inquiry has been erased.
   follow_up_url: string | null
   // The persisted call it came from, for playing the recording through
-  // fetchCallRecording. Null until the call's end-of-call report lands.
+  // fetchCallRecording. Null until the call is finalized.
   call_record_id?: string | null
   call_created_at?: string | null
   has_recording?: boolean
+  // The emailed recording link. Null when the email carried none or the hotel
+  // has switched the feature off.
+  recording_link_status?: SalesRecordingLinkStatus | null
+  recording_link_expires_at?: string | null
 }
+export type SalesRecordingLinkStatus = "active" | "expired"
 export type SalesInquiryPage = { items: SalesInquiryItem[]; total: number; counts: Partial<Record<SalesFollowUpStatus, number>> }
 export type SalesInquiryPatch = {
   version: number
@@ -1858,6 +2059,10 @@ export function fetchSalesInquiry(hotelId: string, id: string) {
 export function updateSalesInquiry(hotelId: string, id: string, body: SalesInquiryPatch) {
   return api<SalesInquiryDetail>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }), { method: "PATCH", body })
 }
+// Platform-admin only; anyone else gets a 404.
+export function deleteSalesInquiry(hotelId: string, id: string) {
+  return api<void>(withQuery(`/api/v1/sales-inquiries/${encodeURIComponent(id)}`, { hotel_id: hotelId }), { method: "DELETE", parseJson: false })
+}
 
 // ── The emailed follow-up page ──────────────────────────────────────────────
 // Reached from the sales notification email with no Clerk session; the signed
@@ -1866,60 +2071,15 @@ export function updateSalesInquiry(hotelId: string, id: string, body: SalesInqui
 // route). Everything the page renders comes back in one response.
 export type SalesFollowUpOutcome = "call_attempted" | "contacted" | "booked" | "closed"
 export type PublicSalesInquiry = {
-  answer_variables?: Record<string, string>
-  custom_answers?: SalesInquiryCustomAnswer[]
   hotel_display_name: string
-  caller_name: string | null
-  caller_first_name?: string | null
-  caller_last_name?: string | null
-  company?: string | null
-  callback_phone_e164: string | null
-  caller_id_phone_e164: string | null
-  email: string | null
-  // Which intake the call took: a new event, or a caller following up with a
-  // rep they already work with (event questions skipped; the rep's name as
-  // the caller said it in `existing_contact_name`).
-  inquiry_kind?: SalesInquiryKind
-  existing_contact_name?: string | null
-  // The caller's own words. Null when an existing-inquiry caller never named
-  // the event, and after erasure.
-  event_type: string | null
-  // A fixed category assigned after the call from the transcript; null until
-  // the classifier has run.
-  event_category?: SalesEventCategory | null
-  event_dates_text: string | null
-  // Backup dates in the caller's words; its own field, never merged into
-  // event_dates_text.
-  alternate_dates_text?: string | null
-  event_start_date: string | null
-  event_end_date: string | null
-  dates_flexible: boolean | null
-  // Party size: the caller's words plus the parsed low/high pair. A single
-  // figure is stored in both bounds, so a range is simply min !== max.
-  headcount_text: string | null
-  headcount_min: number | null
-  headcount_max: number | null
-  needs_guest_rooms: boolean | null
-  // Guest rooms (the room block): same shape as the party size.
-  guest_rooms_text?: string | null
-  guest_rooms_min?: number | null
-  guest_rooms_max?: number | null
-  // The caller's own words plus the post-call AI-estimated total-event range.
-  budget_text: string | null
-  estimated_budget_min: string | null
-  estimated_budget_max: string | null
-  budget_estimation_status: "pending" | "complete" | "failed"
-  budget_estimated_at: string | null
-  budget_estimation_model: string | null
-  budget_estimation_prompt_version: string | null
-  notes: string | null
-  created_at: string
-  source?: SalesInquirySource
+  // Matches the page to its email. Emails sent before it existed show only
+  // the received time.
+  reference: string
+  received_at_human: string
   follow_up_status: SalesFollowUpStatus
   follow_up_status_label: string
   assigned_rep: string | null
   version: number
-  activity: SalesActivity[]
   sales_reps: string[]
   outcomes: Array<{ value: SalesFollowUpOutcome; label: string }>
 }

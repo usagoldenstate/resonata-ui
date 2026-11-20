@@ -1,77 +1,40 @@
 "use client"
 
-import { SalesCustomAnswers } from "@/components/sales-custom-answers"
-
 /**
- * The page behind the "Update inquiry" button in the sales notification email.
+ * The page behind the "Log follow-up outcome" button in the sales email.
  *
  * Public by design (proxy.ts lists /inquiry as unauthenticated): the email
  * goes to a shared sales mailbox whose readers have no Resonata account. The
  * signed token in the URL is the whole authorization and covers exactly this
  * one inquiry.
  *
- * Built for a phone held one-handed after a call: the caller's number is the
- * biggest tap target on the screen, the four outcomes are radio cards rather
- * than a dropdown, and nothing is written until Save is pressed.
+ * These links leak, so the API sends no caller details, event details, notes
+ * or activity. Salespeople read the inquiry in the email and log the outcome
+ * here; the reference and received time match this page to that email.
+ *
+ * Built for a phone held one-handed after a call: the four outcomes are radio
+ * cards rather than a dropdown, and nothing is written until Save is pressed.
  */
 
-import { use, useEffect, useMemo, useRef, useState } from "react"
+import { use, useEffect, useRef, useState } from "react"
 import useSWR from "swr"
-import {
-  AlertTriangle,
-  BedDouble,
-  CalendarDays,
-  Check,
-  CheckCircle2,
-  Clock3,
-  Loader2,
-  MessageSquareText,
-  Phone,
-  UserRound,
-  Users,
-  Wallet,
-} from "lucide-react"
+import { AlertTriangle, Check, CheckCircle2, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { OptionSelect } from "@/components/ui/option-select"
 import { Textarea } from "@/components/ui/textarea"
-import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import {
   ApiError,
   fetchPublicSalesInquiry,
   logPublicSalesUpdate,
-  type PublicSalesInquiry,
   type SalesFollowUpOutcome,
-  formatHeadcount,
-  guestRoomsLabel,
 } from "@/lib/api"
-import { EVENT_CATEGORY_LABELS, INQUIRY_KIND_LABELS } from "@/lib/sales-inquiry-labels"
 
-function timestamp(value: string) {
-  // SQLite fixtures return naive UTC; production returns timezone-aware dates.
-  const normalized = /(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : `${value}Z`
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-    day: "numeric",
-  }).format(new Date(normalized))
-}
-
-function stayDates(inquiry: PublicSalesInquiry) {
-  const parsed = [inquiry.event_start_date, inquiry.event_end_date !== inquiry.event_start_date ? inquiry.event_end_date : null]
-    .filter(Boolean)
-    .join(" – ")
-  const base = inquiry.event_dates_text || parsed || "Dates not provided"
-  return `${base}${inquiry.dates_flexible ? " · Flexible" : ""}`
-}
-
-function Detail({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
-      <span className="mt-0.5 shrink-0 text-muted-foreground/70">{icon}</span>
-      <span className="min-w-0 break-words">{children}</span>
+    <div className="flex items-baseline justify-between gap-4 text-sm">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-right font-medium">{children}</dd>
     </div>
   )
 }
@@ -113,8 +76,6 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
     if (remembered && data.sales_reps.includes(remembered)) setRep(remembered)
   }, [data])
 
-  const history = useMemo(() => [...(data?.activity ?? [])].reverse(), [data])
-
   if (isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-muted/30">
@@ -144,7 +105,6 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
 
   const canSave = Boolean(rep) && Boolean(outcome) && !saving
   const noRoster = data.sales_reps.length === 0
-  const existing = data.inquiry_kind === "existing_inquiry"
 
   async function save() {
     if (!data || !outcome || !rep) return
@@ -191,98 +151,19 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {data.hotel_display_name}
           </p>
-          <h1 className="mt-1 text-xl font-semibold">Sales inquiry response</h1>
+          <h1 className="mt-1 text-xl font-semibold">Log follow-up outcome</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            The caller&apos;s details are in the sales email.
+          </p>
         </header>
 
-        {data.source === "recovered" && (
-          <p role="status" className="flex gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <span>
-              <span className="font-semibold">Call ended early.</span> This call ended before the
-              intake finished, so these details were pulled from the call and may be incomplete.
-            </span>
-          </p>
-        )}
-
-        {/* Who called and what they want — enough to know which inquiry this
-            is without opening the original email again. */}
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="truncate text-lg font-semibold">{data.caller_name || "Caller"}</h2>
-              {data.company && <p className="truncate text-sm font-medium">{data.company}</p>}
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {existing ? INQUIRY_KIND_LABELS.existing_inquiry : data.event_type || "Event not specified"}
-                {existing && data.event_type ? ` · ${data.event_type}` : ""}
-                {data.event_category ? ` · ${EVENT_CATEGORY_LABELS[data.event_category]}` : ""}
-              </p>
-            </div>
-            <span className="shrink-0 rounded-full border bg-muted px-2.5 py-1 text-xs font-medium">
-              {data.follow_up_status_label}
-            </span>
-          </div>
-
-          {data.callback_phone_e164 && (
-            <a
-              href={`tel:${data.callback_phone_e164}`}
-              className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3 text-base font-semibold text-background"
-            >
-              <Phone className="size-4" />
-              {data.callback_phone_e164}
-            </a>
-          )}
-          {/* The number they called from. Secondary when a callback number
-              was given; it steps up to the big tap target when none was. */}
-          {data.caller_id_phone_e164 && data.caller_id_phone_e164 !== data.callback_phone_e164 && (
-            <a
-              href={`tel:${data.caller_id_phone_e164}`}
-              className={
-                data.callback_phone_e164
-                  ? "mt-2 flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium"
-                  : "mt-4 flex items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3 text-base font-semibold text-background"
-              }
-            >
-              <Phone className="size-4" />
-              {data.caller_id_phone_e164}
-              <span className={data.callback_phone_e164 ? "text-xs font-normal text-muted-foreground" : "text-xs font-normal opacity-70"}>
-                calling from
-              </span>
-            </a>
-          )}
-
-          <div className="mt-4 space-y-2 border-t pt-4">
-            {existing && (
-              <Detail icon={<UserRound className="size-4" />}>
-                <span><span className="block text-xs">Working with</span>{data.existing_contact_name || "Caller did not remember"}</span>
-              </Detail>
-            )}
-            {/* An existing inquiry skipped the event questions; show only what
-                the caller volunteered. */}
-            {(!existing || data.event_dates_text || data.event_start_date) && (
-              <Detail icon={<CalendarDays className="size-4" />}>{stayDates(data)}</Detail>
-            )}
-            {data.alternate_dates_text && (
-              <Detail icon={<CalendarDays className="size-4" />}>
-                <span><span className="block text-xs">Alternate dates</span>{data.alternate_dates_text}</span>
-              </Detail>
-            )}
-            {formatHeadcount(data) && (
-              <Detail icon={<Users className="size-4" />}>{formatHeadcount(data)} people</Detail>
-            )}
-            {data.budget_text && <Detail icon={<Wallet className="size-4" />}><span><span className="block text-xs">Budget stated by caller</span>{data.budget_text}</span></Detail>}
-            {!existing && <Detail icon={<Wallet className="size-4" />}><span><AiBudgetHelp label="AI-estimated total budget" /><span className="block text-foreground tabular-nums">{formatAiBudget(data)}</span></span></Detail>}
-            {guestRoomsLabel(data) && (
-              <Detail icon={<BedDouble className="size-4" />}>{guestRoomsLabel(data)}</Detail>
-            )}
-            {data.email && <Detail icon={<MessageSquareText className="size-4" />}>{data.email}</Detail>}
-            <Detail icon={<Clock3 className="size-4" />}>Called {timestamp(data.created_at)}</Detail>
-      <SalesCustomAnswers answers={data.custom_answers} className="mt-4" />
-            {data.notes && (
-              <p className="mt-3 whitespace-pre-wrap rounded-lg border-l-2 border-muted-foreground/30 bg-muted/50 px-3 py-2 text-sm">
-                {data.notes}
-              </p>
-            )}
-          </div>
+          <dl className="space-y-2.5">
+            <Fact label="Reference">{data.reference}</Fact>
+            <Fact label="Received">{data.received_at_human}</Fact>
+            <Fact label="Status">{data.follow_up_status_label}</Fact>
+            <Fact label="Assigned to">{data.assigned_rep || "Unassigned"}</Fact>
+          </dl>
         </section>
 
         {/* The update form. Nothing here is written until Save. */}
@@ -372,6 +253,9 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
                 placeholder="Interested, but needs to confirm dates with their partner."
                 className="mt-1.5 text-base"
               />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Your note will be saved. Earlier notes aren&apos;t shown here.
+              </p>
 
               {saveError && (
                 <p className="mt-3 flex items-start gap-2 text-sm text-destructive">
@@ -392,31 +276,6 @@ export default function InquiryFollowUpPage({ params }: { params: Promise<{ toke
             </>
           )}
         </section>
-
-        {/* Everything logged so far, newest first — attempts and notes stay
-            visible so the next person picks up where the last one left off. */}
-        {history.length > 0 && (
-          <section className="rounded-2xl border bg-card p-5 shadow-sm">
-            <h2 className="text-base font-semibold">Activity</h2>
-            <ol className="mt-3 space-y-3">
-              {history.map((item) => (
-                <li key={item.id} className="rounded-xl border bg-background p-3.5">
-                  <p className="text-sm font-medium">{item.text}</p>
-                  {item.note && (
-                    <p className="mt-1.5 whitespace-pre-wrap break-words text-sm text-muted-foreground">
-                      {item.note}
-                    </p>
-                  )}
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {item.actor}
-                    <span className="mx-1.5">·</span>
-                    {timestamp(item.at)}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
 
         <p className="px-1 pb-4 text-center text-xs text-muted-foreground">
           Resonata sales intake for {data.hotel_display_name}

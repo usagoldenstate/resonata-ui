@@ -12,6 +12,7 @@ import {
   Globe,
   Layers,
   Megaphone,
+  BellRing,
   PhoneOff,
   Save,
   Loader2,
@@ -52,7 +53,9 @@ import {
 } from "@/components/ui/select"
 import { Sidebar } from "@/components/sidebar"
 import { SetupHealthCard } from "@/components/hotel-setup/setup-health-card"
+import { LeadDeliveryCard } from "@/components/lead-delivery-card"
 import { OperaCancellationCard } from "@/components/opera-cancellation-card"
+import { OperaReservationChangeCard } from "@/components/opera-reservation-change-card"
 import { StaynTouchCancellationCard } from "@/components/stayntouch-cancellation-card"
 import { useHotel } from "@/lib/hotel-context"
 import { useCurrentUser } from "@/lib/current-user-context"
@@ -63,6 +66,7 @@ import {
   type HotelOperatorUpdate,
   type HotelPlatformUpdate,
   type Organization,
+  type SalesFollowUpReminder,
   fetchOrganizations,
   fetchHotelDetail,
   updateHotelOperatorSettings,
@@ -102,6 +106,41 @@ function describeError(error: unknown): string {
 const MAX_SALES_REPS = 50
 const MAX_SALES_REP_NAME = 80
 const MAX_IGNORED_NUMBERS = 20
+// What the backend reports for a hotel that never saved a setting: off, with
+// the values the editor starts from (schemas/hotel.py::parse_sales_follow_up_reminder).
+const DEFAULT_FOLLOW_UP_REMINDER: SalesFollowUpReminder = {
+  enabled: false,
+  first_after_hours: 48,
+  max_reminders: 1,
+  repeat_every_hours: 48,
+}
+const FIRST_REMINDER_HOURS = { min: 4, max: 336 }
+const REPEAT_REMINDER_HOURS = { min: 24, max: 720 }
+
+function followUpReminderProblem(value: SalesFollowUpReminder): string | null {
+  const inRange = (n: number, range: { min: number; max: number }) =>
+    Number.isInteger(n) && n >= range.min && n <= range.max
+  if (!inRange(value.first_after_hours, FIRST_REMINDER_HOURS)) {
+    return `The first reminder must be between ${FIRST_REMINDER_HOURS.min} and ${FIRST_REMINDER_HOURS.max} hours (14 days).`
+  }
+  if (!inRange(value.repeat_every_hours, REPEAT_REMINDER_HOURS)) {
+    return `Reminders must be between ${REPEAT_REMINDER_HOURS.min} and ${REPEAT_REMINDER_HOURS.max} hours apart.`
+  }
+  return null
+}
+
+// An unreadable saved setting always counts as changed: the form shows the
+// defaults in its place, and saving them is what turns reminders back on.
+function followUpReminderChanged(
+  value: SalesFollowUpReminder,
+  detail: HotelDetail,
+): boolean {
+  return (
+    Boolean(detail.sales_follow_up_reminder_invalid) ||
+    JSON.stringify(value) !==
+      JSON.stringify(detail.sales_follow_up_reminder ?? DEFAULT_FOLLOW_UP_REMINDER)
+  )
+}
 
 // A loose client-side check; the backend normalizes to E.164 and refuses
 // anything it can't parse, with the offending value in the message.
@@ -113,6 +152,13 @@ function phoneProblem(value: string): string | null {
     ? null
     : `“${value}” isn't a valid phone number.`
 }
+
+// The AI agent numbers must be strict E.164, the same check the setup wizard
+// uses. Only a changed value is checked: the saved one was normalized by the
+// backend, which re-validates (and refuses a number another hotel holds).
+const E164_RE = /^\+[1-9]\d{9,14}$/
+
+type AgentNumberChange = { line: string; current: string | null; next: string | null }
 
 type SettingsTab = "general" | "delivery" | "team" | "advanced"
 
@@ -136,7 +182,9 @@ export default function SettingsPage() {
   const [salesSenderEmail, setSalesSenderEmail] = useState("")
   const [email, setEmail] = useState("")
   const [inboundNumber, setInboundNumber] = useState("")
-  const [vapiPhoneNumberId, setVapiPhoneNumberId] = useState("")
+  // The number the AI agent answers on for reservations (platform-admin only).
+  // Calls are matched to a hotel by the number dialed.
+  const [agentPhoneNumber, setAgentPhoneNumber] = useState("")
   // Organization membership (platform-admin only). "" = independent hotel.
   // The org list loads once for admins; the select is the only writer.
   const [organizationId, setOrganizationId] = useState("")
@@ -148,7 +196,8 @@ export default function SettingsPage() {
   const [twilioFromNumber, setTwilioFromNumber] = useState("")
   // Sales intake line (platform-admin only) — see the "Sales Intake Line" card.
   const [salesLineEnabled, setSalesLineEnabled] = useState(false)
-  const [salesVapiPhoneNumberId, setSalesVapiPhoneNumberId] = useState("")
+  const [salesRecordingLinkEnabled, setSalesRecordingLinkEnabled] = useState(true)
+  const [salesAgentPhoneNumber, setSalesAgentPhoneNumber] = useState("")
   // Which products the hotel bought (platform-admin only). Sections below
   // follow the SAVED value, so fields don't vanish mid-edit.
   const [productLines, setProductLines] = useState<HotelLines>("reservations")
@@ -158,6 +207,9 @@ export default function SettingsPage() {
   // The hotel's own numbers (a phone-system trunk) never treated as a guest's
   // caller ID. Edited as tags; the backend stores them E.164.
   const [ignoredNumbers, setIgnoredNumbers] = useState<string[]>([])
+  // Reminder emails for inquiries nobody has followed up. Operator-editable.
+  const [followUpReminder, setFollowUpReminder] =
+    useState<SalesFollowUpReminder>(DEFAULT_FOLLOW_UP_REMINDER)
   const [timezone, setTimezone] = useState("America/New_York")
   const currency = detail?.currency ?? ""
 
@@ -171,14 +223,16 @@ export default function SettingsPage() {
     setSenderName(name)
     setEmail(email)
     setInboundNumber(d.inbound_phone_number ?? "")
-    setVapiPhoneNumberId(d.vapi_phone_number_id ?? "")
+    setAgentPhoneNumber(d.agent_phone_number ?? "")
     setOrganizationId(d.organization_id ?? "")
     setTwilioFromNumber(d.twilio_from_number ?? "")
     setSalesLineEnabled(d.sales_line_enabled ?? false)
-    setSalesVapiPhoneNumberId(d.sales_vapi_phone_number_id ?? "")
+    setSalesRecordingLinkEnabled(d.sales_recording_link_enabled ?? true)
+    setSalesAgentPhoneNumber(d.sales_agent_phone_number ?? "")
     setProductLines(d.lines ?? "reservations")
     setSalesRepNames(d.sales_rep_names ?? [])
     setIgnoredNumbers(d.sales_ignored_caller_numbers ?? [])
+    setFollowUpReminder(d.sales_follow_up_reminder ?? DEFAULT_FOLLOW_UP_REMINDER)
     setTimezone(d.timezone)
   }, [])
 
@@ -224,6 +278,7 @@ export default function SettingsPage() {
         JSON.stringify(detail.sales_rep_names ?? []) ||
       JSON.stringify(ignoredNumbers) !==
         JSON.stringify(detail.sales_ignored_caller_numbers ?? []) ||
+      followUpReminderChanged(followUpReminder, detail) ||
       (isPlatformAdmin &&
         (senderName.trim() !== splitEmailFrom(detail.email_from).name ||
           salesSenderName.trim() !==
@@ -233,14 +288,15 @@ export default function SettingsPage() {
             (detail.sales_email_from ?? null) ||
           (inboundNumber.trim() || null) !==
             (detail.inbound_phone_number ?? null) ||
-          (vapiPhoneNumberId.trim() || null) !==
-            (detail.vapi_phone_number_id ?? null) ||
-          (salesVapiPhoneNumberId.trim() || null) !==
-            (detail.sales_vapi_phone_number_id ?? null) ||
+          (agentPhoneNumber.trim() || null) !==
+            (detail.agent_phone_number ?? null) ||
+          (salesAgentPhoneNumber.trim() || null) !==
+            (detail.sales_agent_phone_number ?? null) ||
           (twilioFromNumber.trim() || null) !==
             (detail.twilio_from_number ?? null) ||
           (organizationId || null) !== (detail.organization_id ?? null) ||
           salesLineEnabled !== (detail.sales_line_enabled ?? false) ||
+          salesRecordingLinkEnabled !== (detail.sales_recording_link_enabled ?? true) ||
           productLines !== (detail.lines ?? "reservations"))))
 
   useEffect(
@@ -261,16 +317,45 @@ export default function SettingsPage() {
     return () => window.removeEventListener("beforeunload", handler)
   }, [dirty])
 
-  const [showVapiConfirm, setShowVapiConfirm] = useState(false)
+  const [showNumberConfirm, setShowNumberConfirm] = useState(false)
+
+  // The agent numbers decide which calls reach this hotel at all, so changing
+  // either line's number goes through the confirm dialog.
+  const agentNumberChanges: AgentNumberChange[] = []
+  if (detail && isPlatformAdmin) {
+    const nextAgent = agentPhoneNumber.trim() || null
+    if (nextAgent !== (detail.agent_phone_number ?? null)) {
+      agentNumberChanges.push({
+        line: "Reservations",
+        current: detail.agent_phone_number ?? null,
+        next: nextAgent,
+      })
+    }
+    const nextSalesAgent = salesAgentPhoneNumber.trim() || null
+    if (nextSalesAgent !== (detail.sales_agent_phone_number ?? null)) {
+      agentNumberChanges.push({
+        line: "Sales",
+        current: detail.sales_agent_phone_number ?? null,
+        next: nextSalesAgent,
+      })
+    }
+  }
 
   const handleSaveClick = () => {
     if (!detail) return
-    const nextVapiId = vapiPhoneNumberId.trim() || null
-    if (
-      isPlatformAdmin &&
-      nextVapiId !== (detail.vapi_phone_number_id ?? null)
-    ) {
-      setShowVapiConfirm(true)
+    if (agentNumberChanges.length > 0) {
+      for (const change of agentNumberChanges) {
+        if (change.next && !E164_RE.test(change.next)) {
+          toast.error(`The ${change.line.toLowerCase()} agent number must be E.164, e.g. +14075551234.`)
+          return
+        }
+      }
+      const reservations = agentPhoneNumber.trim()
+      if (reservations && reservations === salesAgentPhoneNumber.trim()) {
+        toast.error("The reservations and sales agent numbers must differ — one number is one line.")
+        return
+      }
+      setShowNumberConfirm(true)
       return
     }
     void handleSave()
@@ -324,6 +409,11 @@ export default function SettingsPage() {
       ) {
         opBody.sales_ignored_caller_numbers = ignoredNumbers
       }
+      if (followUpReminderChanged(followUpReminder, detail)) {
+        const problem = followUpReminderProblem(followUpReminder)
+        if (problem) throw new Error(problem)
+        opBody.sales_follow_up_reminder = followUpReminder
+      }
       if (Object.keys(opBody).length > 0) {
         latest = await updateHotelOperatorSettings(hotelId, opBody)
       }
@@ -335,9 +425,9 @@ export default function SettingsPage() {
         if (nextInbound !== (detail.inbound_phone_number ?? null)) {
           pfBody.inbound_phone_number = nextInbound
         }
-        const nextVapiId = vapiPhoneNumberId.trim() || null
-        if (nextVapiId !== (detail.vapi_phone_number_id ?? null)) {
-          pfBody.vapi_phone_number_id = nextVapiId
+        const nextAgent = agentPhoneNumber.trim() || null
+        if (nextAgent !== (detail.agent_phone_number ?? null)) {
+          pfBody.agent_phone_number = nextAgent
         }
         const nextOrg = organizationId || null
         if (nextOrg !== (detail.organization_id ?? null)) {
@@ -353,9 +443,12 @@ export default function SettingsPage() {
         if (salesLineEnabled !== (detail.sales_line_enabled ?? false)) {
           pfBody.sales_line_enabled = salesLineEnabled
         }
-        const nextSalesVapiId = salesVapiPhoneNumberId.trim() || null
-        if (nextSalesVapiId !== (detail.sales_vapi_phone_number_id ?? null)) {
-          pfBody.sales_vapi_phone_number_id = nextSalesVapiId
+        if (salesRecordingLinkEnabled !== (detail.sales_recording_link_enabled ?? true)) {
+          pfBody.sales_recording_link_enabled = salesRecordingLinkEnabled
+        }
+        const nextSalesAgent = salesAgentPhoneNumber.trim() || null
+        if (nextSalesAgent !== (detail.sales_agent_phone_number ?? null)) {
+          pfBody.sales_agent_phone_number = nextSalesAgent
         }
         // Validated together with the sales-line switch, so adding the sales
         // line and switching it on can be one save.
@@ -439,37 +532,43 @@ export default function SettingsPage() {
           </Button>
         </div>
 
-        <AlertDialog open={showVapiConfirm} onOpenChange={setShowVapiConfirm}>
+        <AlertDialog open={showNumberConfirm} onOpenChange={setShowNumberConfirm}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <TriangleAlert className="h-5 w-5 text-destructive" />
-                Change Vapi Phone Number ID?
+                {agentNumberChanges.length > 1
+                  ? "Change the AI agent phone numbers?"
+                  : "Change the AI agent phone number?"}
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-2 text-left">
                   <p>
-                    This UUID must exactly match the number in the Vapi
-                    dashboard. If it&apos;s wrong, every inbound and outbound
-                    call for this hotel will break until it&apos;s fixed.
+                    These are the numbers the AI agent answers on. Calls reach them through the
+                    LiveKit SIP trunk and are matched to this hotel by the number dialed, so if a
+                    number is wrong, callers to the real one reach no one until it&apos;s fixed.
                   </p>
-                  <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">Current: </span>
-                      <span className="font-mono">
-                        {detail?.vapi_phone_number_id || "(none)"}
-                      </span>
+                  {agentNumberChanges.map((change) => (
+                    <div
+                      key={change.line}
+                      className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs"
+                    >
+                      <div className="font-medium text-foreground">{change.line} line</div>
+                      <div>
+                        <span className="text-muted-foreground">Current: </span>
+                        <span className="font-mono">{change.current || "(none)"}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">New: </span>
+                        <span className="font-mono">{change.next || "(none)"}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">New: </span>
-                      <span className="font-mono">
-                        {vapiPhoneNumberId.trim() || "(none)"}
-                      </span>
-                    </div>
-                  </div>
+                  ))}
                   <p>
-                    Make a test call to this hotel&apos;s number right after
-                    saving.
+                    A number that is already set up in LiveKit (for example, one moving between
+                    this hotel&apos;s reservations and sales lines) follows the change on the next
+                    call. A brand-new number, or one you remove, also needs the LiveKit telephony
+                    provisioning re-run. Either way, make a test call to the number.
                   </p>
                 </div>
               </AlertDialogDescription>
@@ -478,7 +577,7 @@ export default function SettingsPage() {
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
-                  setShowVapiConfirm(false)
+                  setShowNumberConfirm(false)
                   void handleSave()
                 }}
                 className="bg-destructive text-white hover:bg-destructive/90"
@@ -907,7 +1006,7 @@ export default function SettingsPage() {
                 </div>
               </TabsContent>
               {savedLines.sales && (
-                <TabsContent value="team">
+                <TabsContent value="team" className="space-y-6">
                   <Card className="border-border">
                     <CardHeader className="pb-4">
                       <div className="flex items-center gap-3">
@@ -929,7 +1028,7 @@ export default function SettingsPage() {
                       <TagInput
                         id="salesRepNames"
                         label="Salesperson names"
-                        hint="Type a name and press Enter. The sales notification email goes to a shared mailbox, so whoever follows up picks their name from this list on the “Update inquiry” page — no sign-in needed — and the inquiry is assigned to them. Removing a name here never changes inquiries already logged against it."
+                        hint="Type a name and press Enter. The sales notification email goes to a shared mailbox, so whoever follows up picks their name from this list on the “Log follow-up outcome” page — no sign-in needed — and the inquiry is assigned to them. Removing a name here never changes inquiries already logged against it."
                         values={salesRepNames}
                         onChange={setSalesRepNames}
                         placeholder="e.g. Bob Jackson"
@@ -941,6 +1040,144 @@ export default function SettingsPage() {
                             : null
                         }
                       />
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <BellRing className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">
+                            Follow-up reminders
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                            Email the inquiry&apos;s sales department when
+                            nobody has logged a follow-up outcome.
+                          </CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {detail?.sales_follow_up_reminder_invalid && (
+                        <StateNotice
+                          tone="warning"
+                          message="The saved reminder setting could not be read, so no reminders are going out. Review the values below and save to turn them back on."
+                        />
+                      )}
+                      <div className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="followUpReminderEnabled" className="text-sm">
+                            Send follow-up reminders
+                          </Label>
+                          <p className="text-[11px] text-muted-foreground">
+                            Reminders stop as soon as any outcome is logged on
+                            the inquiry.
+                          </p>
+                        </div>
+                        <Switch
+                          id="followUpReminderEnabled"
+                          checked={followUpReminder.enabled}
+                          onCheckedChange={(enabled) =>
+                            setFollowUpReminder((current) => ({ ...current, enabled }))
+                          }
+                        />
+                      </div>
+                      {followUpReminder.enabled && (
+                        <>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor="followUpReminderFirst"
+                              className="text-xs text-muted-foreground"
+                            >
+                              Hours before the first reminder
+                            </Label>
+                            <Input
+                              id="followUpReminderFirst"
+                              type="number"
+                              inputMode="numeric"
+                              className="w-32"
+                              min={FIRST_REMINDER_HOURS.min}
+                              max={FIRST_REMINDER_HOURS.max}
+                              value={followUpReminder.first_after_hours || ""}
+                              onChange={(e) =>
+                                setFollowUpReminder((current) => ({
+                                  ...current,
+                                  first_after_hours: Number(e.target.value),
+                                }))
+                              }
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Counted from when the inquiry arrived.
+                            </p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor="followUpReminderRepeat"
+                              className="text-xs text-muted-foreground"
+                            >
+                              How many reminders to send
+                            </Label>
+                            <OptionSelect
+                              id="followUpReminderRepeat"
+                              value={String(followUpReminder.max_reminders ?? "until")}
+                              onValueChange={(count) =>
+                                setFollowUpReminder((current) => ({
+                                  ...current,
+                                  max_reminders:
+                                    count === "until"
+                                      ? null
+                                      : (Number(count) as 1 | 2 | 3),
+                                }))
+                              }
+                              options={[
+                                { value: "1", label: "1 reminder" },
+                                { value: "2", label: "2 reminders" },
+                                { value: "3", label: "3 reminders" },
+                                {
+                                  value: "until",
+                                  label: "Keep reminding until the lead is updated",
+                                },
+                              ]}
+                            />
+                          </div>
+                          {followUpReminder.max_reminders !== 1 && (
+                            <div className="space-y-1.5">
+                              <Label
+                                htmlFor="followUpReminderEvery"
+                                className="text-xs text-muted-foreground"
+                              >
+                                Hours between reminders
+                              </Label>
+                              <Input
+                                id="followUpReminderEvery"
+                                type="number"
+                                inputMode="numeric"
+                                className="w-32"
+                                min={REPEAT_REMINDER_HOURS.min}
+                                max={REPEAT_REMINDER_HOURS.max}
+                                value={followUpReminder.repeat_every_hours || ""}
+                                onChange={(e) =>
+                                  setFollowUpReminder((current) => ({
+                                    ...current,
+                                    repeat_every_hours: Number(e.target.value),
+                                  }))
+                                }
+                              />
+                              <p className="text-[11px] text-muted-foreground">
+                                At least 24 hours apart.
+                              </p>
+                            </div>
+                          )}
+                          {salesRepNames.length === 0 && (
+                            <StateNotice
+                              tone="warning"
+                              message="No salesperson names are set above, so nobody can log an outcome from the emailed link. Until names are added, reminders link to the inquiry in the dashboard, which needs a sign-in."
+                            />
+                          )}
+                        </>
+                      )}
                     </CardContent>
                   </Card>
                 </TabsContent>
@@ -1015,15 +1252,32 @@ export default function SettingsPage() {
                               !detail?.sales_departments?.some(
                                 (d) => d.to.length > 0,
                               ) ||
-                              !salesVapiPhoneNumberId.trim())
+                              !salesAgentPhoneNumber.trim())
                           }
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="salesRecordingLinkEnabled" className="text-sm">
+                            Link recordings in sales emails
+                          </Label>
+                          <p className="text-[11px] text-muted-foreground">
+                            Anyone with the email can play the call for 30 days
+                            without signing in. Turning this off stops links
+                            already sent.
+                          </p>
+                        </div>
+                        <Switch
+                          id="salesRecordingLinkEnabled"
+                          checked={salesRecordingLinkEnabled}
+                          onCheckedChange={setSalesRecordingLinkEnabled}
                         />
                       </div>
                       {!salesLineEnabled && (
                         <p className="text-[11px] text-muted-foreground">
-                          To enable sales, include Sales in Lines, connect its
-                          Vapi number below, and save at least one inquiry email
-                          recipient in Agent Configuration → Sales.
+                          To enable sales, include Sales in Lines, set the sales
+                          agent phone number below, and save at least one inquiry
+                          email recipient in Agent Configuration → Sales.
                         </p>
                       )}
                       <Link
@@ -1049,27 +1303,29 @@ export default function SettingsPage() {
                           {" "}
                           <div className="space-y-2">
                             <Label
-                              htmlFor="vapiPhoneNumberId"
+                              htmlFor="agentPhoneNumber"
                               className="text-xs text-muted-foreground"
                             >
-                              Vapi Phone Number ID
+                              AI Agent Phone Number
                             </Label>
                             <Input
-                              id="vapiPhoneNumberId"
-                              value={vapiPhoneNumberId}
+                              id="agentPhoneNumber"
+                              type="tel"
+                              value={agentPhoneNumber}
                               onChange={(e) =>
-                                setVapiPhoneNumberId(e.target.value)
+                                setAgentPhoneNumber(e.target.value)
                               }
-                              placeholder="00000000-0000-4000-8000-000000000000"
-                              className="bg-card border-border"
+                              placeholder="+14075551234"
+                              className="bg-card border-border font-mono"
                             />
                             <p className="text-[11px] text-muted-foreground">
-                              UUID of this hotel&apos;s phone number in the Vapi
-                              dashboard (Phone Numbers → select the number →
-                              copy the ID). When set, webhooks from any other
-                              Vapi number are rejected — a wrong value blocks
-                              this hotel&apos;s calls, so make a test call after
-                              changing it. Leave blank to disable the check.
+                              The number the AI agent answers for reservations,
+                              in E.164. Calls to it come in through the LiveKit
+                              SIP trunk and are matched to this hotel by the
+                              number dialed, so it can belong to only one hotel.
+                              It can differ from the guest-facing number when the
+                              hotel forwards its own line here. Leave blank and no
+                              calls reach this hotel&apos;s reservations agent.
                             </p>
                           </div>
                         </CardContent>
@@ -1087,8 +1343,8 @@ export default function SettingsPage() {
                                 Sales Intake Line
                               </CardTitle>
                               <CardDescription className="text-xs">
-                                A second Vapi number that takes sales inquiries
-                                when the sales team doesn&apos;t answer
+                                A second number the AI agent answers, taking sales
+                                inquiries when the sales team doesn&apos;t answer
                               </CardDescription>
                             </div>
                           </div>
@@ -1096,37 +1352,45 @@ export default function SettingsPage() {
                         <CardContent className="space-y-4">
                           <div className="space-y-2">
                             <Label
-                              htmlFor="salesVapiPhoneNumberId"
+                              htmlFor="salesAgentPhoneNumber"
                               className="text-xs text-muted-foreground"
                             >
-                              Sales Vapi Phone Number ID
+                              Sales AI Agent Phone Number
                             </Label>
                             <Input
-                              id="salesVapiPhoneNumberId"
-                              value={salesVapiPhoneNumberId}
+                              id="salesAgentPhoneNumber"
+                              type="tel"
+                              value={salesAgentPhoneNumber}
                               onChange={(e) =>
-                                setSalesVapiPhoneNumberId(e.target.value)
+                                setSalesAgentPhoneNumber(e.target.value)
                               }
-                              placeholder="00000000-0000-4000-8000-000000000000"
-                              className="bg-card border-border"
+                              placeholder="+14075551234"
+                              className="bg-card border-border font-mono"
                             />
                             <p className="text-[11px] text-muted-foreground">
-                              UUID of the <em>sales</em> number in the Vapi
-                              dashboard. Its Server URL must be the hotel&apos;s
-                              webhook URL with{" "}
-                              <span className="font-mono">/sales</span>{" "}
-                              appended, using the same Server URL Secret. Must
-                              differ from the reservations number&apos;s ID.
-                              Leave blank to disable the tenant check for this
-                              line.
+                              The number the sales department&apos;s phone system
+                              forwards unanswered calls to, in E.164. It comes in
+                              through the LiveKit SIP trunk like the reservations
+                              number and must differ from it. The sales line can
+                              only be switched on once this is set.
                             </p>
                           </div>
                         </CardContent>
                       </Card>
                     )}
+                    {savedLines.sales && hotelId && detail && (
+                      <LeadDeliveryCard
+                        hotelId={hotelId}
+                        saved={detail.lead_delivery ?? null}
+                        onSaved={setDetail}
+                      />
+                    )}
                     {savedLines.reservations &&
                       detail?.pms_provider === "opera" &&
                       hotelId && <OperaCancellationCard hotelId={hotelId} />}
+                    {savedLines.reservations &&
+                      detail?.pms_provider === "opera" &&
+                      hotelId && <OperaReservationChangeCard hotelId={hotelId} />}
                     {savedLines.reservations &&
                       detail?.pms_provider === "stayntouch" &&
                       hotelId && (
@@ -1147,7 +1411,7 @@ function StateNotice({
   tone,
   message,
 }: {
-  tone: "muted" | "error"
+  tone: "muted" | "error" | "warning"
   message: string
 }) {
   return (
@@ -1155,7 +1419,9 @@ function StateNotice({
       className={`rounded-md border px-3 py-2 text-sm ${
         tone === "error"
           ? "border-destructive/30 text-destructive"
-          : "border-border text-muted-foreground"
+          : tone === "warning"
+            ? "border-amber-300 bg-amber-50 text-amber-900"
+            : "border-border text-muted-foreground"
       }`}
     >
       {message}

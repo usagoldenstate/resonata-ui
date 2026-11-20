@@ -3,7 +3,7 @@
 // The GET /setup read-out for the hotel currently selected on Settings,
 // collapsed by default so it never crowds the page. Useful long after
 // onboarding: it is what says a live hotel still has no knowledge base or no
-// Vapi binding.
+// agent phone number.
 //
 // The wizard itself lives in the Dev Pages "Hotel Setup" tab, so every link
 // out of here is a `?tab=hotel-setup&hotel=…` URL, not a route.

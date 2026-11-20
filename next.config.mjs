@@ -22,7 +22,12 @@ const nextConfig = {
     unoptimized: true,
   },
   async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }]
+    return [
+      { source: "/(.*)", headers: securityHeaders },
+      // This page's URL is its authorization, so no request may carry it on.
+      { source: "/inquiry/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/recording/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+    ]
   },
 }
 

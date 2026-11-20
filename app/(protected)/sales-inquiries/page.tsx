@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
-import { AlertTriangle, ArrowUpRight, CheckCircle2, Headphones, ChevronLeft, ChevronRight, Inbox, Link2, Loader2, Mail, Phone, RefreshCw, Search, Users, CalendarDays, BedDouble, MessageSquareText, Clock3, UserRound, Sparkles, Send, History, Wallet, X, Plus, Check, ChevronDown, ArrowLeft } from "lucide-react"
+import { AlertTriangle, ArrowUpRight, CheckCircle2, Headphones, ChevronLeft, ChevronRight, Inbox, Link2, Loader2, Mail, Phone, RefreshCw, Search, Users, CalendarDays, BedDouble, MessageSquareText, Clock3, UserRound, Sparkles, Send, History, Wallet, X, Plus, Check, ChevronDown, ArrowLeft, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
@@ -14,13 +14,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { OptionSelect } from "@/components/ui/option-select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { AiBudgetHelp, formatAiBudget } from "@/components/ai-budget-estimate"
 import { CallRecordingPlayer } from "@/components/call-recording-player"
+import { LeadDeliveryBadge, LeadDeliveryPanel } from "@/components/lead-delivery-status"
+import { RecordingLinkStatus } from "@/components/recording-link-status"
 import { useHotel, type HotelListItem } from "@/lib/hotel-context"
+import { useCurrentUser } from "@/lib/current-user-context"
 type Selection = { id: string; hotelId: string }
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { confirmDiscardUnsaved, registerUnsavedGuard } from "@/lib/unsaved-guard"
-import { ApiError, fetchSalesAssignees, fetchSalesDepartmentOptions, formatHeadcount, guestRoomsLabel, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
+import { ApiError, deleteSalesInquiry, fetchSalesAssignees, fetchSalesDepartmentOptions, formatHeadcount, guestRoomsLabel, fetchSalesInquiries, fetchSalesInquiry, updateSalesInquiry, type SalesFollowUpStatus, type SalesInquiryItem, type SalesInquiryPatch } from "@/lib/api"
 import { EVENT_CATEGORY_LABELS, INQUIRY_KIND_LABELS } from "@/lib/sales-inquiry-labels"
 
 // The response status: what the sales team has done since the call. Not "New"
@@ -146,7 +150,7 @@ const pillTone: Record<EmailView, string> = {
 }
 // Why an inquiry has no email, shown as a banner at the top of its panel.
 function notSentReason(row: Pick<SalesInquiryItem, "email_status">): string | null {
-  if (row.email_status === "not_sent") return "The call ended before the intake finished, so no email was sent. These details were pulled from the call transcript and may be incomplete — listen to the call before calling back."
+  if (row.email_status === "not_sent") return "No email was sent. Follow up on this inquiry from here."
   if (row.email_status === "gave_up") return "The email to your sales team could not be delivered after repeated attempts. Check the recipient email address in Agent Configuration → Sales, and follow up from here."
   return null
 }
@@ -228,6 +232,11 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
   const [dismissed, setDismissed] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const saving = useRef(false)
+  const { isPlatformAdmin } = useCurrentUser()
+  // Platform-admin only. The header's trash button only opens the
+  // confirmation; the DELETE fires from its confirm action.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const q = useDebouncedValue(search, 300)
   const invalidDates = !!(dateFrom && dateTo && dateFrom > dateTo)
   const invalidEventDates = !!(eventFrom && eventTo && eventFrom > eventTo)
@@ -262,6 +271,22 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
       } else toast.error("Could not save changes. Please try again.")
       return false
     } finally { saving.current = false; setBusy(null) }
+  }
+  async function confirmDelete() {
+    const target = current
+    setConfirmingDelete(false)
+    if (!target) return
+    setDeleting(true)
+    try {
+      await deleteSalesInquiry(target.hotelId, target.id)
+      // Close without the unsaved-notes prompt: the notes went with the inquiry.
+      setSelected(null)
+      setDismissed(true)
+      toast.success("Inquiry deleted")
+      void mutate()
+    } catch (e) {
+      toast.error(e instanceof ApiError && e.status === 404 ? "This inquiry no longer exists." : "Could not delete the inquiry. Please try again.")
+    } finally { setDeleting(false) }
   }
   function clearFilters() { setSearch(""); setCategory(""); setKind(""); setStatus(""); setOwner(""); setDepartment(""); setEmail(""); setDateFrom(""); setDateTo(""); setEventFrom(""); setEventTo(""); setBudgetMinimum(""); setCallId(null); setEditingTag(null); setPage(0) }
   // Received presets count back from today in the hotel's own calendar; a
@@ -392,13 +417,14 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
                   {row.company && <p className="mt-0.5 truncate text-xs font-medium" title={row.company}>{row.company}</p>}
                   <p className="mt-0.5 truncate text-xs text-muted-foreground" title={row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || undefined}>{row.callback_phone_e164 || row.caller_id_phone_e164 || row.email || "No contact provided"}</p>
                   <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{timestamp(row.created_at, tzOf(row.hotel_id))}</p>
+                  {row.source === "recovered" && <span className="mt-1.5 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">Recovered from transcript</span>}
                   {portfolio && <p className="mt-1 truncate text-xs font-medium text-muted-foreground" title={nameOf(row.hotel_id)}>{nameOf(row.hotel_id)}</p>}
                 </td>
                 <td className="px-3 py-3"><RequestSummary row={row} /></td>
                 <td className={`px-3 py-3 text-xs leading-5 tabular-nums ${row.estimated_budget_min !== null || row.estimated_budget_max !== null ? "font-medium" : "text-muted-foreground"}`}>{formatAiBudget(row)}</td>
                 <td className="px-3 py-3" onClick={e => e.stopPropagation()}><StatusSelect row={row} disabled={!!busy || row.erased} onChange={v => void save(row, { follow_up_status: v })} /></td>
                 <td className="px-3 py-3" onClick={e => e.stopPropagation()}><OwnerSelect row={row} reps={staff.data?.[row.hotel_id] ?? []} disabled={!!busy || !staff.data || row.erased} onChange={name => void save(row, { assigned_rep: name })} /></td>
-                <td className="py-3 pl-3 pr-4"><p className="mb-1.5 truncate text-xs leading-5" title={row.department_name || undefined}>{row.department_name || "No department"}</p><EmailBadge row={row} /></td>
+                <td className="py-3 pl-3 pr-4"><p className="mb-1.5 truncate text-xs leading-5" title={row.department_name || undefined}>{row.department_name || "No department"}</p><EmailBadge row={row} />{row.lead_delivery && <div className="mt-1.5 min-w-0"><LeadDeliveryBadge state={row.lead_delivery} /></div>}</td>
               </tr>)}</tbody>
             </table>
           </div>
@@ -409,18 +435,33 @@ function Workspace({ hotels, portfolio, setHotelId, initialInquiry, initialCall 
     </div>
     <Dialog open={!!selectedId} onOpenChange={open => { if (!open && confirmDiscardUnsaved()) { setSelected(null); setDismissed(true) } }}>
       <DialogContent showCloseButton={false} className="[--brand-insights:#e8622d] [--primary:#e8622d] [--primary-foreground:#29140c] dark:[--brand-insights:#ff975c] dark:[--primary:#ff975c] flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-background p-0 shadow-2xl sm:max-w-6xl">
-        <DialogHeader className="relative shrink-0 border-b bg-card px-4 py-4 pr-14 text-left sm:px-6 sm:pr-14">
+        <DialogHeader className={`relative shrink-0 border-b bg-card px-4 py-4 text-left sm:px-6 ${isPlatformAdmin ? "pr-24 sm:pr-24" : "pr-14 sm:pr-14"}`}>
           <div className="flex items-center gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-insights/10 text-brand-insights"><Inbox className="size-4" /></span>
             <div><DialogTitle className="text-base tracking-tight">Sales inquiry</DialogTitle><DialogDescription className="mt-0.5 text-xs">Guest details &amp; follow-up</DialogDescription></div>
+            {isPlatformAdmin && <button type="button" aria-label="Delete inquiry" title="Delete inquiry" disabled={deleting || !detail.data} onClick={() => setConfirmingDelete(true)} className="absolute right-14 top-5 flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50">{deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}</button>}
             <DialogClose asChild><button aria-label="Close inquiry" className="absolute right-4 top-5 flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><X className="size-4" /></button></DialogClose>
           </div>
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto overscroll-contain">
-          {detail.error && !detail.data ? <div role="alert" className="p-6">Could not load this inquiry. <button className="underline" onClick={() => void detail.mutate()}>Retry</button></div> : !detail.data ? <div className="p-6" role="status">Loading inquiry…</div> : <InquiryPanel key={detail.data.id} row={detail.data} timezone={tzOf(detail.data.hotel_id)} hotelName={portfolio ? nameOf(detail.data.hotel_id) : null} reps={staff.data?.[detail.data.hotel_id] ?? []} staffReady={!!staff.data} busy={!!busy} save={save} setHotelId={setHotelId} />}
+          {detail.error && !detail.data ? <div role="alert" className="p-6">Could not load this inquiry. <button className="underline" onClick={() => void detail.mutate()}>Retry</button></div> : !detail.data ? <div className="p-6" role="status">Loading inquiry…</div> : <InquiryPanel onLeadDeliveryChanged={() => { void detail.mutate(); void mutate() }} key={detail.data.id} row={detail.data} timezone={tzOf(detail.data.hotel_id)} hotelName={portfolio ? nameOf(detail.data.hotel_id) : null} reps={staff.data?.[detail.data.hotel_id] ?? []} staffReady={!!staff.data} busy={!!busy} save={save} setHotelId={setHotelId} />}
         </div>
       </DialogContent>
     </Dialog>
+    <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this inquiry?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes the sales inquiry{detail.data?.caller_name ? <> from <span className="font-medium text-foreground">{detail.data.caller_name}</span></> : null}, including its follow-up history and notes. The call recording and transcript stay in the call log. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={() => void confirmDelete()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete inquiry</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </>
 }
 
@@ -456,7 +497,8 @@ function BudgetEditor({ value: initial, applyLabel = "Apply", onApply, onCancel 
   </form>
 }
 
-function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, setHotelId }: { row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelName: string | null; reps: string[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean>; setHotelId: (id: string) => void }) {
+function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, setHotelId, onLeadDeliveryChanged }: { onLeadDeliveryChanged: () => void; row: Awaited<ReturnType<typeof fetchSalesInquiry>>; timezone: string; hotelName: string | null; reps: string[]; staffReady: boolean; busy: boolean; save: (row: SalesInquiryItem, patch: Omit<SalesInquiryPatch, "version">) => Promise<boolean>; setHotelId: (id: string) => void }) {
+  const { isPlatformAdmin } = useCurrentUser()
   const [note, setNote] = useState("")
   // An erased inquiry is read-only: the server refuses every PATCH (409), so
   // the controls are disabled rather than letting a save bounce.
@@ -497,6 +539,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
   ].sort((a, b) => activityTime(b.at) - activityTime(a.at))
   const panelControl = "h-11! w-full min-w-0 rounded-lg border-border bg-card text-sm shadow-xs focus-visible:ring-brand-insights/20"
   return <div className="space-y-5 p-4 sm:p-6">
+    {row.source === "recovered" && <p role="status" className="flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span><span className="font-semibold">Recovered from transcript.</span> Details may be incomplete. Listen to the call and confirm details when following up.</span></p>}
     {notSentReason(row) && <p role="status" className="flex gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-relaxed text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-100"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span><span className="font-semibold">Email not sent.</span> {notSentReason(row)}</span></p>}
     <section className="relative overflow-hidden rounded-2xl border border-brand-insights/30 bg-card shadow-sm">
       <div className="h-1.5 bg-brand-insights" />
@@ -526,7 +569,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
     {row.follow_up_url && <Button variant="outline" className="h-11 w-full rounded-xl bg-card text-sm sm:w-auto" onClick={async () => {
       try {
         await navigator.clipboard.writeText(row.follow_up_url!)
-        toast.success("Update link copied", { description: "Anyone with this link can log follow-up on this inquiry — no sign-in needed." })
+        toast.success("Update link copied", { description: "Anyone with this link can log follow-up with no sign-in. It doesn't include the caller's details, so send those separately." })
       } catch {
         toast.error("Could not copy the link", { description: "Your browser blocked clipboard access." })
       }
@@ -557,13 +600,14 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
           {row.notes && <div className="mx-5 mb-5 rounded-r-lg border-l-2 border-brand-insights/50 bg-brand-insights/5 px-3.5 py-3"><p className="mb-1 text-[11px] font-medium text-brand-insights">{existing ? "What they need" : "From the caller"}</p><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{row.notes}</p></div>}
         </section>
 
-        {row.call_record_id && <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        {(row.call_record_id || row.recording_link_status) && <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="flex items-center gap-2 border-b px-5 py-3.5"><Headphones className="size-4 text-brand-insights" /><h3 className="text-sm font-semibold">Call recording</h3></div>
-          <div className="p-5">
-            {row.has_recording && row.call_created_at
-              ? <CallRecordingPlayer callId={row.call_record_id} createdAt={row.call_created_at} />
+          {row.call_record_id && <div className="p-5">
+            {row.has_recording
+              ? <CallRecordingPlayer callId={row.call_record_id} />
               : <p className="text-sm text-muted-foreground">No recording is available for this call.</p>}
-          </div>
+          </div>}
+          <RecordingLinkStatus row={row} timezone={timezone} />
         </section>}
       </div>
       <div className="min-w-0 space-y-5">
@@ -597,6 +641,8 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
       </div>
     </div>
 
+    {row.lead_delivery && <section className="px-1 pt-1"><LeadDeliveryPanel hotelId={row.hotel_id} state={row.lead_delivery} isPlatformAdmin={isPlatformAdmin} format={value => timestamp(value, timezone)} onChanged={onLeadDeliveryChanged} /></section>}
+
     <section className="px-1 pt-1">
       <div className="mb-4 flex items-center gap-2"><History className="size-4 text-muted-foreground" /><h3 className="text-sm font-semibold">Activity</h3><span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{activity.length}</span></div>
       <ol className="ml-3 border-l border-brand-insights/20">
@@ -607,6 +653,7 @@ function InquiryPanel({ row, timezone, hotelName, reps, staffReady, busy, save, 
           <div className="rounded-xl border bg-card p-3.5 shadow-xs">
             {entry.kind === "notification" ? <>
               <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-medium">Sales team notification</p><EmailBadge row={row} /></div>{row.department_name && row.email_status !== "not_sent" && <p className="mt-1 text-xs"><span className="text-muted-foreground">Routed to </span><span className="font-medium">{row.department_name}</span></p>}<p className="mt-1 break-all text-xs text-muted-foreground">{row.email_status === "not_sent" ? "No email was sent." : row.sent_to ? <>To: {row.sent_to}</> : "Recipient not recorded"}</p>{row.sent_cc && <p className="mt-0.5 break-all text-xs text-muted-foreground">CC: {row.sent_cc}</p>}<p className="mt-2 text-[11px] text-muted-foreground">{row.sent_at ? <>Sent {timestamp(row.sent_at, timezone)}</> : <>Inquiry received {timestamp(row.created_at, timezone)}</>}</p>
+              {(row.reminder_count ?? 0) > 0 && <p className="mt-2 text-xs text-muted-foreground">Follow-up reminder sent{(row.reminder_count ?? 0) > 1 ? ` ×${row.reminder_count}` : ""}{row.last_reminder_at ? ` · last ${timestamp(row.last_reminder_at, timezone)}` : ""}</p>}
               {emailView(row.email_status) === "sending" && <p className="mt-3 rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">The email is on its way. If a send fails it is retried automatically for about an hour — there is nothing you need to do.</p>}
               {notSentReason(row) && <p className="mt-2 text-xs leading-relaxed text-destructive">{notSentReason(row)}</p>}
             </> : <>
