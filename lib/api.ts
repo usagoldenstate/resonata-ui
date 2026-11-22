@@ -1552,6 +1552,62 @@ export function disableStaynTouchCancellation(hotelId: string) {
   )
 }
 
+export type CloudbedsSourceCatalogItem = {
+  id: string
+  name: string
+  third_party: boolean
+  active: boolean
+}
+
+export type CloudbedsCancellationConfig = {
+  allowed_sources: { id: string; name: string }[]
+  allowed_rate_ids: string[]
+  free_until_days_before_arrival: number
+  free_until_time: string
+  catalog_verified_at: string
+}
+
+export type CloudbedsCancellationSetup = {
+  saved: CloudbedsCancellationConfig | null
+  ready: boolean
+  validation_errors: string[]
+  catalogs: { sources: CloudbedsSourceCatalogItem[] }
+}
+
+export type CloudbedsCancellationSetupUpdate = {
+  allowed_source_ids: string[]
+  allowed_rate_ids: string[]
+  free_until_days_before_arrival: number
+  free_until_time: string
+}
+
+export function fetchCloudbedsCancellationSetup(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<CloudbedsCancellationSetup>(
+    `/api/v1/admin/hotels/${hotelId}/cloudbeds-cancellation/setup`,
+    opts,
+  )
+}
+
+export function saveCloudbedsCancellationSetup(
+  hotelId: string,
+  body: CloudbedsCancellationSetupUpdate,
+) {
+  return api<CloudbedsCancellationSetup>(
+    `/api/v1/admin/hotels/${hotelId}/cloudbeds-cancellation/setup`,
+    { method: "PUT", body },
+  )
+}
+
+export function disableCloudbedsCancellation(hotelId: string) {
+  return api<{ status: "disabled"; hotel_id: string }>(
+    `/api/v1/admin/hotels/${hotelId}/cloudbeds-cancellation/setup`,
+    { method: "DELETE" },
+  )
+}
+
 export function fetchAdminUsers(opts: Pick<Options, "signal"> = {}) {
   return api<UserAccessItem[]>("/api/v1/admin/users", opts)
 }

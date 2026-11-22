@@ -263,6 +263,9 @@ function cancellationStatusLabel(status: CancellationStatus, reason: string | nu
     case "not_found":
       return "Reservation not found"
     case "needs_staff":
+      if (reason === "third_party_booking") {
+        return "Booked through a travel site — told to cancel there"
+      }
       return reason === "active_cancellation_penalty"
         ? "Cancellation fee applies — referred to the front desk"
         : "Needs front desk review — not cancelled"

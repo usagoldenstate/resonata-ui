@@ -57,6 +57,7 @@ import { LeadDeliveryCard } from "@/components/lead-delivery-card"
 import { OperaCancellationCard } from "@/components/opera-cancellation-card"
 import { OperaReservationChangeCard } from "@/components/opera-reservation-change-card"
 import { StaynTouchCancellationCard } from "@/components/stayntouch-cancellation-card"
+import { CloudbedsCancellationCard } from "@/components/cloudbeds-cancellation-card"
 import { useHotel } from "@/lib/hotel-context"
 import { useCurrentUser } from "@/lib/current-user-context"
 import { lineSetOf, type HotelLines } from "@/lib/product-lines"
@@ -1395,6 +1396,11 @@ export default function SettingsPage() {
                       detail?.pms_provider === "stayntouch" &&
                       hotelId && (
                         <StaynTouchCancellationCard hotelId={hotelId} />
+                      )}
+                    {savedLines.reservations &&
+                      detail?.pms_provider === "cloudbeds" &&
+                      hotelId && (
+                        <CloudbedsCancellationCard hotelId={hotelId} />
                       )}
                   </div>
                 </TabsContent>
