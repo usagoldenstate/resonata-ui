@@ -1608,6 +1608,55 @@ export function disableCloudbedsCancellation(hotelId: string) {
   )
 }
 
+export type CloudbedsReservationChangeConfig = {
+  allowed_changes: ReservationChangeKind[]
+  allowed_sources: { id: string; name: string }[]
+  allowed_rate_ids: string[]
+  catalog_verified_at: string
+}
+
+export type CloudbedsReservationChangeSetup = {
+  saved: CloudbedsReservationChangeConfig | null
+  ready: boolean
+  validation_errors: string[]
+  catalogs: { sources: CloudbedsSourceCatalogItem[] }
+  // Without the hotel's cancellation rule no change may give up nights.
+  cancellation_rule_saved: boolean
+}
+
+export type CloudbedsReservationChangeSetupUpdate = {
+  allowed_changes: ReservationChangeKind[]
+  allowed_source_ids: string[]
+  allowed_rate_ids: string[]
+}
+
+export function fetchCloudbedsReservationChangeSetup(
+  hotelId: string,
+  opts: Pick<Options, "signal"> = {},
+) {
+  return api<CloudbedsReservationChangeSetup>(
+    `/api/v1/admin/hotels/${hotelId}/cloudbeds-reservation-changes/setup`,
+    opts,
+  )
+}
+
+export function saveCloudbedsReservationChangeSetup(
+  hotelId: string,
+  body: CloudbedsReservationChangeSetupUpdate,
+) {
+  return api<CloudbedsReservationChangeSetup>(
+    `/api/v1/admin/hotels/${hotelId}/cloudbeds-reservation-changes/setup`,
+    { method: "PUT", body },
+  )
+}
+
+export function disableCloudbedsReservationChanges(hotelId: string) {
+  return api<{ status: "disabled"; hotel_id: string }>(
+    `/api/v1/admin/hotels/${hotelId}/cloudbeds-reservation-changes/setup`,
+    { method: "DELETE" },
+  )
+}
+
 export function fetchAdminUsers(opts: Pick<Options, "signal"> = {}) {
   return api<UserAccessItem[]>("/api/v1/admin/users", opts)
 }
